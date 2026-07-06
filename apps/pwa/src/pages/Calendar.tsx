@@ -10,7 +10,13 @@ export default function CalendarPage() {
   const { transactions, categories, accounts } = useApp()
   
   const [currentDate, setCurrentDate] = useState(new Date())
-  const [selectedDate, setSelectedDate] = useState<number | null>(null)
+  const todayInit = new Date()
+  const [selectedDate, setSelectedDate] = useState<number | null>(
+    todayInit.getFullYear() === currentDate.getFullYear() &&
+    todayInit.getMonth() === currentDate.getMonth()
+      ? todayInit.getDate()
+      : null
+  )
   
   const year = currentDate.getFullYear()
   const month = currentDate.getMonth()
@@ -145,7 +151,7 @@ export default function CalendarPage() {
                   ${selectedDate === day 
                     ? 'bg-[#c96442] text-white' 
                     : isToday(day)
-                      ? `${theme === 'dark' ? 'bg-[#3d3d3a]' : 'bg-[#f5f4ed]'} ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`
+                      ? `ring-2 ring-[#c96442] font-bold ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#c96442]'}`
                       : `${theme === 'dark' ? 'hover:bg-[#30302e] text-[#faf9f5]' : 'hover:bg-[#faf9f5] text-[#141413]'}`
                   }
                 `}

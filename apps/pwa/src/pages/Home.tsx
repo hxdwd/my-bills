@@ -39,28 +39,6 @@ export default function HomePage({ onAddTransaction }: HomePageProps = {}) {
 
   const currentMonth = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long' })
 
-  // 首页迷你日历：默认跟随当前日期（当前月）
-  const calendarDate = new Date()
-  const calYear = calendarDate.getFullYear()
-  const calMonth = calendarDate.getMonth()
-  const firstDayOfMonth = new Date(calYear, calMonth, 1)
-  const lastDayOfMonth = new Date(calYear, calMonth + 1, 0)
-  const firstDayWeekday = firstDayOfMonth.getDay()
-  const daysInMonth = lastDayOfMonth.getDate()
-  const todayDate = new Date()
-  const isToday = (day: number) =>
-    todayDate.getFullYear() === calYear &&
-    todayDate.getMonth() === calMonth &&
-    todayDate.getDate() === day
-  const hasTransactionsOnDay = (day: number) =>
-    transactions.some((t) => {
-      const match = t.date.match(/(\d+)月(\d+)日/)
-      return match && parseInt(match[1]) === calMonth + 1 && parseInt(match[2]) === day
-    })
-  const calendarDays: (number | null)[] = []
-  for (let i = 0; i < firstDayWeekday; i++) calendarDays.push(null)
-  for (let i = 1; i <= daysInMonth; i++) calendarDays.push(i)
-
   const quickActions = [
     { icon: '📊', label: '报表', color: '#a855f7', path: '/reports' },
     { icon: '📅', label: '预算', color: '#f59e0b', path: '/budget' },
@@ -198,60 +176,6 @@ export default function HomePage({ onAddTransaction }: HomePageProps = {}) {
           >
             查看详情 <ChevronRight size={16} />
           </button>
-        </Card>
-
-        {/* Mini Calendar（跟随当前日期） */}
-        <Card className="!p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className={`font-semibold ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
-              {calendarDate.toLocaleDateString('zh-CN', { month: 'long' })} · 今天 {todayDate.getDate()}日
-            </h3>
-            <button
-              onClick={() => navigate('/calendar')}
-              className={`text-xs ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}
-            >
-              完整日历
-            </button>
-          </div>
-          <div className="grid grid-cols-7 mb-1">
-            {['日', '一', '二', '三', '四', '五', '六'].map((d) => (
-              <div
-                key={d}
-                className={`text-center text-xs font-medium py-1 ${
-                  theme === 'dark' ? 'text-[#87867f]' : 'text-[#b0aea5]'
-                }`}
-              >
-                {d}
-              </div>
-            ))}
-          </div>
-          <div className="grid grid-cols-7 gap-1">
-            {calendarDays.map((day, index) => (
-              <button
-                key={index}
-                disabled={!day}
-                onClick={() => day && navigate('/calendar')}
-                className={`
-                  aspect-square flex flex-col items-center justify-center rounded-lg
-                  transition-all relative
-                  ${!day ? 'cursor-default' : 'cursor-pointer active:scale-95'}
-                  ${isToday(day as number)
-                    ? 'bg-[#c96442] text-white'
-                    : `${theme === 'dark' ? 'hover:bg-[#30302e] text-[#faf9f5]' : 'hover:bg-[#faf9f5] text-[#141413]'}`
-                  }
-                `}
-              >
-                {day && (
-                  <>
-                    <span className="text-sm font-medium">{day}</span>
-                    {hasTransactionsOnDay(day) && !isToday(day) && (
-                      <div className="absolute bottom-1 w-1.5 h-1.5 rounded-full bg-[#c96442]" />
-                    )}
-                  </>
-                )}
-              </button>
-            ))}
-          </div>
         </Card>
 
         {/* Quick Actions */}
