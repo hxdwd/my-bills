@@ -1,13 +1,12 @@
 import React, { useState } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuthStore } from '../stores/useAuthStore';
-import { Wallet, Eye, EyeOff, User, Lock, LogIn, UserPlus, AlertCircle } from 'lucide-react';
+import { Wallet, Eye, EyeOff, User, Lock, LogIn, AlertCircle } from 'lucide-react';
 
 export default function LoginPage() {
   const { theme } = useTheme();
-  const { login, register, loading, error } = useAuthStore();
+  const { login, loading, error } = useAuthStore();
 
-  const [isRegister, setIsRegister] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -33,21 +32,10 @@ export default function LoginPage() {
     }
 
     try {
-      if (isRegister) {
-        await register(username.trim(), password);
-      } else {
-        await login(username.trim(), password);
-      }
+      await login(username.trim(), password);
     } catch (err: any) {
-      setLocalError(err?.message || '操作失败');
+      setLocalError(err?.message || '登录失败');
     }
-  };
-
-  const toggleMode = () => {
-    setIsRegister(!isRegister);
-    setLocalError('');
-    setUsername('');
-    setPassword('');
   };
 
   const isDark = theme === 'dark';
@@ -112,7 +100,7 @@ export default function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="请输入密码"
-              autoComplete={isRegister ? 'new-password' : 'current-password'}
+              autoComplete="current-password"
               className={`w-full pl-10 pr-12 py-3 rounded-xl border transition-colors
                 ${isDark 
                   ? 'bg-[#30302e] border-[#4a4a47] text-[#faf9f5] placeholder:text-[#87867f] focus:border-[#c96442]' 
@@ -138,11 +126,6 @@ export default function LoginPage() {
         >
           {loading ? (
             <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-          ) : isRegister ? (
-            <>
-              <UserPlus size={18} />
-              <span>注册</span>
-            </>
           ) : (
             <>
               <LogIn size={18} />
@@ -151,21 +134,10 @@ export default function LoginPage() {
           )}
         </button>
 
-        {/* Toggle Mode */}
-        <div className="text-center">
-          <button
-            type="button"
-            onClick={toggleMode}
-            className={`text-sm ${isDark ? 'text-[#d97757] hover:text-[#e08a6d]' : 'text-[#c96442] hover:text-[#d97757]'}`}
-          >
-            {isRegister ? '已有账号？立即登录' : '没有账号？立即注册'}
-          </button>
-        </div>
-
         {/* Demo Hint */}
         <div className={`text-center pt-4 border-t ${isDark ? 'border-[#3d3d3a]' : 'border-[#e8e6dc]'}`}>
           <p className={`text-xs ${isDark ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}>
-            演示账号：demo / 123456
+            注册功能已关闭，请联系管理员开通账号
           </p>
         </div>
       </form>

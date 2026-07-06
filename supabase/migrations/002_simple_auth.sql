@@ -20,13 +20,9 @@ CREATE TABLE IF NOT EXISTS public.users (
 CREATE INDEX idx_users_username ON public.users(username);
 
 -- RLS: 用户只能读写自己的数据
+-- 注意: 实际策略在文件末尾统一创建（DROP POLICY IF EXISTS 后再建），
+-- 此处仅启用 RLS，避免与末尾策略重复冲突。
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users can view own data"
-  ON public.users FOR SELECT
-  USING (id = auth.uid() OR true);  -- 登录时不需要 RLS
-CREATE POLICY "Users can update own data"
-  ON public.users FOR UPDATE
-  USING (id = auth.uid() OR true);
 
 -- ============================================================
 -- 2. 密码哈希函数 (使用 pgcrypto 扩展)
@@ -257,15 +253,18 @@ CREATE POLICY "Users can CRUD own tags"
   WITH CHECK (user_id = public.get_current_user_id());
 
 -- users 表 RLS
+-- 登录验证由 SECURITY DEFINER 函数 login_user / register_user 完成，不受 RLS 限制，
+-- 因此这里对匿名用户禁止直接 SELECT，只允许查看/修改"当前登录用户自己"。
 DROP POLICY IF EXISTS "Users can view own data" ON public.users;
 CREATE POLICY "Users can view own data"
   ON public.users FOR SELECT
-  USING (true);  -- 允许查询用于登录验证
+  USING (id = public.get_current_user_id());
 
 DROP POLICY IF EXISTS "Users can update own data" ON public.users;
 CREATE POLICY "Users can update own data"
   ON public.users FOR UPDATE
-  USING (id = public.get_current_user_id());
+  USING (id = public.get_current_user_id())
+  WITH CHECK (id = public.get_current_user_id());
 
 -- ============================================================
 -- 6. 更新触发器 - 不再需要 handle_new_user (不再依赖 auth.users)
@@ -278,3 +277,15 @@ DROP TRIGGER IF EXISTS update_users_updated_at ON public.users;
 CREATE TRIGGER update_users_updated_at
   BEFORE UPDATE ON public.users
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+-- ============================================================
+-- 7. 关闭公开注册
+--   register_user 默认对 PUBLIC(anon) 可执行，存在被滥用来灌账号的风险。
+--   收回其 PUBLIC 执行权限，仅保留给 postgres / 服务角色；
+--   新账号改由管理员在 Supabase SQL Editor 中手动调用。
+--   注意: login_user 必须保留给 anon，否则无法登录。
+-- ============================================================
+REVOKE EXECUTE ON FUNCTION public.register_user(TEXT, TEXT, TEXT) FROM PUBLIC;
+
+-- 演示用户账号 (demo / 123456) 一并移除，避免公开仓库泄露后被滥用
+DELETE FROM public.users WHERE username = 'demo';
