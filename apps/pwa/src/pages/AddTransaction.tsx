@@ -698,7 +698,7 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
       {/* 键盘遮罩：点击键盘上方任意位置即可收起键盘（确认数字） */}
       {showKeyboard && (
         <div
-          className="fixed left-0 right-0 top-14 bottom-0 z-30"
+          className="fixed left-0 right-0 top-0 bottom-0 z-30"
           onClick={() => setShowKeyboard(false)}
           aria-hidden="true"
         />

@@ -34,7 +34,7 @@ export function NumberKeyboard({
   };
 
   return (
-    <div className="bg-bg-secondary dark:bg-dark-surface border-t border-border-light dark:border-dark-border safe-area-bottom">
+    <div className="fixed bottom-0 left-0 right-0 z-40 bg-bg-secondary dark:bg-dark-surface border-t border-border-light dark:border-dark-border safe-area-bottom">
       {/* Quick amounts */}
       <div className="flex gap-2 p-3 border-b border-border-light dark:border-dark-border">
         {[100, 500, 1000, 2000].map((amount) => (
