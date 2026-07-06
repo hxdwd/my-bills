@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Environment (包含 Supabase anon key，切勿入库)
+.env
+.env.local
+.env.*.local
+apps/pwa/.env
+*.env
+
+# Keep example env as reference
+!.env.example
+
+# IDE
+.idea/
+*.swp
+*.swo
+.vscode/settings.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Supabase
+supabase/.temp/
+supabase/.branches/
+
+# Cache
+.tsbuildinfo
+*.tsbuildinfo
+.vite/
