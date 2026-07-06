@@ -83,12 +83,12 @@ export default function TransactionItem({
       </div>
       
       {/* Amount & Account */}
-      <div className="text-right">
-        <div className={`font-medium font-mono ${amountColor}`}>
+      <div className="text-right shrink-0 max-w-[45%]">
+        <div className={`font-medium font-mono break-amount ${amountColor}`}>
           {amountFormat}
         </div>
         {account && (
-          <div className={`text-xs ${theme === 'dark' ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}>
+          <div className={`text-xs break-amount ${theme === 'dark' ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}>
             {account}
           </div>
         )}

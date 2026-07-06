@@ -56,21 +56,23 @@ export function TabBar({ activeTab, onTabChange, onAddClick }: TabBarProps) {
         })}
       </div>
 
-      {/* FAB for add */}
-      <button
-        onClick={onAddClick}
-        className="
-          fixed bottom-20 left-1/2 -translate-x-1/2
-          w-14 h-14 rounded-full
-          bg-brand text-white shadow-lg
-          flex items-center justify-center
-          hover:bg-brand-secondary active:scale-95
-          transition-all z-50
-        "
-        style={{ left: 'calc(50% - 40px)' }}
-      >
-        <Plus size={28} strokeWidth={2.5} />
-      </button>
+      {/* FAB for add - 仅在首页显示 */}
+      {activeTab === 'home' && (
+        <button
+          onClick={onAddClick}
+          className="
+            fixed bottom-20 left-1/2 -translate-x-1/2
+            w-14 h-14 rounded-full
+            bg-brand text-white shadow-lg shadow-brand/30
+            flex items-center justify-center
+            hover:bg-brand-secondary active:scale-95
+            transition-all z-50
+          "
+          aria-label="记一笔"
+        >
+          <Plus size={28} strokeWidth={2.5} />
+        </button>
+      )}
     </nav>
   );
 }

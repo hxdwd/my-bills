@@ -82,57 +82,57 @@ export default function HomePage({ onAddTransaction }: HomePageProps = {}) {
         </div>
       </header>
 
-      <main className="px-4 pb-4 space-y-4">
+      <main className="px-4 pb-4 space-y-4 overflow-x-hidden">
         {/* Stats Cards */}
         <div className="grid grid-cols-2 gap-3">
           {/* Monthly Income */}
-          <Card className="!p-4">
+          <Card className="!p-4 min-w-0">
             <div className="flex items-center gap-2 mb-2">
-              <div className="w-8 h-8 rounded-lg bg-[#2d8a5e]/10 flex items-center justify-center">
+              <div className="w-8 h-8 rounded-lg bg-[#2d8a5e]/10 flex items-center justify-center shrink-0">
                 <TrendingUp size={16} className="text-[#2d8a5e]" />
               </div>
-              <span className={`text-xs ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>本月收入</span>
+              <span className={`text-xs truncate ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>本月收入</span>
             </div>
-            <div className="text-xl font-bold text-[#2d8a5e] font-mono">
+            <div className="text-base sm:text-xl font-bold text-[#2d8a5e] font-mono truncate">
               ¥{monthlyIncome.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
             </div>
           </Card>
 
           {/* Monthly Expense */}
-          <Card className="!p-4">
+          <Card className="!p-4 min-w-0">
             <div className="flex items-center gap-2 mb-2">
-              <div className="w-8 h-8 rounded-lg bg-[#e05555]/10 flex items-center justify-center">
+              <div className="w-8 h-8 rounded-lg bg-[#e05555]/10 flex items-center justify-center shrink-0">
                 <TrendingDown size={16} className="text-[#e05555]" />
               </div>
-              <span className={`text-xs ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>本月支出</span>
+              <span className={`text-xs truncate ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>本月支出</span>
             </div>
-            <div className="text-xl font-bold text-[#e05555] font-mono">
+            <div className="text-base sm:text-xl font-bold text-[#e05555] font-mono truncate">
               ¥{monthlyExpense.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
             </div>
           </Card>
 
           {/* Balance */}
-          <Card className="!p-4">
+          <Card className="!p-4 min-w-0">
             <div className="flex items-center gap-2 mb-2">
-              <div className={`w-8 h-8 rounded-lg ${balance >= 0 ? 'bg-[#5b8dee]/10' : 'bg-[#e05555]/10'} flex items-center justify-center`}>
+              <div className={`w-8 h-8 rounded-lg ${balance >= 0 ? 'bg-[#5b8dee]/10' : 'bg-[#e05555]/10'} flex items-center justify-center shrink-0`}>
                 <PiggyBank size={16} className={balance >= 0 ? 'text-[#5b8dee]' : 'text-[#e05555]'} />
               </div>
-              <span className={`text-xs ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>本月结余</span>
+              <span className={`text-xs truncate ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>本月结余</span>
             </div>
-            <div className={`text-xl font-bold font-mono ${balance >= 0 ? 'text-[#5b8dee]' : 'text-[#e05555]'}`}>
+            <div className={`text-base sm:text-xl font-bold font-mono truncate ${balance >= 0 ? 'text-[#5b8dee]' : 'text-[#e05555]'}`}>
               {balance >= 0 ? '+' : ''}¥{balance.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
             </div>
           </Card>
 
           {/* Total Assets */}
-          <Card className="!p-4" onClick={() => navigate('/assets')}>
+          <Card className="!p-4 min-w-0" onClick={() => navigate('/assets')}>
             <div className="flex items-center gap-2 mb-2">
-              <div className="w-8 h-8 rounded-lg bg-[#c96442]/10 flex items-center justify-center">
+              <div className="w-8 h-8 rounded-lg bg-[#c96442]/10 flex items-center justify-center shrink-0">
                 <Wallet size={16} className="text-[#c96442]" />
               </div>
-              <span className={`text-xs ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>总资产</span>
+              <span className={`text-xs truncate ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>总资产</span>
             </div>
-            <div className="text-xl font-bold text-[#c96442] font-mono">
+            <div className="text-base sm:text-xl font-bold text-[#c96442] font-mono truncate">
               ¥{totalAssets.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
             </div>
           </Card>
@@ -145,11 +145,11 @@ export default function HomePage({ onAddTransaction }: HomePageProps = {}) {
               <h3 className={`font-medium mb-1 ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
                 本月预算
               </h3>
-              <div className="flex items-baseline gap-2">
-                <span className={`text-2xl font-bold font-mono ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+              <div className="flex items-baseline gap-2 min-w-0">
+                <span className={`text-xl sm:text-2xl font-bold font-mono truncate ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
                   ¥{budget.spent.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
                 </span>
-                <span className={`text-sm ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>
+                <span className={`text-sm shrink-0 ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>
                   / ¥{budget.total.toLocaleString()}
                 </span>
               </div>

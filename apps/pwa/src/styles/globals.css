@@ -60,6 +60,20 @@ body {
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
+  overflow-x: hidden;
+}
+
+/* 防止长文本/金额撑破容器 */
+input,
+button,
+textarea,
+select {
+  max-width: 100%;
+}
+
+.break-amount {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 /* 金额字体 */
