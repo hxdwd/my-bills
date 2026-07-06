@@ -111,28 +111,25 @@ export default function CalendarPage() {
       <main className="px-4 pb-4 space-y-4">
         {/* Month Navigation */}
         <div className="flex items-center justify-between">
-          <button onClick={prevMonth} className="p-2">
-            <ChevronLeft size={24} className={theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#5e5d59]'} />
+          <button onClick={prevMonth} className="p-1.5">
+            <ChevronLeft size={20} className={theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#5e5d59]'} />
           </button>
-          <h2 className={`text-lg font-semibold ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+          <h2 className={`text-base font-semibold ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
             {monthName}
           </h2>
-          <span className={`text-xs px-2 py-0.5 rounded-full ${theme === 'dark' ? 'bg-[#3d3d3a] text-[#c96442]' : 'bg-[#c96442]/10 text-[#c96442]'}`}>
-            今天 {todayInit.getMonth() + 1}月{todayInit.getDate()}日
-          </span>
-          <button onClick={nextMonth} className="p-2">
-            <ChevronRight size={24} className={theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#5e5d59]'} />
+          <button onClick={nextMonth} className="p-1.5">
+            <ChevronRight size={20} className={theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#5e5d59]'} />
           </button>
         </div>
 
         {/* Calendar Grid */}
-        <Card className="!p-4">
+        <Card className="!p-3">
           {/* Weekday headers */}
-          <div className="grid grid-cols-7 mb-2">
+          <div className="grid grid-cols-7 mb-1.5">
             {['日', '一', '二', '三', '四', '五', '六'].map((day) => (
               <div 
                 key={day} 
-                className={`text-center text-xs font-medium py-2
+                className={`text-center text-xs font-medium py-1.5
                   ${theme === 'dark' ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}
               >
                 {day}
@@ -141,14 +138,14 @@ export default function CalendarPage() {
           </div>
           
           {/* Calendar days */}
-          <div className="grid grid-cols-7 gap-1">
+          <div className="grid grid-cols-7 gap-0.5">
             {calendarDays.map((day, index) => (
               <button
                 key={index}
                 disabled={!day}
                 onClick={() => day && setSelectedDate(day)}
                 className={`
-                  aspect-square flex flex-col items-center justify-center rounded-xl
+                  aspect-square flex flex-col items-center justify-center rounded-lg
                   transition-all relative
                   ${!day ? 'cursor-default' : 'cursor-pointer'}
                   ${selectedDate === day 
@@ -161,9 +158,9 @@ export default function CalendarPage() {
               >
                 {day && (
                   <>
-                    <span className="text-sm font-medium">{day}</span>
+                    <span className="text-[13px] leading-none font-medium">{day}</span>
                     {hasTransactions(day) && !selectedDate && (
-                      <div className="absolute bottom-1 w-1.5 h-1.5 rounded-full bg-[#c96442]" />
+                      <div className="absolute bottom-1 w-1 h-1 rounded-full bg-[#c96442]" />
                     )}
                   </>
                 )}

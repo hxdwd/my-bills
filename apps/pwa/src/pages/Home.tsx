@@ -15,6 +15,35 @@ import {
   Moon,
 } from 'lucide-react'
 
+// 首页快捷入口的日历图标：与 emoji 风格协调，中间动态显示“今天”的日期数字
+const HomeCalendarIcon: React.FC<{ size?: number; color?: string }> = ({ size = 24, color = '#5b8dee' }) => {
+  const today = new Date().getDate()
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
+      {/* 日历主体：圆角卡片，浅色填充 + 主题色描边 */}
+      <rect x="3" y="4.5" width="18" height="16.5" rx="3" fill={`${color}1f`} stroke={color} strokeWidth="1.6" />
+      {/* 顶部横条（标题栏） */}
+      <path d="M3 9h18" stroke={color} strokeWidth="1.6" strokeLinecap="round" />
+      {/* 左右挂环 */}
+      <path d="M8 3v3.5" stroke={color} strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M16 3v3.5" stroke={color} strokeWidth="1.6" strokeLinecap="round" />
+      {/* 今日日期数字：垂直居中于卡片主体 */}
+      <text
+        x="12"
+        y="15"
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontSize="9"
+        fontWeight="700"
+        fill={color}
+        stroke="none"
+      >
+        {today}
+      </text>
+    </svg>
+  )
+}
+
 interface HomePageProps {
   onAddTransaction?: () => void;
 }
@@ -42,7 +71,7 @@ export default function HomePage({ onAddTransaction }: HomePageProps = {}) {
   const quickActions = [
     { icon: '📊', label: '报表', color: '#a855f7', path: '/reports' },
     { icon: '📅', label: '预算', color: '#f59e0b', path: '/budget' },
-    { icon: '📆', label: '日历', color: '#5b8dee', path: '/calendar' },
+    { icon: <HomeCalendarIcon color="#5b8dee" />, label: '日历', color: '#5b8dee', path: '/calendar' },
     { icon: '🤖', label: 'AI助手', color: '#c96442', path: '/ai' },
   ]
 
@@ -187,7 +216,7 @@ export default function HomePage({ onAddTransaction }: HomePageProps = {}) {
               className="flex flex-col items-center gap-1.5 p-3 rounded-xl transition-all active:scale-95"
               style={{ backgroundColor: `${action.color}10` }}
             >
-              <span className="text-2xl">{action.icon}</span>
+              <span className="text-2xl flex items-center justify-center">{action.icon}</span>
               <span className={`text-xs font-medium ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#5e5d59]'}`}>
                 {action.label}
               </span>
