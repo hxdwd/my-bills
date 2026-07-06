@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../context/ThemeContext'
 import { useApp } from '../context/AppContext'
+import { useAuthStore } from '../stores/useAuthStore'
+import { syncEngine } from '../db/sync-engine'
 import Card from '../components/ui/Card'
 import BottomSheet from '../components/ui/BottomSheet'
 import { 
@@ -19,6 +21,8 @@ import {
   Globe,
   Cloud,
   DollarSign,
+  Trash2,
+  LogOut,
 } from 'lucide-react'
 
 interface SettingItemProps {
@@ -61,9 +65,32 @@ export default function SettingsPage() {
   const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
   const { bigExpenseThreshold, setBigExpenseThreshold } = useApp()
+  const { logout } = useAuthStore()
   const [showExport, setShowExport] = useState(false)
   const [showThresholdEdit, setShowThresholdEdit] = useState(false)
   const [thresholdInput, setThresholdInput] = useState(bigExpenseThreshold.toString())
+  const [showClearCache, setShowClearCache] = useState(false)
+  const [showLogout, setShowLogout] = useState(false)
+  const [clearing, setClearing] = useState(false)
+
+  const handleClearCache = async () => {
+    setClearing(true)
+    try {
+      await syncEngine.clearAllData()
+      localStorage.removeItem('mybills_user')
+      setShowClearCache(false)
+    } catch (err) {
+      console.error('清除缓存失败:', err)
+    } finally {
+      setClearing(false)
+    }
+  }
+
+  const handleLogout = () => {
+    logout()
+    setShowLogout(false)
+    navigate('/login')
+  }
 
   const settingGroups = [
     {
@@ -111,12 +138,14 @@ export default function SettingsPage() {
         { icon: <Download size={20} className="text-[#5b8dee]" />, title: '导出数据', subtitle: '导出为 Excel/JSON', onClick: () => setShowExport(true) },
         { icon: <Upload size={20} className="text-[#10b981]" />, title: '导入数据', subtitle: '从其他应用导入', onClick: () => {} },
         { icon: <Cloud size={20} className="text-[#818cf8]" />, title: '云同步', subtitle: '未开启', onClick: () => {} },
+        { icon: <Trash2 size={20} className="text-[#e05555]" />, title: '清除缓存', subtitle: '清除本地缓存数据', onClick: () => setShowClearCache(true) },
       ]
     },
     {
       title: '安全',
       items: [
         { icon: <Shield size={20} className="text-[#c96442]" />, title: '安全设置', subtitle: '密码/生物识别', onClick: () => {} },
+        { icon: <LogOut size={20} className="text-[#e05555]" />, title: '退出登录', subtitle: '退出当前账号', onClick: () => setShowLogout(true) },
       ]
     },
     {
@@ -236,6 +265,61 @@ export default function SettingsPage() {
               <div className={`text-sm ${theme === 'dark' ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}>生成分享图片</div>
             </div>
           </button>
+        </div>
+      </BottomSheet>
+
+      {/* Clear Cache Confirm Sheet */}
+      <BottomSheet
+        isOpen={showClearCache}
+        onClose={() => setShowClearCache(false)}
+        title="清除缓存"
+      >
+        <div className="p-4 space-y-4">
+          <p className={`text-sm ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#5e5d59]'}`}>
+            将清除本地缓存的所有数据（账户、分类、交易等）。此操作不会删除云端数据，下次同步时会重新拉取。确定要继续吗？
+          </p>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setShowClearCache(false)}
+              className={`flex-1 py-3 rounded-xl font-medium ${theme === 'dark' ? 'bg-[#3d3d3a] text-[#faf9f5]' : 'bg-[#f5f4ed] text-[#141413]'}`}
+            >
+              取消
+            </button>
+            <button
+              onClick={handleClearCache}
+              disabled={clearing}
+              className="flex-1 py-3 bg-[#e05555] text-white rounded-xl font-medium disabled:opacity-50"
+            >
+              {clearing ? '清除中...' : '确认清除'}
+            </button>
+          </div>
+        </div>
+      </BottomSheet>
+
+      {/* Logout Confirm Sheet */}
+      <BottomSheet
+        isOpen={showLogout}
+        onClose={() => setShowLogout(false)}
+        title="退出登录"
+      >
+        <div className="p-4 space-y-4">
+          <p className={`text-sm ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#5e5d59]'}`}>
+            确定要退出当前账号吗？本地缓存数据将一并清除。
+          </p>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setShowLogout(false)}
+              className={`flex-1 py-3 rounded-xl font-medium ${theme === 'dark' ? 'bg-[#3d3d3a] text-[#faf9f5]' : 'bg-[#f5f4ed] text-[#141413]'}`}
+            >
+              取消
+            </button>
+            <button
+              onClick={handleLogout}
+              className="flex-1 py-3 bg-[#e05555] text-white rounded-xl font-medium"
+            >
+              确认退出
+            </button>
+          </div>
         </div>
       </BottomSheet>
     </div>
