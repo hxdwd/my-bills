@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Home, PieChart, Calendar, Settings, Wallet, Plus, TrendingUp, FileText, Sparkles } from 'lucide-react';
+import { Home, PieChart, Settings, Wallet, Plus, TrendingUp, FileText, Sparkles } from 'lucide-react';
 import { TabType } from '../../types';
 
 interface TabBarProps {
@@ -9,10 +9,47 @@ interface TabBarProps {
   onAddClick: () => void;
 }
 
-const tabs: { key: TabType; label: string; icon: typeof Home; path: string }[] = [
+// 动态日历图标：中间显示“今天”的日期数字（而非固定的 31）
+const TodayCalendarIcon: React.FC<{ size?: number; strokeWidth?: number }> = ({
+  size = 22,
+  strokeWidth = 2,
+}) => {
+  const today = new Date().getDate();
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="3" y="4" width="18" height="17" rx="2" />
+      <path d="M3 9h18" />
+      <path d="M8 2v4" />
+      <path d="M16 2v4" />
+      <text
+        x="12"
+        y="16"
+        textAnchor="middle"
+        fontSize="8"
+        fontWeight="700"
+        fill="currentColor"
+        stroke="none"
+      >
+        {today}
+      </text>
+    </svg>
+  );
+};
+
+const tabs: { key: TabType; label: string; icon: typeof Home | typeof TodayCalendarIcon; path: string }[] = [
   { key: 'home', label: '首页', icon: Home, path: '/' },
   { key: 'reports', label: '报表', icon: PieChart, path: '/reports' },
-  { key: 'calendar', label: '日历', icon: Calendar, path: '/calendar' },
+  { key: 'calendar', label: '日历', icon: TodayCalendarIcon, path: '/calendar' },
   { key: 'assets', label: '资产', icon: Wallet, path: '/assets' },
   { key: 'settings', label: '设置', icon: Settings, path: '/settings' },
 ];
