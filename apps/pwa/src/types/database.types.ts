@@ -300,6 +300,35 @@ export interface Database {
           progress_percent: number
         }[]
       }
+      login_user: {
+        Args: {
+          p_username: string
+          p_password: string
+        }
+        Returns: {
+          id: string
+          username: string
+          display_name: string | null
+          avatar_url: string | null
+          currency: string | null
+          locale: string | null
+        }[]
+      }
+      register_user: {
+        Args: {
+          p_username: string
+          p_password: string
+          p_display_name: string
+        }
+        Returns: {
+          id: string
+          username: string
+          display_name: string | null
+          avatar_url: string | null
+          currency: string | null
+          locale: string | null
+        }[]
+      }
     }
   }
 }
