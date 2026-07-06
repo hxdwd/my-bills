@@ -117,6 +117,9 @@ export default function CalendarPage() {
           <h2 className={`text-lg font-semibold ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
             {monthName}
           </h2>
+          <span className={`text-xs px-2 py-0.5 rounded-full ${theme === 'dark' ? 'bg-[#3d3d3a] text-[#c96442]' : 'bg-[#c96442]/10 text-[#c96442]'}`}>
+            今天 {todayInit.getMonth() + 1}月{todayInit.getDate()}日
+          </span>
           <button onClick={nextMonth} className="p-2">
             <ChevronRight size={24} className={theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#5e5d59]'} />
           </button>
