@@ -83,7 +83,7 @@ export function NumberKeyboard({
 
       {/* Confirm button */}
       {showConfirm && (
-        <div className="p-3">
+        <div className="p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           <button
             onClick={onConfirm}
             className="

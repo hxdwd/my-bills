@@ -502,7 +502,7 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
 
         {/* 金额显示 */}
         <div
-          onClick={() => setShowKeyboard(!showKeyboard)}
+          onClick={() => setShowKeyboard(true)}
           className="flex items-center justify-center py-8 cursor-pointer"
         >
           <span
@@ -694,6 +694,15 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
         {/* 底部留白 */}
         <div className="h-24" />
       </div>
+
+      {/* 键盘遮罩：点击键盘上方任意位置即可收起键盘（确认数字） */}
+      {showKeyboard && (
+        <div
+          className="fixed left-0 right-0 top-14 bottom-0 z-30"
+          onClick={() => setShowKeyboard(false)}
+          aria-hidden="true"
+        />
+      )}
 
       {/* 数字键盘 */}
       {showKeyboard && (
