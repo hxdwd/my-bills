@@ -9,7 +9,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg', 'pwa-512x512.svg'],
+      includeAssets: ['favicon.ico', 'favicon.svg', 'pwa-512x512.svg'],
       manifest: {
         name: '钱盒子 - 个人记账',
         short_name: '钱盒子',
@@ -18,15 +18,17 @@ export default defineConfig({
         background_color: '#f5f4ed',
         display: 'standalone',
         orientation: 'portrait',
+        start_url: '/',
+        scope: '/',
         icons: [
           {
             src: 'pwa-512x512.svg',
-            sizes: '512x512',
+            sizes: 'any',
             type: 'image/svg+xml'
           },
           {
             src: 'pwa-512x512.svg',
-            sizes: '512x512',
+            sizes: 'any',
             type: 'image/svg+xml',
             purpose: 'any maskable'
           }
