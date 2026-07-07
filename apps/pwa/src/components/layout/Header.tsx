@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sun, Moon, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 
 interface HeaderProps {
@@ -17,7 +17,7 @@ export function Header({
   onMonthChange,
   rightAction,
 }: HeaderProps) {
-  const { theme, toggleTheme } = useTheme();
+  const { toggleTheme } = useTheme();
 
   const formatMonth = (month: string) => {
     if (!month) return '';
@@ -34,45 +34,45 @@ export function Header({
   };
 
   return (
-    <header className="sticky top-0 z-40 bg-bg-primary/95 dark:bg-dark-bg/95 backdrop-blur-md border-b border-border-light dark:border-dark-border safe-area-top">
-      <div className="flex items-center justify-between h-12 px-4">
+    <header className="sticky top-0 z-40 bg-bg/80 backdrop-blur-md safe-area-top">
+      <div className="flex items-center justify-between h-14 px-5">
         {/* Left */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           {showMonthNav && (
             <>
               <button
                 onClick={() => changeMonth(-1)}
-                className="p-1.5 -ml-1.5 text-text-secondary hover:text-text-primary dark:text-dark-text dark:hover:text-dark-text transition-colors"
+                className="p-2 -ml-2 text-ink-2 hover:text-ink hover:bg-brand-tint rounded-full transition-colors"
               >
                 <ChevronLeft size={20} />
               </button>
-              <span className="text-sm font-medium text-text-primary dark:text-dark-text min-w-[80px] text-center">
+              <span className="text-[15px] font-semibold text-ink min-w-[80px] text-center">
                 {formatMonth(selectedMonth)}
               </span>
               <button
                 onClick={() => changeMonth(1)}
-                className="p-1.5 -mr-1.5 text-text-secondary hover:text-text-primary dark:text-dark-text dark:hover:text-dark-text transition-colors"
+                className="p-2 -mr-2 text-ink-2 hover:text-ink hover:bg-brand-tint rounded-full transition-colors"
               >
                 <ChevronRight size={20} />
               </button>
             </>
           )}
           {!showMonthNav && title && (
-            <h1 className="text-lg font-serif font-medium text-text-primary dark:text-dark-text">
+            <h1 className="text-xl font-serif font-semibold text-ink">
               {title}
             </h1>
           )}
         </div>
 
         {/* Right */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           {rightAction}
           <button
             onClick={toggleTheme}
-            className="p-2 text-text-secondary hover:text-text-primary dark:text-dark-text dark:hover:text-dark-text transition-colors"
+            className="p-2 text-ink-2 hover:text-ink hover:bg-brand-tint rounded-full transition-colors"
             aria-label="切换主题"
           >
-            {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
+            <span className="text-base">☀️</span>
           </button>
         </div>
       </div>

@@ -119,7 +119,7 @@ function AppContent() {
   const isSubPage = subPageRoutes[location.pathname] !== undefined;
 
   return (
-    <div className="min-h-screen bg-bg-primary dark:bg-dark-bg">
+    <div className="min-h-screen bg-bg">
       {renderPage()}
 
       {!isSubPage && (

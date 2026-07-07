@@ -41,16 +41,16 @@ export default function LoginPage() {
   const isDark = theme === 'dark';
 
   return (
-    <div className={`min-h-screen flex flex-col items-center justify-center px-6 ${isDark ? 'bg-[#141413]' : 'bg-[#f5f4ed]'}`}>
+    <div className={`min-h-screen flex flex-col items-center justify-center px-6 ${isDark ? 'bg-[#141413]' : 'bg-bg'}`}>
       {/* Logo */}
       <div className="mb-8 text-center">
-        <div className="w-20 h-20 mx-auto mb-4 rounded-2xl bg-[#c96442]/10 flex items-center justify-center">
-          <Wallet size={40} className="text-[#c96442]" />
+        <div className="w-20 h-20 mx-auto mb-4 rounded-2xl bg-brand/10 flex items-center justify-center">
+          <Wallet size={40} className="text-ink" />
         </div>
-        <h1 className={`text-2xl font-bold mb-1 ${isDark ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+        <h1 className={`text-2xl font-bold mb-1 ${isDark ? 'text-ink' : 'text-ink'}`}>
           钱盒子
         </h1>
-        <p className={`text-sm ${isDark ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>
+        <p className={`text-sm ${isDark ? 'text-ink-2' : 'text-ink-2'}`}>
           温暖的个人财务管家
         </p>
       </div>
@@ -68,11 +68,11 @@ export default function LoginPage() {
 
         {/* Username */}
         <div>
-          <label className={`block text-sm font-medium mb-1.5 ${isDark ? 'text-[#b0aea5]' : 'text-[#5e5d59]'}`}>
+          <label className={`block text-sm font-medium mb-1.5 ${isDark ? 'text-ink-2' : 'text-ink-2'}`}>
             用户名
           </label>
           <div className="relative">
-            <User size={18} className={`absolute left-3 top-1/2 -translate-y-1/2 ${isDark ? 'text-[#87867f]' : 'text-[#b0aea5]'}`} />
+            <User size={18} className={`absolute left-3 top-1/2 -translate-y-1/2 ${isDark ? 'text-ink-2' : 'text-ink-2'}`} />
             <input
               type="text"
               value={username}
@@ -81,8 +81,8 @@ export default function LoginPage() {
               autoComplete="username"
               className={`w-full pl-10 pr-4 py-3 rounded-xl border transition-colors
                 ${isDark 
-                  ? 'bg-[#30302e] border-[#4a4a47] text-[#faf9f5] placeholder:text-[#87867f] focus:border-[#c96442]' 
-                  : 'bg-white border-[#e8e6dc] text-[#141413] placeholder:text-[#b0aea5] focus:border-[#c96442]'
+                  ? 'bg-surface border-brand-tint text-ink placeholder:text-ink-2 focus:border-brand' 
+                  : 'bg-white border-brand-tint text-ink placeholder:text-ink-2 focus:border-brand'
                 } focus:outline-none focus:ring-2 focus:ring-[#c96442]/20`}
             />
           </div>
@@ -90,11 +90,11 @@ export default function LoginPage() {
 
         {/* Password */}
         <div>
-          <label className={`block text-sm font-medium mb-1.5 ${isDark ? 'text-[#b0aea5]' : 'text-[#5e5d59]'}`}>
+          <label className={`block text-sm font-medium mb-1.5 ${isDark ? 'text-ink-2' : 'text-ink-2'}`}>
             密码
           </label>
           <div className="relative">
-            <Lock size={18} className={`absolute left-3 top-1/2 -translate-y-1/2 ${isDark ? 'text-[#87867f]' : 'text-[#b0aea5]'}`} />
+            <Lock size={18} className={`absolute left-3 top-1/2 -translate-y-1/2 ${isDark ? 'text-ink-2' : 'text-ink-2'}`} />
             <input
               type={showPassword ? 'text' : 'password'}
               value={password}
@@ -103,14 +103,14 @@ export default function LoginPage() {
               autoComplete="current-password"
               className={`w-full pl-10 pr-12 py-3 rounded-xl border transition-colors
                 ${isDark 
-                  ? 'bg-[#30302e] border-[#4a4a47] text-[#faf9f5] placeholder:text-[#87867f] focus:border-[#c96442]' 
-                  : 'bg-white border-[#e8e6dc] text-[#141413] placeholder:text-[#b0aea5] focus:border-[#c96442]'
+                  ? 'bg-surface border-brand-tint text-ink placeholder:text-ink-2 focus:border-brand' 
+                  : 'bg-white border-brand-tint text-ink placeholder:text-ink-2 focus:border-brand'
                 } focus:outline-none focus:ring-2 focus:ring-[#c96442]/20`}
             />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className={`absolute right-3 top-1/2 -translate-y-1/2 p-1 ${isDark ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}
+              className={`absolute right-3 top-1/2 -translate-y-1/2 p-1 ${isDark ? 'text-ink-2' : 'text-ink-2'}`}
             >
               {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
@@ -121,7 +121,7 @@ export default function LoginPage() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full py-3 bg-[#c96442] hover:bg-[#d97757] disabled:bg-[#c96442]/50 
+          className="w-full py-3 bg-brand hover:bg-[#d97757] disabled:bg-brand/50 
             text-white rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
         >
           {loading ? (
@@ -135,8 +135,8 @@ export default function LoginPage() {
         </button>
 
         {/* Demo Hint */}
-        <div className={`text-center pt-4 border-t ${isDark ? 'border-[#3d3d3a]' : 'border-[#e8e6dc]'}`}>
-          <p className={`text-xs ${isDark ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}>
+        <div className={`text-center pt-4 border-t ${isDark ? 'border-brand-tint' : 'border-brand-tint'}`}>
+          <p className={`text-xs ${isDark ? 'text-ink-2' : 'text-ink-2'}`}>
             注册功能已关闭，请联系管理员开通账号
           </p>
         </div>

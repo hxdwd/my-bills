@@ -45,23 +45,23 @@ export default function SearchPage() {
     const parts = text.split(new RegExp(`(${query})`, 'gi'))
     return parts.map((part, i) => 
       part.toLowerCase() === query.toLowerCase() 
-        ? <mark key={i} className="bg-[#c96442]/20 text-[#c96442] rounded px-0.5">{part}</mark>
+        ? <mark key={i} className="bg-brand/20 text-ink rounded px-0.5">{part}</mark>
         : part
     )
   }
 
   return (
-    <div className={`min-h-screen ${theme === 'dark' ? 'bg-[#141413]' : 'bg-[#f5f4ed]'}`}>
+    <div className={`min-h-screen bg-bg`}>
       {/* Header */}
-      <header className={`sticky top-0 z-40 px-4 pt-3 pb-2 ${theme === 'dark' ? 'bg-[#141413]' : 'bg-[#f5f4ed]'}`}>
+      <header className={`sticky top-0 z-40 bg-bg/80 backdrop-blur-md safe-area-top px-5 pt-3 pb-2 `}>
         <div className="flex items-center gap-3">
           <button onClick={() => navigate(-1)} className="p-1">
-            <X size={24} className={theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#5e5d59]'} />
+            <X size={24} className={theme === 'dark' ? 'text-ink-2' : 'text-ink-2'} />
           </button>
           <div className={`flex-1 flex items-center gap-2 px-4 py-2.5 rounded-full ${
-            theme === 'dark' ? 'bg-[#30302e]' : 'bg-white'
+            theme === 'dark' ? 'bg-surface' : 'bg-white'
           }`}>
-            <Search size={18} className={theme === 'dark' ? 'text-[#87867f]' : 'text-[#b0aea5]'} />
+            <Search size={18} className={theme === 'dark' ? 'text-ink-2' : 'text-ink-2'} />
             <input
               type="text"
               value={query}
@@ -69,18 +69,18 @@ export default function SearchPage() {
               placeholder="搜索金额、分类、备注..."
               autoFocus
               className={`flex-1 bg-transparent outline-none text-sm ${
-                theme === 'dark' ? 'text-[#faf9f5] placeholder-[#87867f]' : 'text-[#141413] placeholder-[#b0aea5]'
+                theme === 'dark' ? 'text-ink placeholder-[#87867f]' : 'text-ink placeholder-[#b0aea5]'
               }`}
             />
             {query && (
               <button onClick={() => setQuery('')}>
-                <X size={16} className={theme === 'dark' ? 'text-[#87867f]' : 'text-[#b0aea5]'} />
+                <X size={16} className={theme === 'dark' ? 'text-ink-2' : 'text-ink-2'} />
               </button>
             )}
           </div>
           <button 
             onClick={() => setShowFilters(!showFilters)}
-            className={`p-2 rounded-full ${showFilters ? 'bg-[#c96442] text-white' : theme === 'dark' ? 'bg-[#30302e] text-[#b0aea5]' : 'bg-white text-[#5e5d59]'}`}
+            className={`p-2 rounded-full ${showFilters ? 'bg-brand text-white' : theme === 'dark' ? 'bg-surface text-ink-2' : 'bg-white text-ink-2'}`}
           >
             <Filter size={20} />
           </button>
@@ -89,7 +89,7 @@ export default function SearchPage() {
 
       {/* Filters */}
       {showFilters && (
-        <div className={`px-4 py-3 border-b ${theme === 'dark' ? 'border-[#3d3d3a] bg-[#141413]' : 'border-[#f0eee6] bg-[#f5f4ed]'}`}>
+        <div className={`px-4 py-3 border-b ${theme === 'dark' ? 'border-brand-tint bg-[#141413]' : 'border-brand-tint bg-bg'}`}>
           <div className="flex gap-2">
             {(['all', 'expense', 'income', 'transfer'] as const).map(type => (
               <button
@@ -97,8 +97,8 @@ export default function SearchPage() {
                 onClick={() => setTypeFilter(type)}
                 className={`px-4 py-2 rounded-full text-sm font-medium transition-colors
                   ${typeFilter === type 
-                    ? 'bg-[#c96442] text-white' 
-                    : theme === 'dark' ? 'bg-[#30302e] text-[#b0aea5]' : 'bg-white text-[#5e5d59]'
+                    ? 'bg-brand text-white' 
+                    : theme === 'dark' ? 'bg-surface text-ink-2' : 'bg-white text-ink-2'
                   }`}
               >
                 {type === 'all' ? '全部' : type === 'expense' ? '支出' : type === 'income' ? '收入' : '转账'}
@@ -108,11 +108,11 @@ export default function SearchPage() {
         </div>
       )}
 
-      <main className="px-4 pb-4">
+      <main className="px-5 pb-6 animate-page-fade">
         {/* Search Results */}
         {query ? (
           <div>
-            <div className={`text-sm mb-3 ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>
+            <div className={`text-sm mb-3 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
               找到 {filteredTransactions.length} 条结果
             </div>
             
@@ -137,7 +137,7 @@ export default function SearchPage() {
                 })}
               </Card>
             ) : (
-              <div className={`text-center py-12 ${theme === 'dark' ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}>
+              <div className={`text-center py-12 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                 <div className="text-4xl mb-3">🔍</div>
                 <p>未找到相关交易</p>
                 <p className="text-sm mt-1">试试其他关键词</p>
@@ -149,7 +149,7 @@ export default function SearchPage() {
             {/* History */}
             {searchHistory.length > 0 && (
               <div>
-                <h3 className={`font-semibold mb-3 ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+                <h3 className={`font-semibold mb-3 ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
                   搜索历史
                 </h3>
                 <div className="flex flex-wrap gap-2">
@@ -158,7 +158,7 @@ export default function SearchPage() {
                       key={term}
                       onClick={() => setQuery(term)}
                       className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-sm
-                        ${theme === 'dark' ? 'bg-[#30302e] text-[#b0aea5]' : 'bg-white text-[#5e5d59]'}`}
+                        ${theme === 'dark' ? 'bg-surface text-ink-2' : 'bg-white text-ink-2'}`}
                     >
                       <Clock size={14} />
                       {term}
@@ -170,7 +170,7 @@ export default function SearchPage() {
 
             {/* Recent Transactions */}
             <div>
-              <h3 className={`font-semibold mb-3 ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+              <h3 className={`font-semibold mb-3 ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
                 最近交易
               </h3>
               <Card className="!p-0 divide-y divide-[#f0eee6] dark:divide-[#3d3d3a]">

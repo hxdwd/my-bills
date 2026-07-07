@@ -1,10 +1,11 @@
-import { ButtonHTMLAttributes, forwardRef } from 'react'
+import { ButtonHTMLAttributes, forwardRef, useRef } from 'react'
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'primary' | 'secondary' | 'ghost' | 'danger'
   size?: 'sm' | 'md' | 'lg'
   loading?: boolean
   icon?: React.ReactNode
+  fullWidth?: boolean
 }
 
 const Button = forwardRef<HTMLButtonElement, ButtonProps>(({
@@ -13,30 +14,54 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(({
   size = 'md',
   loading = false,
   icon,
+  fullWidth = false,
   children,
   disabled,
+  onClick,
   ...props
 }, ref) => {
-  const baseStyles = 'inline-flex items-center justify-center font-medium transition-all duration-200 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed'
-  
+  const btnRef = useRef<HTMLButtonElement | null>(null)
+
+  const baseStyles = 'relative inline-flex items-center justify-center font-semibold overflow-hidden transition-all duration-200 active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed select-none'
+
   const variants = {
-    primary: 'bg-[#c96442] text-white hover:bg-[#b85a3a] shadow-sm',
-    secondary: 'bg-[#e8e6dc] text-[#4d4c48] hover:bg-[#dedad0]',
-    ghost: 'bg-transparent text-[#5e5d59] hover:bg-[#e8e6dc]',
-    danger: 'bg-[#e05555] text-white hover:bg-[#d04545]',
+    // 主按钮：品牌金底 + 深墨字（保证对比度）
+    primary: 'bg-brand text-ink shadow-soft-brand hover:bg-brand-strong',
+    secondary: 'bg-brand-tint text-ink hover:bg-brand-soft',
+    ghost: 'bg-transparent text-ink-2 hover:bg-brand-tint',
+    danger: 'bg-danger text-white shadow-soft hover:brightness-95',
   }
-  
+
   const sizes = {
-    sm: 'h-7 px-3 text-xs rounded-lg gap-1',
-    md: 'h-9 px-4 text-sm rounded-xl gap-1.5',
-    lg: 'h-11 px-6 text-base rounded-xl gap-2',
+    sm: 'h-9 px-4 text-sm rounded-2xl gap-1.5',
+    md: 'h-11 px-5 text-[15px] rounded-2xl gap-2',
+    lg: 'h-[52px] px-6 text-base rounded-2xl gap-2',
+  }
+
+  const handleRipple = (e: React.MouseEvent<HTMLButtonElement>) => {
+    const btn = btnRef.current
+    if (!btn || disabled || loading) return
+    const rect = btn.getBoundingClientRect()
+    const size = Math.max(rect.width, rect.height)
+    const wave = document.createElement('span')
+    wave.className = 'ripple-wave'
+    wave.style.width = wave.style.height = `${size}px`
+    wave.style.left = `${e.clientX - rect.left - size / 2}px`
+    wave.style.top = `${e.clientY - rect.top - size / 2}px`
+    btn.appendChild(wave)
+    setTimeout(() => wave.remove(), 500)
   }
 
   return (
     <button
-      ref={ref}
-      className={`${baseStyles} ${variants[variant]} ${sizes[size]} ${className}`}
+      ref={(node) => {
+        btnRef.current = node
+        if (typeof ref === 'function') ref(node)
+        else if (ref) (ref as React.MutableRefObject<HTMLButtonElement | null>).current = node
+      }}
+      className={`${baseStyles} ${variants[variant]} ${sizes[size]} ${fullWidth ? 'w-full' : ''} ${className}`}
       disabled={disabled || loading}
+      onClick={(e) => { handleRipple(e); onClick?.(e) }}
       {...props}
     >
       {loading ? (

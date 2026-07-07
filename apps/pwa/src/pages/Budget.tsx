@@ -104,18 +104,18 @@ export default function BudgetPage() {
   }
 
   return (
-    <div className={`min-h-screen ${theme === 'dark' ? 'bg-[#141413]' : 'bg-[#f5f4ed]'}`}>
+    <div className={`min-h-screen bg-bg`}>
       {/* Header */}
-      <header className={`sticky top-0 z-40 px-4 pt-3 pb-2 ${theme === 'dark' ? 'bg-[#141413]' : 'bg-[#f5f4ed]'}`}>
-        <h1 className={`text-lg font-semibold ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+      <header className={`sticky top-0 z-40 bg-bg/80 backdrop-blur-md safe-area-top px-5 pt-3 pb-2 `}>
+        <h1 className={`text-lg font-semibold ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
           预算
         </h1>
       </header>
 
-      <main className="px-4 pb-4 space-y-4">
+      <main className="px-5 pb-6 space-y-4 animate-page-fade">
         {/* Month Selector */}
-        <div className={`px-4 py-3 rounded-xl ${theme === 'dark' ? 'bg-[#30302e]' : 'bg-[#faf9f5]'}`}>
-          <span className={`font-medium ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+        <div className={`px-4 py-3 rounded-2xl bg-surface`}>
+          <span className={`font-medium ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
             {currentMonthDisplay}
           </span>
         </div>
@@ -123,15 +123,15 @@ export default function BudgetPage() {
         {/* Main Budget Card */}
         <Card className="!p-5">
           <div className="flex items-center justify-between mb-4">
-            <h3 className={`text-sm font-medium ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>
+            <h3 className={`text-sm font-medium ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
               总预算
             </h3>
             {totalBudget && (
               <button
                 onClick={() => openEdit(totalBudget.id, '总预算', totalBudget.amount)}
-                className={`p-1.5 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-[#4a4a47]' : 'hover:bg-[#e8e6dc]'}`}
+                className={`p-1.5 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-brand-tint' : 'hover:bg-brand-tint'}`}
               >
-                <Edit3 size={14} className={theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'} />
+                <Edit3 size={14} className={theme === 'dark' ? 'text-ink-2' : 'text-ink-2'} />
               </button>
             )}
           </div>
@@ -141,13 +141,13 @@ export default function BudgetPage() {
               progress={budgetProgress.percentage}
               size={160}
               strokeWidth={14}
-              color={budgetProgress.percentage > 80 ? '#e05555' : budgetProgress.percentage > 60 ? '#f59e0b' : '#2d8a5e'}
+              color={budgetProgress.percentage > 80 ? '#FF6B6B' : budgetProgress.percentage > 60 ? '#E5C45E' : '#4CAF50'}
             >
               <div className="text-center">
-                <div className={`text-3xl font-bold ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+                <div className={`text-3xl font-bold ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
                   {budgetProgress.percentage}%
                 </div>
-                <div className={`text-xs ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>
+                <div className={`text-xs ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                   已使用
                 </div>
               </div>
@@ -156,29 +156,29 @@ export default function BudgetPage() {
 
           <div className="grid grid-cols-2 gap-4 mb-4">
             <div className="text-center">
-              <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>
+              <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                 已花费
               </div>
-              <div className={`text-xl font-bold font-mono text-[#e05555]`}>
+              <div className={`text-xl font-bold font-mono text-danger`}>
                 ¥{budgetProgress.spent.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
               </div>
             </div>
             <div className="text-center">
-              <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>
+              <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                 剩余
               </div>
-              <div className={`text-xl font-bold font-mono ${budgetProgress.total - budgetProgress.spent >= 0 ? 'text-[#2d8a5e]' : 'text-[#e05555]'}`}>
+              <div className={`text-xl font-bold font-mono ${budgetProgress.total - budgetProgress.spent >= 0 ? 'text-ok' : 'text-danger'}`}>
                 ¥{(budgetProgress.total - budgetProgress.spent).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
               </div>
             </div>
           </div>
 
-          <div className={`flex items-center justify-between p-3 rounded-xl ${theme === 'dark' ? 'bg-[#3d3d3a]' : 'bg-[#f5f4ed]'}`}>
+          <div className={`flex items-center justify-between p-3 rounded-xl ${theme === 'dark' ? 'bg-surface' : 'bg-bg'}`}>
             <div>
-              <div className={`text-sm ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>
+              <div className={`text-sm ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                 剩余 {daysRemaining} 天
               </div>
-              <div className={`font-medium ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+              <div className={`font-medium ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
                 日均可用 ¥{dailyBudget.toFixed(0)}
               </div>
             </div>
@@ -192,7 +192,7 @@ export default function BudgetPage() {
                   setEditAmount('')
                 }
               }}
-              className={`text-sm font-medium ${theme === 'dark' ? 'text-[#b0aea5] hover:text-[#faf9f5]' : 'text-[#87867f] hover:text-[#141413]'} transition-colors`}
+              className={`text-sm font-medium ${theme === 'dark' ? 'text-ink-2 hover:text-ink' : 'text-ink-2 hover:text-ink'} transition-colors`}
             >
               {totalBudget ? '预算 ¥' + totalBudget.amount.toLocaleString() : '设置总预算'}
             </button>
@@ -207,20 +207,20 @@ export default function BudgetPage() {
           })
           if (overBudgetCategories.length === 0) return null
           return (
-            <Card className="!p-4 border-[#e05555]/30 bg-[#e05555]/5">
+            <Card className="!p-4 border-danger/30 bg-danger/5">
               <div className="flex items-center gap-3 mb-2">
-                <AlertTriangle size={20} className="text-[#e05555]" />
-                <span className="font-medium text-[#e05555]">超支提醒</span>
+                <AlertTriangle size={20} className="text-danger" />
+                <span className="font-medium text-danger">超支提醒</span>
               </div>
               <div className="space-y-2">
                 {overBudgetCategories.map(b => {
                   const spent = getCategoryBudgetSpent(b.categoryId!)
                   return (
                     <div key={b.id} className="flex items-center justify-between">
-                      <span className={`text-sm ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+                      <span className={`text-sm ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
                         {b.categoryName}
                       </span>
-                      <span className="text-sm text-[#e05555]">
+                      <span className="text-sm text-danger">
                         超支 ¥{(spent - b.amount).toLocaleString()}
                       </span>
                     </div>
@@ -234,12 +234,12 @@ export default function BudgetPage() {
         {/* Category Budgets */}
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h3 className={`font-semibold ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+            <h3 className={`font-semibold ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
               分类预算
             </h3>
             <button
               onClick={() => setShowAddBudget(true)}
-              className="text-[#c96442] text-sm font-medium"
+              className="text-ink text-sm font-medium"
             >
               + 添加
             </button>
@@ -257,48 +257,48 @@ export default function BudgetPage() {
                   <div className="flex items-center gap-3 mb-3">
                     <div 
                       className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
-                      style={{ backgroundColor: category ? `${category.color}15` : '#f5f4ed' }}
+                      style={{ backgroundColor: category ? `${category.color}15` : '#FFF7E6' }}
                     >
                       {category?.icon || '📝'}
                     </div>
                     <div className="flex-1">
-                      <div className={`font-medium ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+                      <div className={`font-medium ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
                         {budget.categoryName}
                       </div>
                       <div className="flex items-baseline gap-1">
-                        <span className={`text-sm font-mono ${isOver ? 'text-[#e05555]' : theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#5e5d59]'}`}>
+                        <span className={`text-sm font-mono ${isOver ? 'text-danger' : theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                           ¥{realSpent.toLocaleString()}
                         </span>
-                        <span className={`text-xs ${theme === 'dark' ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}>
+                        <span className={`text-xs ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                           / ¥{budget.amount.toLocaleString()}
                         </span>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className={`text-sm font-medium ${isOver ? 'text-[#e05555]' : percentage > 80 ? 'text-[#f59e0b]' : 'text-[#2d8a5e]'}`}>
+                      <span className={`text-sm font-medium ${isOver ? 'text-danger' : percentage > 80 ? 'text-brand-strong' : 'text-ok'}`}>
                         {isOver ? '超支' : `${percentage}%`}
                       </span>
                       <button
                         onClick={() => openEdit(budget.id, budget.categoryName || '分类', budget.amount, budget.categoryId)}
-                        className={`p-1 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-[#4a4a47]' : 'hover:bg-[#e8e6dc]'}`}
+                        className={`p-1 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-brand-tint' : 'hover:bg-brand-tint'}`}
                       >
-                        <Edit3 size={14} className={theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'} />
+                        <Edit3 size={14} className={theme === 'dark' ? 'text-ink-2' : 'text-ink-2'} />
                       </button>
                     </div>
                   </div>
                   
                   {/* Progress bar */}
-                  <div className={`h-2 rounded-full overflow-hidden ${theme === 'dark' ? 'bg-[#3d3d3a]' : 'bg-[#e8e6dc]'}`}>
+                  <div className={`h-2 rounded-full overflow-hidden ${theme === 'dark' ? 'bg-surface' : 'bg-brand-tint'}`}>
                     <div 
                       className={`h-full rounded-full transition-all duration-500 ${
-                        isOver ? 'bg-[#e05555]' : percentage > 80 ? 'bg-[#f59e0b]' : 'bg-[#2d8a5e]'
+                        isOver ? 'bg-danger' : percentage > 80 ? 'bg-[#E5C45E]' : 'bg-ok'
                       }`}
                       style={{ width: `${Math.min(percentage, 100)}%` }}
                     />
                   </div>
                   
                   {isOver && (
-                    <div className="mt-2 text-xs text-[#e05555]">
+                    <div className="mt-2 text-xs text-danger">
                       已超支 ¥{(realSpent - budget.amount).toLocaleString()}
                     </div>
                   )}
@@ -307,11 +307,11 @@ export default function BudgetPage() {
             })}
 
             {categoryBudgets.length === 0 && (
-              <div className={`text-center py-8 ${theme === 'dark' ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}>
+              <div className={`text-center py-8 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                 <p className="text-sm">暂无分类预算</p>
                 <button
                   onClick={() => setShowAddBudget(true)}
-                  className="mt-2 text-[#c96442] text-sm font-medium"
+                  className="mt-2 text-ink text-sm font-medium"
                 >
                   + 添加分类预算
                 </button>
@@ -329,11 +329,11 @@ export default function BudgetPage() {
       >
         <div className="p-4 space-y-4">
           <div>
-            <label className={`block text-sm mb-2 ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#5e5d59]'}`}>
+            <label className={`block text-sm mb-2 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
               预算金额
             </label>
             <div className="relative">
-              <span className={`absolute left-4 top-1/2 -translate-y-1/2 text-lg font-medium ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>
+              <span className={`absolute left-4 top-1/2 -translate-y-1/2 text-lg font-medium ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                 ¥
               </span>
               <input
@@ -343,9 +343,9 @@ export default function BudgetPage() {
                 placeholder="输入预算金额"
                 className={`w-full pl-8 pr-4 py-3 rounded-xl text-lg font-mono
                   ${theme === 'dark' 
-                    ? 'bg-[#3d3d3a] text-[#faf9f5] placeholder-[#87867f]' 
-                    : 'bg-[#f5f4ed] text-[#141413] placeholder-[#b0aea5]'
-                  } outline-none focus:ring-2 focus:ring-[#c96442]/50`}
+                    ? 'bg-surface text-ink placeholder-[#87867f]' 
+                    : 'bg-bg text-ink placeholder-[#b0aea5]'
+                  } outline-none focus:ring-2 focus:ring-brand/40`}
                 autoFocus
               />
             </div>
@@ -355,15 +355,15 @@ export default function BudgetPage() {
             <button
               onClick={() => setEditTarget(null)}
               className={`flex-1 py-3 rounded-xl font-medium text-sm transition-colors
-                ${theme === 'dark' ? 'bg-[#3d3d3a] text-[#b0aea5] hover:bg-[#4a4a47]' : 'bg-[#e8e6dc] text-[#5e5d59] hover:bg-[#dedad0]'}`}
+                ${theme === 'dark' ? 'bg-surface text-ink-2 hover:bg-brand-tint' : 'bg-brand-tint text-ink-2 hover:bg-[#dedad0]'}`}
             >
               取消
             </button>
             <button
               onClick={handleSaveEdit}
               disabled={saving || !editAmount || parseFloat(editAmount) <= 0}
-              className="flex-1 py-3 bg-[#c96442] text-white rounded-xl font-medium text-sm
-                disabled:opacity-50 disabled:cursor-not-allowed active:bg-[#b85638] transition-colors"
+              className="flex-1 py-3 bg-brand text-white rounded-xl font-medium text-sm
+                disabled:opacity-50 disabled:cursor-not-allowed active:bg-brand-strong transition-colors"
             >
               {saving ? '保存中...' : '保存'}
             </button>
@@ -380,7 +380,7 @@ export default function BudgetPage() {
         <div className="p-4 space-y-4">
           {/* 选择分类 */}
           <div>
-            <label className={`block text-sm mb-3 ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#5e5d59]'}`}>
+            <label className={`block text-sm mb-3 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
               选择分类
             </label>
             <div className="grid grid-cols-4 gap-2">
@@ -392,20 +392,20 @@ export default function BudgetPage() {
                     onClick={() => setSelectedCategoryId(cat.id === selectedCategoryId ? null : cat.id)}
                     className={`p-3 rounded-xl flex flex-col items-center gap-1 transition-all
                       ${cat.id === selectedCategoryId
-                        ? 'bg-[#c96442]/15 ring-2 ring-[#c96442]'
+                        ? 'bg-brand/15 ring-2 ring-brand'
                         : theme === 'dark' 
-                          ? 'bg-[#3d3d3a] hover:bg-[#4a4a47]' 
-                          : 'bg-[#f5f4ed] hover:bg-[#e8e6dc]'
+                          ? 'bg-surface hover:bg-brand-tint' 
+                          : 'bg-bg hover:bg-brand-tint'
                       }`}
                   >
                     <span className="text-2xl">{cat.icon}</span>
-                    <span className={`text-xs ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+                    <span className={`text-xs ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
                       {cat.name}
                     </span>
                   </button>
                 ))}
               {categories.expense.filter(cat => !categoryBudgets.some(b => b.categoryId === cat.id)).length === 0 && (
-                <div className="col-span-4 text-center py-4 text-sm text-[#87867f]">
+                <div className="col-span-4 text-center py-4 text-sm text-ink-2">
                   所有分类已设置预算
                 </div>
               )}
@@ -414,11 +414,11 @@ export default function BudgetPage() {
 
           {/* 预算金额 */}
           <div>
-            <label className={`block text-sm mb-2 ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#5e5d59]'}`}>
+            <label className={`block text-sm mb-2 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
               预算金额
             </label>
             <div className="relative">
-              <span className={`absolute left-4 top-1/2 -translate-y-1/2 text-lg font-medium ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>
+              <span className={`absolute left-4 top-1/2 -translate-y-1/2 text-lg font-medium ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                 ¥
               </span>
               <input
@@ -428,9 +428,9 @@ export default function BudgetPage() {
                 placeholder="输入预算金额"
                 className={`w-full pl-8 pr-4 py-3 rounded-xl text-lg font-mono
                   ${theme === 'dark' 
-                    ? 'bg-[#3d3d3a] text-[#faf9f5] placeholder-[#87867f]' 
-                    : 'bg-[#f5f4ed] text-[#141413] placeholder-[#b0aea5]'
-                  } outline-none focus:ring-2 focus:ring-[#c96442]/50`}
+                    ? 'bg-surface text-ink placeholder-[#87867f]' 
+                    : 'bg-bg text-ink placeholder-[#b0aea5]'
+                  } outline-none focus:ring-2 focus:ring-brand/40`}
               />
             </div>
           </div>
@@ -439,8 +439,8 @@ export default function BudgetPage() {
           <button
             onClick={handleAddBudget}
             disabled={adding || !selectedCategoryId || !addAmount || parseFloat(addAmount) <= 0}
-            className="w-full py-3 bg-[#c96442] text-white rounded-xl font-medium
-              disabled:opacity-50 disabled:cursor-not-allowed active:bg-[#b85638] transition-colors"
+            className="w-full py-3 bg-brand text-white rounded-xl font-medium
+              disabled:opacity-50 disabled:cursor-not-allowed active:bg-brand-strong transition-colors"
           >
             {adding ? '添加中...' : '保存'}
           </button>

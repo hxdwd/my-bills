@@ -100,25 +100,25 @@ export default function CalendarPage() {
   }
 
   return (
-    <div className={`min-h-screen ${theme === 'dark' ? 'bg-[#141413]' : 'bg-[#f5f4ed]'}`}>
+    <div className={`min-h-screen bg-bg`}>
       {/* Header */}
-      <header className={`sticky top-0 z-40 px-4 pt-3 pb-2 ${theme === 'dark' ? 'bg-[#141413]' : 'bg-[#f5f4ed]'}`}>
-        <h1 className={`text-lg font-semibold ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+      <header className={`sticky top-0 z-40 bg-bg/80 backdrop-blur-md safe-area-top px-5 pt-3 pb-2 `}>
+        <h1 className={`text-lg font-semibold ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
           日历
         </h1>
       </header>
 
-      <main className="px-4 pb-4 space-y-4">
+      <main className="px-5 pb-6 space-y-4 animate-page-fade">
         {/* Month Navigation */}
         <div className="flex items-center justify-between">
           <button onClick={prevMonth} className="p-1.5">
-            <ChevronLeft size={20} className={theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#5e5d59]'} />
+            <ChevronLeft size={20} className={theme === 'dark' ? 'text-ink-2' : 'text-ink-2'} />
           </button>
-          <h2 className={`text-base font-semibold ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+          <h2 className={`text-base font-semibold ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
             {monthName}
           </h2>
           <button onClick={nextMonth} className="p-1.5">
-            <ChevronRight size={20} className={theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#5e5d59]'} />
+            <ChevronRight size={20} className={theme === 'dark' ? 'text-ink-2' : 'text-ink-2'} />
           </button>
         </div>
 
@@ -130,7 +130,7 @@ export default function CalendarPage() {
               <div 
                 key={day} 
                 className={`text-center text-xs font-medium py-1.5
-                  ${theme === 'dark' ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}
+                  ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}
               >
                 {day}
               </div>
@@ -149,10 +149,10 @@ export default function CalendarPage() {
                   transition-all relative
                   ${!day ? 'cursor-default' : 'cursor-pointer'}
                   ${selectedDate === day 
-                    ? 'bg-[#c96442] text-white' 
+                    ? 'bg-brand text-white' 
                     : isToday(day)
-                      ? `ring-2 ring-[#c96442] font-bold ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#c96442]'}`
-                      : `${theme === 'dark' ? 'hover:bg-[#30302e] text-[#faf9f5]' : 'hover:bg-[#faf9f5] text-[#141413]'}`
+                      ? `ring-2 ring-brand font-bold ${theme === 'dark' ? 'text-ink' : 'text-ink'}`
+                      : `${theme === 'dark' ? 'hover:bg-surface text-ink' : 'hover:bg-[#faf9f5] text-ink'}`
                   }
                 `}
               >
@@ -160,7 +160,7 @@ export default function CalendarPage() {
                   <>
                     <span className="text-[13px] leading-none font-medium">{day}</span>
                     {hasTransactions(day) && !selectedDate && (
-                      <div className="absolute bottom-1 w-1 h-1 rounded-full bg-[#c96442]" />
+                      <div className="absolute bottom-1 w-1 h-1 rounded-full bg-brand" />
                     )}
                   </>
                 )}
@@ -173,27 +173,27 @@ export default function CalendarPage() {
         {selectedDate && (
           <Card className="!p-4">
             <div className="flex items-center justify-between mb-3">
-              <h3 className={`font-semibold ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+              <h3 className={`font-semibold ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
                 {month + 1}月{selectedDate}日
               </h3>
-              <span className="text-xs text-[#87867f]">
+              <span className="text-xs text-ink-2">
                 {selectedDayTransactions.length}笔交易
               </span>
             </div>
             
             <div className="grid grid-cols-2 gap-3 mb-3">
-              <div className={`p-2 rounded-lg ${theme === 'dark' ? 'bg-[#3d3d3a]' : 'bg-[#f5f4ed]'}`}>
-                <div className={`text-xs ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>支出</div>
-                <div className="text-[#e05555] font-mono font-medium">
+              <div className={`p-2 rounded-lg ${theme === 'dark' ? 'bg-surface' : 'bg-bg'}`}>
+                <div className={`text-xs ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>支出</div>
+                <div className="text-danger font-mono font-medium">
                   ¥{selectedDayTransactions
                     .filter(t => t.type === 'expense')
                     .reduce((sum, t) => sum + t.amount, 0)
                     .toLocaleString()}
                 </div>
               </div>
-              <div className={`p-2 rounded-lg ${theme === 'dark' ? 'bg-[#3d3d3a]' : 'bg-[#f5f4ed]'}`}>
-                <div className={`text-xs ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>收入</div>
-                <div className="text-[#2d8a5e] font-mono font-medium">
+              <div className={`p-2 rounded-lg ${theme === 'dark' ? 'bg-surface' : 'bg-bg'}`}>
+                <div className={`text-xs ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>收入</div>
+                <div className="text-ok font-mono font-medium">
                   ¥{selectedDayTransactions
                     .filter(t => t.type === 'income')
                     .reduce((sum, t) => sum + t.amount, 0)
@@ -222,7 +222,7 @@ export default function CalendarPage() {
                 })}
               </div>
             ) : (
-              <div className={`text-center py-6 ${theme === 'dark' ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}>
+              <div className={`text-center py-6 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                 暂无交易记录
               </div>
             )}
@@ -231,25 +231,25 @@ export default function CalendarPage() {
 
         {/* Monthly Summary */}
         <Card className="!p-4">
-          <h3 className={`font-semibold mb-3 ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+          <h3 className={`font-semibold mb-3 ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
             月度统计
           </h3>
           <div className="grid grid-cols-3 gap-3">
             <div className="text-center">
-              <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>收入</div>
-              <div className="text-[#2d8a5e] font-mono font-bold">
+              <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>收入</div>
+              <div className="text-ok font-mono font-bold">
                 ¥{(monthlyStats.income / 1000).toFixed(1)}k
               </div>
             </div>
             <div className="text-center">
-              <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>支出</div>
-              <div className="text-[#e05555] font-mono font-bold">
+              <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>支出</div>
+              <div className="text-danger font-mono font-bold">
                 ¥{(monthlyStats.expense / 1000).toFixed(1)}k
               </div>
             </div>
             <div className="text-center">
-              <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>结余</div>
-              <div className={`font-mono font-bold ${monthlyStats.income - monthlyStats.expense >= 0 ? 'text-[#5b8dee]' : 'text-[#e05555]'}`}>
+              <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>结余</div>
+              <div className={`font-mono font-bold ${monthlyStats.income - monthlyStats.expense >= 0 ? 'text-[#5b8dee]' : 'text-danger'}`}>
                 ¥{((monthlyStats.income - monthlyStats.expense) / 1000).toFixed(1)}k
               </div>
             </div>
@@ -258,7 +258,7 @@ export default function CalendarPage() {
 
         {/* Recent Activity */}
         <Card className="!p-4">
-          <h3 className={`font-semibold mb-3 ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+          <h3 className={`font-semibold mb-3 ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
             近期活动
           </h3>
           <div className="space-y-2">

@@ -20,7 +20,7 @@ import { useApp } from '../context/AppContext';
 const PRESET_ICONS = ['🏷️', '🎯', '⭐', '❤️', '🌟', '💫', '✨', '🔥', '💖', '🎪', '🎨', '🎭', '🎪', '🎯', '🎲', '🎱', '🛍️', '📦', '🎁', '🎀', '🌈', '⚡', '🌸', '🍀'];
 
 // 预设颜色
-const PRESET_COLORS = ['#ff6b6b', '#4ecdc4', '#a855f7', '#f472b6', '#fb923c', '#38bdf8', '#84cc16', '#818cf8', '#ec4899', '#14b8a6', '#22c55e', '#f59e0b', '#6366f1', '#ef4444', '#10b981', '#1677ff'];
+const PRESET_COLORS = ['#ff6b6b', '#4ecdc4', '#a855f7', '#f472b6', '#fb923c', '#38bdf8', '#84cc16', '#818cf8', '#ec4899', '#14b8a6', '#22c55e', '#E5C45E', '#6366f1', '#ef4444', '#10b981', '#1677ff'];
 
 interface AddTransactionProps {
   isOpen: boolean;
@@ -34,7 +34,7 @@ type TransactionType = 'expense' | 'income' | 'transfer';
 const Toast: React.FC<{ message: string; visible: boolean }> = ({ message, visible }) => {
   if (!visible) return null;
   return (
-    <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[60] bg-[var(--text-primary)] text-[var(--bg-secondary)] px-4 py-2 rounded-full text-sm font-medium animate-bounce-once">
+    <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[60] bg-ink text-surface px-4 py-2 rounded-full text-sm font-medium animate-bounce-once">
       {message}
     </div>
   );
@@ -457,9 +457,9 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-40 bg-[var(--bg-primary)] animate-slide-up overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-[60] bg-bg animate-slide-up overflow-hidden flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 pt-safe border-b border-[var(--border-warm)] bg-[var(--bg-secondary)]">
+      <div className="flex items-center justify-between px-4 py-3 pt-safe border-b border-brand-tint bg-surface">
         <button
           onClick={onClose}
           className="p-2 -ml-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
@@ -469,7 +469,7 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
         <h1 className="text-lg font-medium text-[var(--text-primary)]">记一笔</h1>
         <button
           onClick={handleSave}
-          className="p-2 -mr-2 text-brand-primary hover:text-brand-secondary transition-colors"
+          className="p-2 -mr-2 text-ink hover:text-brand-secondary transition-colors"
         >
           <Check size={24} />
         </button>
@@ -525,7 +525,7 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
             <span className="text-sm text-[var(--text-secondary)]">选择分类</span>
             <button
               onClick={() => setShowCategoryPicker(true)}
-              className="text-sm text-brand-primary hover:text-brand-secondary transition-colors"
+              className="text-sm text-ink hover:text-brand-secondary transition-colors"
             >
               展开更多
             </button>
@@ -601,28 +601,28 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
           <div className="flex gap-3">
             <button
               onClick={() => setShowDatePicker(true)}
-              className="flex-1 flex items-center justify-between py-3 px-4 bg-[var(--bg-secondary)] rounded-xl"
+              className="flex-1 flex items-center justify-between py-3 px-3 bg-[var(--bg-secondary)] rounded-xl min-w-0"
             >
-              <div className="flex items-center gap-3">
-                <Calendar size={20} className="text-[var(--text-tertiary)]" />
-                <span className="text-[var(--text-secondary)]">日期</span>
+              <div className="flex items-center gap-2 min-w-0">
+                <Calendar size={18} className="text-[var(--text-tertiary)] shrink-0" />
+                <span className="text-[var(--text-secondary)] shrink-0">日期</span>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[var(--text-primary)]">{formatDate(date)}</span>
-                <ChevronDown size={16} className="text-[var(--text-tertiary)]" />
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="text-[var(--text-primary)] truncate">{formatDate(date)}</span>
+                <ChevronDown size={16} className="text-[var(--text-tertiary)] shrink-0" />
               </div>
             </button>
             <button
               onClick={() => setShowDatePicker(true)}
-              className="flex-1 flex items-center justify-between py-3 px-4 bg-[var(--bg-secondary)] rounded-xl"
+              className="flex-1 flex items-center justify-between py-3 px-3 bg-[var(--bg-secondary)] rounded-xl min-w-0"
             >
-              <div className="flex items-center gap-3">
-                <Clock size={20} className="text-[var(--text-tertiary)]" />
-                <span className="text-[var(--text-secondary)]">时间</span>
+              <div className="flex items-center gap-2 min-w-0">
+                <Clock size={18} className="text-[var(--text-tertiary)] shrink-0" />
+                <span className="text-[var(--text-secondary)] shrink-0">时间</span>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[var(--text-primary)]">{formatTime(time)}</span>
-                <ChevronDown size={16} className="text-[var(--text-tertiary)]" />
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="text-[var(--text-primary)] truncate">{formatTime(time)}</span>
+                <ChevronDown size={16} className="text-[var(--text-tertiary)] shrink-0" />
               </div>
             </button>
           </div>
@@ -638,7 +638,7 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
             </label>
             <button
               onClick={openTagManager}
-              className="text-xs text-brand-primary hover:text-brand-secondary transition-colors"
+              className="text-xs text-ink hover:text-brand-secondary transition-colors"
             >
               管理标签
             </button>
@@ -686,7 +686,7 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
               onChange={(e) => setNote(e.target.value)}
               placeholder="添加备注..."
               rows={3}
-              className="w-full px-4 py-3 bg-[var(--bg-secondary)] rounded-xl text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-brand-primary/50 resize-none"
+              className="w-full px-4 py-3 bg-[var(--bg-secondary)] rounded-xl text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-brand/40 resize-none"
             />
           </div>
         </div>
@@ -733,7 +733,7 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
               className={`
                 w-full flex items-center gap-3 p-4 rounded-xl transition-all
                 ${selectedAccountId === account.id
-                  ? 'bg-brand-primary/10 ring-2 ring-brand-primary'
+                  ? 'bg-brand-tint ring-2 ring-brand'
                   : 'bg-[var(--bg-elevated)] hover:bg-[var(--surface-warm)]'
                 }
               `}
@@ -746,7 +746,7 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
                 </div>
               </div>
               {selectedAccountId === account.id && (
-                <Check size={20} className="text-brand-primary" />
+                <Check size={20} className="text-ink" />
               )}
             </button>
           ))}
@@ -806,8 +806,8 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
             onClick={() => setCategoryEditMode(!categoryEditMode)}
             className={`text-xs px-3 py-1 rounded-full transition-colors ${
               categoryEditMode
-                ? 'bg-brand-primary text-white'
-                : 'bg-[var(--bg-elevated)] text-[var(--text-tertiary)] hover:text-brand-primary'
+                ? 'bg-brand text-ink'
+                : 'bg-[var(--bg-elevated)] text-[var(--text-tertiary)] hover:text-ink'
             }`}
           >
             {categoryEditMode ? '完成编辑' : '编辑分类'}
@@ -817,7 +817,7 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
           {/* 添加自定义分类按钮 */}
           <button
             onClick={() => setShowAddCategory(true)}
-            className="w-full flex items-center justify-center gap-2 py-3 bg-brand-primary/10 text-brand-primary rounded-xl hover:bg-brand-primary/20 transition-colors"
+            className="w-full flex items-center justify-center gap-2 py-3 bg-brand-tint text-ink rounded-xl hover:bg-brand-soft transition-colors"
           >
             <Plus size={18} />
             <span>添加自定义分类</span>
@@ -828,7 +828,7 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
               <p className="text-xs text-[var(--text-tertiary)]">点击分类可编辑，点击 <X size={10} className="inline text-red-500" /> 删除</p>
               <button
                 onClick={() => setCategoryEditMode(false)}
-                className="text-sm text-brand-primary font-medium"
+                className="text-sm text-ink font-medium"
               >
                 完成
               </button>
@@ -860,7 +860,7 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
                       w-full flex flex-col items-center gap-2 p-3 rounded-xl transition-all select-none
                       ${categoryEditMode ? 'animate-shake' : ''}
                       ${!categoryEditMode && selectedCategoryId === category.id
-                        ? 'bg-brand-primary/10 ring-2 ring-brand-primary'
+                        ? 'bg-brand-tint ring-2 ring-brand'
                         : !categoryEditMode ? 'bg-[var(--bg-elevated)] hover:bg-[var(--surface-warm)]'
                         : 'bg-[var(--bg-elevated)]'
                       }
@@ -876,7 +876,7 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
                         e.stopPropagation();
                         handleDeleteCustomCategory(category.id);
                       }}
-                      className="absolute -top-1.5 -right-1.5 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center shadow-lg z-10"
+                      className="absolute -top-1.5 -right-1.5 w-6 h-6 bg-danger text-white rounded-full flex items-center justify-center shadow-lg z-10"
                     >
                       <X size={12} />
                     </button>
@@ -904,7 +904,7 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
               onChange={(e) => setNewCategoryName(e.target.value)}
               placeholder="输入分类名称"
               maxLength={6}
-              className="w-full px-4 py-3 bg-[var(--bg-elevated)] rounded-xl text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-brand-primary/50"
+              className="w-full px-4 py-3 bg-[var(--bg-elevated)] rounded-xl text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-brand/40"
             />
           </div>
 
@@ -918,7 +918,7 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
                   onClick={() => setNewCategoryIcon(icon)}
                   className={`p-2 text-2xl rounded-lg transition-all ${
                     newCategoryIcon === icon
-                      ? 'bg-brand-primary/20 ring-2 ring-brand-primary'
+                      ? 'bg-brand-soft ring-2 ring-brand'
                       : 'bg-[var(--bg-elevated)] hover:bg-[var(--surface-warm)]'
                   }`}
                 >
@@ -937,7 +937,7 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
                   key={color}
                   onClick={() => setNewCategoryColor(color)}
                   className={`p-3 rounded-lg transition-all ${
-                    newCategoryColor === color ? 'ring-2 ring-offset-2 ring-brand-primary' : ''
+                    newCategoryColor === color ? 'ring-2 ring-offset-2 ring-brand' : ''
                   }`}
                   style={{ backgroundColor: color }}
                 >
@@ -966,7 +966,7 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
           {/* 确认按钮 */}
           <button
             onClick={handleAddCategory}
-            className="w-full py-3 bg-brand-primary text-white rounded-xl font-medium hover:bg-brand-secondary transition-colors"
+            className="w-full py-3 bg-brand text-ink rounded-xl font-medium hover:bg-brand-strong transition-colors"
           >
             创建分类
           </button>
@@ -994,7 +994,7 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
               onChange={(e) => setEditCatName(e.target.value)}
               placeholder="输入分类名称"
               maxLength={6}
-              className="w-full px-4 py-3 bg-[var(--bg-elevated)] rounded-xl text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-brand-primary/50"
+              className="w-full px-4 py-3 bg-[var(--bg-elevated)] rounded-xl text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-brand/40"
             />
           </div>
 
@@ -1008,7 +1008,7 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
                   onClick={() => setEditCatIcon(icon)}
                   className={`p-2 text-2xl rounded-lg transition-all ${
                     editCatIcon === icon
-                      ? 'bg-brand-primary/20 ring-2 ring-brand-primary'
+                      ? 'bg-brand-soft ring-2 ring-brand'
                       : 'bg-[var(--bg-elevated)] hover:bg-[var(--surface-warm)]'
                   }`}
                 >
@@ -1027,7 +1027,7 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
                   key={color}
                   onClick={() => setEditCatColor(color)}
                   className={`p-3 rounded-lg transition-all ${
-                    editCatColor === color ? 'ring-2 ring-offset-2 ring-brand-primary' : ''
+                    editCatColor === color ? 'ring-2 ring-offset-2 ring-brand' : ''
                   }`}
                   style={{ backgroundColor: color }}
                 >
@@ -1056,7 +1056,7 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
           {/* 确认按钮 */}
           <button
             onClick={handleSaveEditCategory}
-            className="w-full py-3 bg-brand-primary text-white rounded-xl font-medium hover:bg-brand-secondary transition-colors"
+            className="w-full py-3 bg-brand text-ink rounded-xl font-medium hover:bg-brand-strong transition-colors"
           >
             保存修改
           </button>
@@ -1085,7 +1085,7 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
                   setDate(newDate)
                 }
               }}
-              className="w-full px-4 py-3 bg-[var(--bg-elevated)] rounded-xl text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-brand-primary/50"
+              className="w-full px-4 py-3 bg-[var(--bg-elevated)] rounded-xl text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-brand/40"
             />
           </div>
           <div>
@@ -1099,12 +1099,12 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
                 newTime.setHours(parseInt(h), parseInt(m));
                 setTime(newTime);
               }}
-              className="w-full px-4 py-3 bg-[var(--bg-elevated)] rounded-xl text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-brand-primary/50"
+              className="w-full px-4 py-3 bg-[var(--bg-elevated)] rounded-xl text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-brand/40"
             />
           </div>
           <button
             onClick={() => setShowDatePicker(false)}
-            className="w-full py-3 bg-brand-primary text-white rounded-xl font-medium hover:bg-brand-secondary transition-colors"
+            className="w-full py-3 bg-brand text-ink rounded-xl font-medium hover:bg-brand-strong transition-colors"
           >
             确定
           </button>
@@ -1146,7 +1146,7 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => handleEditTag(tag.id, tag.name, tag.color)}
-                          className="text-xs text-brand-primary hover:underline"
+                          className="text-xs text-ink hover:underline"
                         >
                           编辑
                         </button>
@@ -1186,7 +1186,7 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
                 onChange={(e) => setNewTagName(e.target.value)}
                 placeholder="输入标签名称"
                 maxLength={6}
-                className="w-full px-4 py-3 bg-[var(--bg-elevated)] rounded-xl text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-brand-primary/50"
+                className="w-full px-4 py-3 bg-[var(--bg-elevated)] rounded-xl text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-brand/40"
               />
             </div>
 
@@ -1199,7 +1199,7 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
                     key={color}
                     onClick={() => setNewTagColor(color)}
                     className={`p-3 rounded-lg transition-all ${
-                      newTagColor === color ? 'ring-2 ring-offset-2 ring-brand-primary' : ''
+                      newTagColor === color ? 'ring-2 ring-offset-2 ring-brand' : ''
                     }`}
                     style={{ backgroundColor: color }}
                   >
@@ -1235,7 +1235,7 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
               )}
               <button
                 onClick={editingTag ? handleSaveEditTag : handleCreateTag}
-                className="flex-1 py-3 bg-brand-primary text-white rounded-xl font-medium hover:bg-brand-secondary transition-colors"
+                className="flex-1 py-3 bg-brand text-ink rounded-xl font-medium hover:bg-brand-strong transition-colors"
               >
                 {editingTag ? '保存修改' : '创建标签'}
               </button>

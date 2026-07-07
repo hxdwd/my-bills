@@ -3,34 +3,16 @@
 @tailwind utilities;
 
 :root {
-  --bg-primary: #f5f4ed;
-  --bg-secondary: #faf9f5;
-  --bg-elevated: #ffffff;
-  --surface-warm: #e8e6dc;
-  --brand-primary: #c96442;
-  --brand-secondary: #d97757;
-  --income: #2d8a5e;
-  --expense: #e05555;
-  --transfer: #5b8dee;
-  --text-primary: #141413;
-  --text-secondary: #5e5d59;
-  --text-tertiary: #87867f;
-  --border-light: #f0eee6;
-  --border-warm: #e8e6dc;
-}
-
-.dark {
-  --bg-primary: #141413;
-  --bg-secondary: #30302e;
-  --bg-elevated: #3d3d3a;
-  --surface-warm: #4a4a47;
-  --brand-primary: #d97757;
-  --brand-secondary: #e08a6d;
-  --text-primary: #f5f4ed;
-  --text-secondary: #b0aea5;
-  --text-tertiary: #87867f;
-  --border-light: #3d3d3a;
-  --border-warm: #4a4a47;
+  --bg: #FAFAF8;
+  --surface: #FFFFFF;
+  --brand: #F4D77C;
+  --brand-strong: #E5C45E;
+  --brand-soft: #F8E8B0;
+  --brand-tint: #FFF7E6;
+  --ink: #222222;
+  --ink-2: #888888;
+  --ok: #4CAF50;
+  --danger: #FF6B6B;
 }
 
 * {
@@ -48,8 +30,8 @@ html {
 body {
   margin: 0;
   padding: 0;
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
+  background-color: var(--bg);
+  color: var(--ink);
   min-height: 100vh;
   min-height: 100dvh;
   overscroll-behavior: none;
@@ -69,6 +51,7 @@ button,
 textarea,
 select {
   max-width: 100%;
+  font-family: inherit;
 }
 
 .break-amount {
@@ -76,10 +59,11 @@ select {
   word-break: break-word;
 }
 
-/* 金额字体 */
+/* 金额字体：等宽数字 */
 .font-amount {
   font-family: "Roboto Mono", "DIN Alternate", monospace;
   font-variant-numeric: tabular-nums;
+  font-weight: 700;
 }
 
 /* 标题字体 */
@@ -93,30 +77,26 @@ select {
 }
 
 .safe-area-bottom {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 96px);
+}
+
+/* 底部导航栏专用安全区：仅保留手机安全区，不额外撑高 */
+.safe-area-bottom-bar {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
-/* 滚动条 */
+/* 滚动条（极简） */
 ::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
+  width: 0;
+  height: 0;
 }
 
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--border-warm);
-  border-radius: 2px;
-}
-
-/* 去除 input focus */
+/* 去除 input focus 默认轮廓 */
 input:focus {
   outline: none;
 }
 
-/* 数字键盘禁用 */
+/* 数字键盘禁用上下箭头 */
 input[type="number"]::-webkit-outer-spin-button,
 input[type="number"]::-webkit-inner-spin-button {
   -webkit-appearance: none;
@@ -127,26 +107,80 @@ input[type="number"] {
   -moz-appearance: textfield;
 }
 
-/* 动画 */
+/* ===== 统一动画类 ===== */
+.animate-fade-up {
+  animation: fadeUp 400ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-page-fade {
+  animation: pageFade 300ms ease-out both;
+}
+
+/* 错峰进场：通过 --i 控制延迟 */
+.stagger > * {
+  animation: fadeUp 400ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.stagger > *:nth-child(1) { animation-delay: 0ms; }
+.stagger > *:nth-child(2) { animation-delay: 60ms; }
+.stagger > *:nth-child(3) { animation-delay: 120ms; }
+.stagger > *:nth-child(4) { animation-delay: 180ms; }
+.stagger > *:nth-child(5) { animation-delay: 240ms; }
+.stagger > *:nth-child(6) { animation-delay: 300ms; }
+.stagger > *:nth-child(7) { animation-delay: 360ms; }
+.stagger > *:nth-child(8) { animation-delay: 420ms; }
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pageFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 @keyframes countUp {
-  from {
-    opacity: 0.5;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0.5; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .animate-count {
   animation: countUp 600ms ease-out;
 }
 
+/* ===== Ripple 点击反馈 ===== */
+.ripple {
+  position: relative;
+  overflow: hidden;
+}
+.ripple-wave {
+  position: absolute;
+  border-radius: 9999px;
+  transform: scale(0);
+  background: rgba(34, 34, 34, 0.08);
+  animation: ripple 500ms linear;
+  pointer-events: none;
+}
+@keyframes ripple {
+  to { transform: scale(2.5); opacity: 0; }
+}
+
+/* 骨架屏 */
+.skeleton {
+  background: linear-gradient(90deg, #f0f0ee 25%, #fafafa 50%, #f0f0ee 75%);
+  background-size: 200% 100%;
+  animation: skeleton 1200ms ease-in-out infinite;
+  border-radius: 12px;
+}
+@keyframes skeleton {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 /* PWA 安装按钮 */
 .pwa-install-btn {
   position: fixed;
-  bottom: 80px;
+  bottom: 92px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 999;

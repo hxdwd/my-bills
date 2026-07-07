@@ -18,41 +18,40 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(({
   return (
     <div className="w-full">
       {label && (
-        <label className="block text-sm text-text-secondary mb-1.5 dark:text-dark-text">
+        <label className="block text-sm text-ink-2 mb-1.5">
           {label}
         </label>
       )}
       <div className="relative">
         {leftIcon && (
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary">
+          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-ink-2">
             {leftIcon}
           </span>
         )}
         <input
           ref={ref}
           className={`
-            w-full h-11 px-4 rounded-md
-            bg-bg-secondary border border-border-light
-            text-text-primary placeholder:text-text-tertiary
-            dark:bg-dark-surface dark:border-dark-border dark:text-dark-text dark:placeholder:text-dark-text
+            w-full h-12 px-4 rounded-2xl
+            bg-bg border border-transparent
+            text-ink placeholder:text-ink-2/70
             transition-all duration-200
-            focus:border-brand focus:ring-2 focus:ring-brand/20
+            focus:bg-surface focus:border-brand/40 focus:ring-2 focus:ring-brand/15
             disabled:opacity-50 disabled:cursor-not-allowed
-            ${leftIcon ? 'pl-10' : ''}
-            ${rightIcon ? 'pr-10' : ''}
-            ${error ? 'border-expense focus:border-expense focus:ring-expense/20' : ''}
+            ${leftIcon ? 'pl-11' : ''}
+            ${rightIcon ? 'pr-11' : ''}
+            ${error ? 'border-danger/50 focus:border-danger focus:ring-danger/15' : ''}
             ${className}
           `}
           {...props}
         />
         {rightIcon && (
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-text-tertiary">
+          <span className="absolute right-4 top-1/2 -translate-y-1/2 text-ink-2">
             {rightIcon}
           </span>
         )}
       </div>
       {error && (
-        <p className="mt-1 text-xs text-expense">{error}</p>
+        <p className="mt-1 text-xs text-danger">{error}</p>
       )}
     </div>
   );
@@ -75,8 +74,8 @@ export const AmountInput = forwardRef<HTMLInputElement, AmountInputProps>(({
   ...props
 }, ref) => {
   return (
-    <div className={`flex items-center justify-center gap-2 ${className}`}>
-      <span className="text-2xl font-amount text-text-secondary dark:text-dark-text">
+    <div className={`flex items-center justify-center gap-1.5 ${className}`}>
+      <span className="text-3xl font-amount text-ink-2">
         {currency}
       </span>
       <input
@@ -86,15 +85,14 @@ export const AmountInput = forwardRef<HTMLInputElement, AmountInputProps>(({
         value={value}
         onChange={(e) => {
           const val = e.target.value;
-          // 只允许数字和小数点
           if (/^\d*\.?\d{0,2}$/.test(val)) {
             onChange(val);
           }
         }}
         className="
-          w-full max-w-[200px] text-4xl font-amount font-semibold
+          w-full max-w-[220px] text-[44px] leading-none font-amount font-bold
           text-center bg-transparent border-none
-          text-text-primary dark:text-dark-text
+          text-ink
           focus:outline-none
         "
         placeholder="0.00"

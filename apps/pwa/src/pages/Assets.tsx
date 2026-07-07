@@ -220,15 +220,15 @@ export default function AssetsPage() {
           className={`flex flex-col items-center gap-1 p-2 rounded-xl transition-all border-2
             ${selectedType === opt.type
               ? theme === 'dark'
-                ? 'border-[#c96442] bg-[#c96442]/10'
-                : 'border-[#c96442] bg-[#fff8f5]'
+                ? 'border-brand bg-brand/10'
+                : 'border-brand bg-brand-tint'
               : theme === 'dark'
-                ? 'border-transparent bg-[#30302e] hover:bg-[#3d3d3a]'
-                : 'border-transparent bg-[#f5f4ed] hover:bg-[#e8e6dc]'
+                ? 'border-transparent bg-surface hover:bg-surface'
+                : 'border-transparent bg-bg hover:bg-brand-tint'
             }`}
         >
           <span className="text-xl">{opt.icon}</span>
-          <span className={`text-xs ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#5e5d59]'}`}>
+          <span className={`text-xs ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
             {opt.label}
           </span>
         </button>
@@ -255,42 +255,42 @@ export default function AssetsPage() {
   )
 
   return (
-    <div className={`min-h-screen ${theme === 'dark' ? 'bg-[#141413]' : 'bg-[#f5f4ed]'}`}>
+    <div className={`min-h-screen bg-bg`}>
       {/* Header */}
-      <header className={`sticky top-0 z-40 px-4 pt-3 pb-2 ${theme === 'dark' ? 'bg-[#141413]' : 'bg-[#f5f4ed]'}`}>
-        <h1 className={`text-lg font-semibold ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+      <header className={`sticky top-0 z-40 bg-bg/80 backdrop-blur-md safe-area-top px-5 pt-3 pb-2 `}>
+        <h1 className={`text-lg font-semibold ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
           资产
         </h1>
       </header>
 
-      <main className="px-4 pb-4 space-y-4">
+      <main className="px-5 pb-6 space-y-4 animate-page-fade">
         {/* Total Assets Card */}
         <Card className="!p-5">
           <div className="text-center mb-4">
-            <p className={`text-sm mb-1 ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>
+            <p className={`text-sm mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
               总资产
             </p>
-            <div className={`text-3xl font-bold font-mono ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+            <div className={`text-3xl font-bold font-mono ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
               ¥{totalAssets.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
             </div>
           </div>
           
-          <div className="grid grid-cols-2 gap-4 pt-4 border-t border-[#f0eee6] dark:border-[#3d3d3a]">
+          <div className="grid grid-cols-2 gap-4 pt-4 border-t border-brand-tint dark:border-brand-tint">
             <div className="text-center">
               <div className="flex items-center justify-center gap-1 mb-1">
-                <TrendingUp size={14} className="text-[#2d8a5e]" />
-                <span className={`text-xs ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>净资产</span>
+                <TrendingUp size={14} className="text-ok" />
+                <span className={`text-xs ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>净资产</span>
               </div>
-              <div className={`text-lg font-bold font-mono ${netAssets >= 0 ? 'text-[#2d8a5e]' : 'text-[#e05555]'}`}>
+              <div className={`text-lg font-bold font-mono ${netAssets >= 0 ? 'text-ok' : 'text-danger'}`}>
                 ¥{netAssets.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
               </div>
             </div>
             <div className="text-center">
               <div className="flex items-center justify-center gap-1 mb-1">
-                <TrendingDown size={14} className="text-[#e05555]" />
-                <span className={`text-xs ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>负债</span>
+                <TrendingDown size={14} className="text-danger" />
+                <span className={`text-xs ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>负债</span>
               </div>
-              <div className="text-lg font-bold font-mono text-[#e05555]">
+              <div className="text-lg font-bold font-mono text-danger">
                 -¥{totalLiabilities.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
               </div>
             </div>
@@ -299,7 +299,7 @@ export default function AssetsPage() {
 
         {/* Asset Distribution */}
         <Card className="!p-4">
-          <h3 className={`font-semibold mb-3 ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+          <h3 className={`font-semibold mb-3 ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
             资产分布
           </h3>
           <div className="flex items-center gap-4">
@@ -314,11 +314,11 @@ export default function AssetsPage() {
                       className="w-3 h-3 rounded-full"
                       style={{ backgroundColor: acc.color }}
                     />
-                    <span className={`text-sm ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+                    <span className={`text-sm ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
                       {acc.name}
                     </span>
                   </div>
-                  <span className={`text-sm font-mono ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#5e5d59]'}`}>
+                  <span className={`text-sm font-mono ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                     ¥{acc.balance.toLocaleString('zh-CN', { minimumFractionDigits: 0 })}
                   </span>
                 </div>
@@ -330,15 +330,15 @@ export default function AssetsPage() {
         {/* Asset Accounts */}
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h3 className={`font-semibold ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+            <h3 className={`font-semibold ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
               资产账户
             </h3>
             <button
               onClick={handleSortToggle}
               className={`inline-flex items-center gap-1 text-xs px-3 py-1 rounded-full transition-colors ${
                 sortOrder !== null
-                  ? 'bg-brand-primary text-white'
-                  : theme === 'dark' ? 'bg-[#3d3d3a] text-[#b0aea5] hover:text-brand-primary' : 'bg-[#e8e6dc] text-[#5e5d59] hover:text-brand-primary'
+                  ? 'bg-brand text-white'
+                  : theme === 'dark' ? 'bg-surface text-ink-2 hover:text-ink' : 'bg-brand-tint text-ink-2 hover:text-ink'
               }`}
             >
               {getSortIcon()}
@@ -348,7 +348,7 @@ export default function AssetsPage() {
           <Card className="!p-0 divide-y divide-[#f0eee6] dark:divide-[#3d3d3a]">
             {assetAccounts.length === 0 && (
               <div className="p-6 text-center">
-                <span className={`text-sm ${theme === 'dark' ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}>
+                <span className={`text-sm ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                   暂无资产账户，点击下方按钮添加
                 </span>
               </div>
@@ -358,35 +358,35 @@ export default function AssetsPage() {
                 key={acc.id}
                 onClick={() => handleOpenEdit(acc)}
                 className={`flex items-center gap-3 p-4 cursor-pointer transition-colors
-                  ${theme === 'dark' ? 'hover:bg-[#30302e]' : 'hover:bg-[#faf9f5]'}`}
+                  ${theme === 'dark' ? 'hover:bg-surface' : 'hover:bg-[#faf9f5]'}`}
               >
                 <div 
-                  className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0"
+                  className="relative w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0"
                   style={{ backgroundColor: `${acc.color}15` }}
                 >
                   {acc.icon}
+                  {acc.isDefault && (
+                    <span className={`absolute -top-1 -right-1 w-4 h-4 rounded-full bg-brand border-2 flex items-center justify-center text-[8px] leading-none text-white font-bold ${theme === 'dark' ? 'border-[#141413]' : 'border-[#faf9f5]'}`}>
+                      ✓
+                    </span>
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <span className={`font-medium truncate block ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+                  <span className={`font-medium truncate block ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
                     {acc.name}
                   </span>
                   <div className="flex items-center gap-2 mt-0.5">
-                    <div className={`text-xs ${theme === 'dark' ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}>
+                    <div className={`text-xs ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                       {accountTypeLabels[acc.type]}
                     </div>
-                    {acc.isDefault && (
-                      <span className="text-[10px] px-1.5 py-px rounded border border-brand-primary/30 bg-brand-primary/10 text-brand-primary font-medium shrink-0 leading-relaxed">
-                        默认
-                      </span>
-                    )}
                   </div>
                 </div>
                 <div className="text-right shrink-0">
-                  <div className={`font-mono font-medium ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+                  <div className={`font-mono font-medium ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
                     ¥{acc.balance.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
                   </div>
                 </div>
-                <ChevronRight size={18} className={theme === 'dark' ? 'text-[#4a4a47]' : 'text-[#d1cfc5]'} />
+                <ChevronRight size={18} className={theme === 'dark' ? 'text-ink-2' : 'text-ink-2'} />
               </div>
             ))}
           </Card>
@@ -395,7 +395,7 @@ export default function AssetsPage() {
         {/* Liability Accounts */}
         {liabilityAccounts.length > 0 && (
           <div>
-            <h3 className={`font-semibold mb-3 ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+            <h3 className={`font-semibold mb-3 ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
               负债账户
             </h3>
             <Card className="!p-0 divide-y divide-[#f0eee6] dark:divide-[#3d3d3a]">
@@ -404,7 +404,7 @@ export default function AssetsPage() {
                   key={acc.id}
                   onClick={() => handleOpenEdit(acc)}
                   className={`flex items-center gap-3 p-4 cursor-pointer transition-colors
-                    ${theme === 'dark' ? 'hover:bg-[#30302e]' : 'hover:bg-[#faf9f5]'}`}
+                    ${theme === 'dark' ? 'hover:bg-surface' : 'hover:bg-[#faf9f5]'}`}
                 >
                   <div 
                     className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
@@ -413,19 +413,19 @@ export default function AssetsPage() {
                     {acc.icon}
                   </div>
                   <div className="flex-1">
-                    <div className={`font-medium ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+                    <div className={`font-medium ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
                       {acc.name}
                     </div>
-                    <div className={`text-xs ${theme === 'dark' ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}>
+                    <div className={`text-xs ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                       {accountTypeLabels[acc.type]}
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="font-mono font-medium text-[#e05555]">
+                    <div className="font-mono font-medium text-danger">
                       -¥{Math.abs(acc.balance).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
                     </div>
                   </div>
-                  <ChevronRight size={18} className={theme === 'dark' ? 'text-[#4a4a47]' : 'text-[#d1cfc5]'} />
+                  <ChevronRight size={18} className={theme === 'dark' ? 'text-ink-2' : 'text-ink-2'} />
                 </div>
               ))}
             </Card>
@@ -437,8 +437,8 @@ export default function AssetsPage() {
           onClick={handleOpenAdd}
           className={`w-full flex items-center justify-center gap-2 py-4 rounded-xl border border-dashed transition-colors
             ${theme === 'dark' 
-              ? 'border-[#4a4a47] text-[#b0aea5] hover:bg-[#30302e]' 
-              : 'border-[#e8e6dc] text-[#5e5d59] hover:bg-[#faf9f5]'
+              ? 'border-brand-tint text-ink-2 hover:bg-surface' 
+              : 'border-brand-tint text-ink-2 hover:bg-[#faf9f5]'
             }`}
         >
           <Plus size={20} />
@@ -448,10 +448,10 @@ export default function AssetsPage() {
         {/* Assets Trend */}
         <Card className="!p-4">
           <div className="flex items-center justify-between mb-3">
-            <h3 className={`font-semibold ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+            <h3 className={`font-semibold ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
               资产趋势
             </h3>
-            <span className="text-xs text-[#2d8a5e] bg-[#2d8a5e]/10 px-2 py-1 rounded-full">
+            <span className="text-xs text-ok bg-ok/10 px-2 py-1 rounded-full">
               近6个月
             </span>
           </div>
@@ -462,17 +462,17 @@ export default function AssetsPage() {
                 return (
                   <div key={i} className="flex-1 flex flex-col items-center gap-2">
                     <div 
-                      className="w-full bg-gradient-to-t from-[#c96442] to-[#d97757] rounded-t-md"
+                      className="w-full bg-gradient-to-t from-brand to-brand-strong rounded-t-md"
                       style={{ height: `${(value / maxVal) * 100}%` }}
                     />
-                    <span className={`text-xs ${theme === 'dark' ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}>
+                    <span className={`text-xs ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                       {assetTrend.labels[i]}
                     </span>
                   </div>
                 )
               })
             ) : (
-              <div className="w-full text-center text-sm text-[#b0aea5]">
+              <div className="w-full text-center text-sm text-ink-2">
                 暂无数据，开始添加交易吧
               </div>
             )}
@@ -491,8 +491,8 @@ export default function AssetsPage() {
               onClick={handleCloseAdd}
               className={`flex-1 py-3 rounded-xl font-medium transition-colors
                 ${theme === 'dark'
-                  ? 'bg-[#3d3d3a] text-[#faf9f5] hover:bg-[#4a4a47]'
-                  : 'bg-[#f5f4ed] text-[#141413] hover:bg-[#e8e6dc]'
+                  ? 'bg-surface text-ink hover:bg-brand-tint'
+                  : 'bg-bg text-ink hover:bg-brand-tint'
                 }`}
             >
               取消
@@ -502,8 +502,8 @@ export default function AssetsPage() {
               disabled={!newAccountForm.name.trim()}
               className={`flex-1 py-3 rounded-xl font-medium transition-all
                 ${newAccountForm.name.trim()
-                  ? 'bg-[#c96442] text-white hover:bg-[#b8553a] active:scale-[0.98]'
-                  : 'bg-[#e8e6dc] dark:bg-[#3d3d3a] text-[#b0aea5] cursor-not-allowed'
+                  ? 'bg-brand text-white hover:bg-brand-strong active:scale-[0.98]'
+                  : 'bg-brand-tint dark:bg-surface text-ink-2 cursor-not-allowed'
                 }`}
             >
               确认添加
@@ -514,7 +514,7 @@ export default function AssetsPage() {
         <div className="p-4 space-y-4">
           {/* 账户名称 */}
           <div>
-            <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#5e5d59]'}`}>
+            <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
               账户名称
             </label>
             <input
@@ -524,15 +524,15 @@ export default function AssetsPage() {
               placeholder="例如：工资卡"
               className={`w-full px-4 py-3 rounded-xl border text-sm outline-none transition-colors
                 ${theme === 'dark'
-                  ? 'bg-[#30302e] border-[#4a4a47] text-[#faf9f5] focus:border-[#c96442]'
-                  : 'bg-[#f5f4ed] border-[#e8e6dc] text-[#141413] focus:border-[#c96442]'
+                  ? 'bg-surface border-brand-tint text-ink focus:border-brand'
+                  : 'bg-bg border-brand-tint text-ink focus:border-brand'
                 }`}
             />
           </div>
 
           {/* 账户类型 */}
           <div>
-            <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#5e5d59]'}`}>
+            <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
               账户类型
             </label>
             {renderTypeSelector(newAccountForm.type, (type, icon, color) => {
@@ -542,7 +542,7 @@ export default function AssetsPage() {
 
           {/* 颜色 */}
           <div>
-            <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#5e5d59]'}`}>
+            <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
               标识颜色
             </label>
             {renderColorPicker(newAccountForm.color, (color) => {
@@ -552,7 +552,7 @@ export default function AssetsPage() {
 
           {/* 初始余额 */}
           <div>
-            <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#5e5d59]'}`}>
+            <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
               初始余额 (¥)
             </label>
             <input
@@ -562,8 +562,8 @@ export default function AssetsPage() {
               placeholder="0"
               className={`w-full px-4 py-3 rounded-xl border text-sm outline-none transition-colors font-mono
                 ${theme === 'dark'
-                  ? 'bg-[#30302e] border-[#4a4a47] text-[#faf9f5] focus:border-[#c96442]'
-                  : 'bg-[#f5f4ed] border-[#e8e6dc] text-[#141413] focus:border-[#c96442]'
+                  ? 'bg-surface border-brand-tint text-ink focus:border-brand'
+                  : 'bg-bg border-brand-tint text-ink focus:border-brand'
                 }`}
             />
           </div>
@@ -582,15 +582,15 @@ export default function AssetsPage() {
                 onClick={() => setShowDeleteConfirm(false)}
                 className={`flex-1 py-3 rounded-xl font-medium transition-colors
                   ${theme === 'dark'
-                    ? 'bg-[#3d3d3a] text-[#faf9f5] hover:bg-[#4a4a47]'
-                    : 'bg-[#f5f4ed] text-[#141413] hover:bg-[#e8e6dc]'
+                    ? 'bg-surface text-ink hover:bg-brand-tint'
+                    : 'bg-bg text-ink hover:bg-brand-tint'
                   }`}
               >
                 取消
               </button>
               <button
                 onClick={handleDelete}
-                className="flex-1 py-3 rounded-xl font-medium bg-[#e05555] text-white hover:bg-[#c94444] transition-colors"
+                className="flex-1 py-3 rounded-xl font-medium bg-danger text-white hover:brightness-95 transition-colors"
               >
                 确认删除
               </button>
@@ -601,8 +601,8 @@ export default function AssetsPage() {
                 onClick={handleCloseEdit}
                 className={`flex-1 py-3 rounded-xl font-medium transition-colors
                   ${theme === 'dark'
-                    ? 'bg-[#3d3d3a] text-[#faf9f5] hover:bg-[#4a4a47]'
-                    : 'bg-[#f5f4ed] text-[#141413] hover:bg-[#e8e6dc]'
+                    ? 'bg-surface text-ink hover:bg-brand-tint'
+                    : 'bg-bg text-ink hover:bg-brand-tint'
                   }`}
               >
                 取消
@@ -612,8 +612,8 @@ export default function AssetsPage() {
                 disabled={!editForm.name.trim()}
                 className={`flex-1 py-3 rounded-xl font-medium transition-all
                   ${editForm.name.trim()
-                    ? 'bg-[#c96442] text-white hover:bg-[#b8553a] active:scale-[0.98]'
-                    : 'bg-[#e8e6dc] dark:bg-[#3d3d3a] text-[#b0aea5] cursor-not-allowed'
+                    ? 'bg-brand text-white hover:bg-brand-strong active:scale-[0.98]'
+                    : 'bg-brand-tint dark:bg-surface text-ink-2 cursor-not-allowed'
                   }`}
               >
                 保存修改
@@ -622,8 +622,8 @@ export default function AssetsPage() {
                 onClick={() => setShowDeleteConfirm(true)}
                 className={`px-4 py-3 rounded-xl transition-colors flex items-center justify-center
                   ${theme === 'dark'
-                    ? 'bg-[#3d3d3a] text-[#e05555] hover:bg-[#4a4a47]'
-                    : 'bg-[#f5f4ed] text-[#e05555] hover:bg-[#e8e6dc]'
+                    ? 'bg-surface text-danger hover:bg-brand-tint'
+                    : 'bg-bg text-danger hover:bg-brand-tint'
                   }`}
               >
                 <Trash2 size={18} />
@@ -635,13 +635,13 @@ export default function AssetsPage() {
         {editingAccount && (
           <div className="p-4 space-y-4">
             {showDeleteConfirm ? (
-              <div className={`flex items-start gap-3 p-4 rounded-xl ${theme === 'dark' ? 'bg-[#e05555]/10' : 'bg-[#fef2f2]'}`}>
-                <AlertCircle size={20} className="text-[#e05555] mt-0.5 shrink-0" />
+              <div className={`flex items-start gap-3 p-4 rounded-xl ${theme === 'dark' ? 'bg-danger/10' : 'bg-danger/5'}`}>
+                <AlertCircle size={20} className="text-danger mt-0.5 shrink-0" />
                 <div>
-                  <p className={`text-sm font-medium ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+                  <p className={`text-sm font-medium ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
                     确定要删除「{editingAccount.name}」吗？
                   </p>
-                  <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}>
+                  <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                     删除后账户及其余额将无法恢复，相关的交易记录不受影响。
                   </p>
                 </div>
@@ -650,7 +650,7 @@ export default function AssetsPage() {
               <>
                 {/* 当前余额 */}
                 <div>
-                  <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#5e5d59]'}`}>
+                  <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                     当前余额 (¥)
                   </label>
                   <input
@@ -659,17 +659,17 @@ export default function AssetsPage() {
                     onChange={(e) => setEditForm(prev => ({ ...prev, balance: e.target.value === '' ? 0 : Number(e.target.value) }))}
                     placeholder="0"
                     className={`w-full px-4 py-3 rounded-xl border text-sm outline-none transition-colors font-mono
-                      ${editForm.balance < 0 ? 'text-[#e05555]' : ''}
+                      ${editForm.balance < 0 ? 'text-danger' : ''}
                       ${theme === 'dark'
-                        ? 'bg-[#30302e] border-[#4a4a47] text-[#faf9f5] focus:border-[#c96442]'
-                        : 'bg-[#f5f4ed] border-[#e8e6dc] text-[#141413] focus:border-[#c96442]'
+                        ? 'bg-surface border-brand-tint text-ink focus:border-brand'
+                        : 'bg-bg border-brand-tint text-ink focus:border-brand'
                       }`}
                   />
                 </div>
 
                 {/* 账户名称 */}
                 <div>
-                  <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#5e5d59]'}`}>
+                  <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                     账户名称
                   </label>
                   <input
@@ -678,15 +678,15 @@ export default function AssetsPage() {
                     onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))}
                     className={`w-full px-4 py-3 rounded-xl border text-sm outline-none transition-colors
                       ${theme === 'dark'
-                        ? 'bg-[#30302e] border-[#4a4a47] text-[#faf9f5] focus:border-[#c96442]'
-                        : 'bg-[#f5f4ed] border-[#e8e6dc] text-[#141413] focus:border-[#c96442]'
+                        ? 'bg-surface border-brand-tint text-ink focus:border-brand'
+                        : 'bg-bg border-brand-tint text-ink focus:border-brand'
                       }`}
                   />
                 </div>
 
                 {/* 账户类型 */}
                 <div>
-                  <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#5e5d59]'}`}>
+                  <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                     账户类型
                   </label>
                   {renderTypeSelector(editForm.type, (type, icon, color) => {
@@ -696,7 +696,7 @@ export default function AssetsPage() {
 
                 {/* 图标 */}
                 <div>
-                  <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#5e5d59]'}`}>
+                  <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                     图标
                   </label>
                   <div className="grid grid-cols-8 gap-2">
@@ -707,9 +707,9 @@ export default function AssetsPage() {
                         className={`w-10 h-10 flex items-center justify-center text-lg rounded-lg transition-all border-2
                           ${editForm.icon === emoji
                             ? theme === 'dark'
-                              ? 'border-[#c96442] bg-[#c96442]/10'
-                              : 'border-[#c96442] bg-[#fff8f5]'
-                            : 'border-transparent hover:bg-[#f5f4ed] dark:hover:bg-[#3d3d3a]'
+                              ? 'border-brand bg-brand/10'
+                              : 'border-brand bg-brand-tint'
+                            : 'border-transparent hover:bg-bg'
                           }`}
                       >
                         {emoji}
@@ -720,7 +720,7 @@ export default function AssetsPage() {
 
                 {/* 颜色 */}
                 <div>
-                  <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#5e5d59]'}`}>
+                  <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                     标识颜色
                   </label>
                   {renderColorPicker(editForm.color, (color) => {
@@ -729,7 +729,7 @@ export default function AssetsPage() {
                 </div>
 
                 {/* 设为默认账户 */}
-                <div className="pt-2 border-t border-[#f0eee6] dark:border-[#3d3d3a]">
+                <div className="pt-2 border-t border-brand-tint dark:border-brand-tint">
                   <button
                     onClick={async () => {
                       if (!editingAccount) return
@@ -743,14 +743,14 @@ export default function AssetsPage() {
                     disabled={editingAccount?.isDefault}
                     className={`w-full py-3 rounded-xl font-medium text-sm transition-all
                       ${editingAccount?.isDefault
-                        ? 'bg-brand-primary/10 text-brand-primary cursor-not-allowed'
-                        : 'bg-brand-primary text-white hover:bg-brand-secondary active:scale-[0.98]'
+                        ? 'bg-brand/10 text-ink cursor-not-allowed'
+                        : 'bg-brand text-white hover:bg-brand-strong active:scale-[0.98]'
                       }`}
                   >
                     {editingAccount?.isDefault ? '✓ 已是默认账户' : '设为默认账户'}
                   </button>
                   {!editingAccount?.isDefault && (
-                    <p className={`text-xs text-center mt-1.5 ${theme === 'dark' ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}>
+                    <p className={`text-xs text-center mt-1.5 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                       设为默认后，记一笔时将自动选择此账户
                     </p>
                   )}

@@ -11,7 +11,7 @@ const PRESET_ICONS = ['🍜', '🚗', '🛒', '🎮', '💊', '📚', '🏠', '�
 const PRESET_COLORS = [
   '#ff6b6b', '#4ecdc4', '#a855f7', '#f472b6', '#fb923c',
   '#38bdf8', '#84cc16', '#818cf8', '#ec4899', '#14b8a6',
-  '#f59e0b', '#22c55e', '#ef4444', '#6366f1', '#10b981', '#1677ff'
+  '#E5C45E', '#22c55e', '#ef4444', '#6366f1', '#10b981', '#1677ff'
 ];
 
 export default function CategoriesPage() {
@@ -132,22 +132,22 @@ export default function CategoriesPage() {
   const currentCategories = categories[activeTab]
 
   return (
-    <div className={`min-h-screen ${isDark ? 'bg-[#141413]' : 'bg-[#f5f4ed]'}`}>
+    <div className={`min-h-screen ${isDark ? 'bg-[#141413]' : 'bg-bg'}`}>
       {/* Header */}
-      <header className={`sticky top-0 z-40 px-4 pt-3 pb-2 ${isDark ? 'bg-[#141413]' : 'bg-[#f5f4ed]'}`}>
+      <header className={`sticky top-0 z-40 bg-bg/80 backdrop-blur-md safe-area-top px-5 pt-3 pb-2 ${isDark ? 'bg-[#141413]' : 'bg-bg'}`}>
         <div className="flex items-center gap-3">
           <button onClick={() => navigate('/settings')} className="p-1">
-            <svg className={`w-6 h-6 ${isDark ? 'text-[#b0aea5]' : 'text-[#5e5d59]'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className={`w-6 h-6 ${isDark ? 'text-ink-2' : 'text-ink-2'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
           </button>
-          <h1 className={`text-lg font-semibold flex-1 ${isDark ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+          <h1 className={`text-lg font-semibold flex-1 ${isDark ? 'text-ink' : 'text-ink'}`}>
             分类管理
           </h1>
           {editMode && (
             <button
               onClick={() => setEditMode(false)}
-              className="px-3 py-1.5 text-sm bg-brand-primary text-white rounded-lg font-medium"
+              className="px-3 py-1.5 text-sm bg-brand text-white rounded-lg font-medium"
             >
               完成
             </button>
@@ -155,20 +155,20 @@ export default function CategoriesPage() {
         </div>
       </header>
 
-      <main className="px-4 pb-4">
+      <main className="px-5 pb-6 animate-page-fade">
         {/* Tabs */}
-        <div className={`flex p-1 rounded-xl mb-4 ${isDark ? 'bg-[#30302e]' : 'bg-[#e8e6dc]'}`}>
+        <div className={`flex p-1 rounded-xl mb-4 ${isDark ? 'bg-surface' : 'bg-brand-tint'}`}>
           <button
             onClick={() => { setActiveTab('expense'); setEditMode(false); }}
             className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-all
-              ${activeTab === 'expense' ? 'bg-[#e05555] text-white' : isDark ? 'text-[#b0aea5]' : 'text-[#5e5d59]'}`}
+              ${activeTab === 'expense' ? 'bg-danger text-white' : isDark ? 'text-ink-2' : 'text-ink-2'}`}
           >
             支出分类
           </button>
           <button
             onClick={() => { setActiveTab('income'); setEditMode(false); }}
             className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-all
-              ${activeTab === 'income' ? 'bg-[#2d8a5e] text-white' : isDark ? 'text-[#b0aea5]' : 'text-[#5e5d59]'}`}
+              ${activeTab === 'income' ? 'bg-ok text-white' : isDark ? 'text-ink-2' : 'text-ink-2'}`}
           >
             收入分类
           </button>
@@ -176,7 +176,7 @@ export default function CategoriesPage() {
 
         {/* Hint */}
         {currentCategories.length > 0 && (
-          <p className={`text-xs mb-2 px-1 ${isDark ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}>
+          <p className={`text-xs mb-2 px-1 ${isDark ? 'text-ink-2' : 'text-ink-2'}`}>
             {editMode ? '点击分类编辑，点击 ✕ 删除' : '长按分类进入编辑模式'}
           </p>
         )}
@@ -201,11 +201,11 @@ export default function CategoriesPage() {
                   onMouseLeave={handleLongPressEnd}
                   className={`flex items-center gap-3 p-4 select-none transition-colors
                     ${editMode ? 'animate-shake cursor-pointer' : ''}
-                    ${!editMode && (isDark ? 'hover:bg-[#30302e]' : 'hover:bg-[#faf9f5]')}
+                    ${!editMode && (isDark ? 'hover:bg-surface' : 'hover:bg-[#faf9f5]')}
                   `}
                 >
                   <div className="cursor-grab">
-                    <GripVertical size={18} className={isDark ? 'text-[#4a4a47]' : 'text-[#d1cfc5]'} />
+                    <GripVertical size={18} className={isDark ? 'text-ink-2' : 'text-ink-2'} />
                   </div>
                   <div
                     className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
@@ -214,7 +214,7 @@ export default function CategoriesPage() {
                     {cat.icon}
                   </div>
                   <div className="flex-1">
-                    <div className={`font-medium ${isDark ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+                    <div className={`font-medium ${isDark ? 'text-ink' : 'text-ink'}`}>
                       {cat.name}
                     </div>
                   </div>
@@ -224,13 +224,13 @@ export default function CategoriesPage() {
                         e.stopPropagation()
                         handleDelete(cat.id)
                       }}
-                      className={`p-2 rounded-lg ${isDark ? 'hover:bg-[#4a4a47]' : 'hover:bg-[#f5f4ed]'}`}
+                      className={`p-2 rounded-lg ${isDark ? 'hover:bg-brand-tint' : 'hover:bg-bg'}`}
                     >
-                      <Trash2 size={18} className="text-[#e05555]" />
+                      <Trash2 size={18} className="text-danger" />
                     </button>
                   )}
                   {editMode && isSystemCategory && (
-                    <span className={`text-xs ${isDark ? 'text-[#4a4a47]' : 'text-[#d1cfc5]'}`}>
+                    <span className={`text-xs ${isDark ? 'text-ink-2' : 'text-ink-2'}`}>
                       系统分类
                     </span>
                   )}
@@ -244,7 +244,7 @@ export default function CategoriesPage() {
         <button
           onClick={() => setShowAddCategory(true)}
           className={`w-full flex items-center justify-center gap-2 py-4 mt-4 rounded-xl border border-dashed transition-colors
-            ${isDark ? 'border-[#4a4a47] text-[#b0aea5] hover:bg-[#30302e]' : 'border-[#e8e6dc] text-[#5e5d59] hover:bg-[#faf9f5]'}`}
+            ${isDark ? 'border-brand-tint text-ink-2 hover:bg-surface' : 'border-brand-tint text-ink-2 hover:bg-[#faf9f5]'}`}
         >
           <Plus size={20} />
           <span className="font-medium">添加分类</span>
@@ -260,7 +260,7 @@ export default function CategoriesPage() {
         <div className="p-4 space-y-4">
           {/* Icon Selection */}
           <div>
-            <label className={`block text-sm mb-2 ${isDark ? 'text-[#b0aea5]' : 'text-[#5e5d59]'}`}>
+            <label className={`block text-sm mb-2 ${isDark ? 'text-ink-2' : 'text-ink-2'}`}>
               选择图标
             </label>
             <div className="grid grid-cols-6 gap-2 max-h-40 overflow-y-auto">
@@ -270,8 +270,8 @@ export default function CategoriesPage() {
                   onClick={() => setNewCatIcon(icon)}
                   className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl transition-all
                     ${newCatIcon === icon
-                      ? 'bg-brand-primary/20 ring-2 ring-brand-primary'
-                      : isDark ? 'bg-[#3d3d3a] hover:bg-[#4a4a47]' : 'bg-[#f5f4ed] hover:bg-[#e8e6dc]'
+                      ? 'bg-brand/20 ring-2 ring-brand-primary'
+                      : isDark ? 'bg-surface hover:bg-brand-tint' : 'bg-bg hover:bg-brand-tint'
                     }`}
                 >
                   {icon}
@@ -282,7 +282,7 @@ export default function CategoriesPage() {
 
           {/* Color Selection */}
           <div>
-            <label className={`block text-sm mb-2 ${isDark ? 'text-[#b0aea5]' : 'text-[#5e5d59]'}`}>
+            <label className={`block text-sm mb-2 ${isDark ? 'text-ink-2' : 'text-ink-2'}`}>
               选择颜色
             </label>
             <div className="flex flex-wrap gap-2">
@@ -302,7 +302,7 @@ export default function CategoriesPage() {
           </div>
 
           {/* Preview */}
-          <div className={`flex items-center justify-center gap-3 py-4 rounded-xl ${isDark ? 'bg-[#3d3d3a]' : 'bg-[#f5f4ed]'}`}>
+          <div className={`flex items-center justify-center gap-3 py-4 rounded-xl ${isDark ? 'bg-surface' : 'bg-bg'}`}>
             <div
               className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl"
               style={{ backgroundColor: `${newCatColor}15` }}
@@ -310,10 +310,10 @@ export default function CategoriesPage() {
               {newCatIcon}
             </div>
             <div>
-              <div className={`font-medium ${isDark ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+              <div className={`font-medium ${isDark ? 'text-ink' : 'text-ink'}`}>
                 {newCatName || '分类名称'}
               </div>
-              <div className={`text-xs ${isDark ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}>
+              <div className={`text-xs ${isDark ? 'text-ink-2' : 'text-ink-2'}`}>
                 预览
               </div>
             </div>
@@ -321,7 +321,7 @@ export default function CategoriesPage() {
 
           {/* Name Input */}
           <div>
-            <label className={`block text-sm mb-2 ${isDark ? 'text-[#b0aea5]' : 'text-[#5e5d59]'}`}>
+            <label className={`block text-sm mb-2 ${isDark ? 'text-ink-2' : 'text-ink-2'}`}>
               分类名称
             </label>
             <input
@@ -332,15 +332,15 @@ export default function CategoriesPage() {
               maxLength={6}
               className={`w-full px-4 py-3 rounded-xl
                 ${isDark
-                  ? 'bg-[#3d3d3a] text-[#faf9f5] placeholder-[#87867f]'
-                  : 'bg-[#f5f4ed] text-[#141413] placeholder-[#b0aea5]'
-                } outline-none focus:ring-2 focus:ring-[#c96442]/50`}
+                  ? 'bg-surface text-ink placeholder-[#87867f]'
+                  : 'bg-bg text-ink placeholder-[#b0aea5]'
+                } outline-none focus:ring-2 focus:ring-brand/40`}
             />
           </div>
 
           <button
             onClick={handleAddCategory}
-            className="w-full py-3 bg-[#c96442] text-white rounded-xl font-medium"
+            className="w-full py-3 bg-brand text-white rounded-xl font-medium"
           >
             保存
           </button>
@@ -358,7 +358,7 @@ export default function CategoriesPage() {
           <div className="flex-1 space-y-4 overflow-y-auto">
             {/* Name Input — 放在最上面 */}
             <div>
-              <label className={`block text-sm mb-2 ${isDark ? 'text-[#b0aea5]' : 'text-[#5e5d59]'}`}>
+              <label className={`block text-sm mb-2 ${isDark ? 'text-ink-2' : 'text-ink-2'}`}>
                 分类名称 <span className="text-red-500">*</span>
               </label>
               <input
@@ -374,8 +374,8 @@ export default function CategoriesPage() {
                   editCatError
                     ? 'bg-red-500/10 ring-2 ring-red-500'
                     : isDark
-                    ? 'bg-[#3d3d3a] text-[#faf9f5] placeholder-[#87867f] focus:ring-2 focus:ring-[#c96442]/50'
-                    : 'bg-[#f5f4ed] text-[#141413] placeholder-[#b0aea5] focus:ring-2 focus:ring-[#c96442]/50'
+                    ? 'bg-surface text-ink placeholder-[#87867f] focus:ring-2 focus:ring-brand/40'
+                    : 'bg-bg text-ink placeholder-[#b0aea5] focus:ring-2 focus:ring-brand/40'
                 }`}
               />
               {editCatError && (
@@ -385,7 +385,7 @@ export default function CategoriesPage() {
 
             {/* Icon Selection */}
             <div>
-              <label className={`block text-sm mb-2 ${isDark ? 'text-[#b0aea5]' : 'text-[#5e5d59]'}`}>
+              <label className={`block text-sm mb-2 ${isDark ? 'text-ink-2' : 'text-ink-2'}`}>
                 选择图标
               </label>
               <div className="grid grid-cols-6 gap-2 max-h-32 overflow-y-auto">
@@ -395,8 +395,8 @@ export default function CategoriesPage() {
                     onClick={() => setEditCatIcon(icon)}
                     className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl transition-all flex-shrink-0
                       ${editCatIcon === icon
-                        ? 'bg-brand-primary/20 ring-2 ring-brand-primary'
-                        : isDark ? 'bg-[#3d3d3a] hover:bg-[#4a4a47]' : 'bg-[#f5f4ed] hover:bg-[#e8e6dc]'
+                        ? 'bg-brand/20 ring-2 ring-brand-primary'
+                        : isDark ? 'bg-surface hover:bg-brand-tint' : 'bg-bg hover:bg-brand-tint'
                       }`}
                   >
                     {icon}
@@ -407,7 +407,7 @@ export default function CategoriesPage() {
 
             {/* Color Selection */}
             <div>
-              <label className={`block text-sm mb-2 ${isDark ? 'text-[#b0aea5]' : 'text-[#5e5d59]'}`}>
+              <label className={`block text-sm mb-2 ${isDark ? 'text-ink-2' : 'text-ink-2'}`}>
                 选择颜色
               </label>
               <div className="flex flex-wrap gap-2">
@@ -427,7 +427,7 @@ export default function CategoriesPage() {
             </div>
 
             {/* Preview */}
-            <div className={`flex items-center justify-center gap-3 py-4 rounded-xl ${isDark ? 'bg-[#3d3d3a]' : 'bg-[#f5f4ed]'}`}>
+            <div className={`flex items-center justify-center gap-3 py-4 rounded-xl ${isDark ? 'bg-surface' : 'bg-bg'}`}>
               <div
                 className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl"
                 style={{ backgroundColor: `${editCatColor}15` }}
@@ -435,10 +435,10 @@ export default function CategoriesPage() {
                 {editCatIcon}
               </div>
               <div>
-                <div className={`font-medium ${isDark ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+                <div className={`font-medium ${isDark ? 'text-ink' : 'text-ink'}`}>
                   {editCatName || '分类名称'}
                 </div>
-                <div className={`text-xs ${isDark ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}>
+                <div className={`text-xs ${isDark ? 'text-ink-2' : 'text-ink-2'}`}>
                   预览
                 </div>
               </div>
@@ -446,10 +446,10 @@ export default function CategoriesPage() {
           </div>
 
           {/* 底部固定按钮 */}
-          <div className={`pt-3 border-t ${isDark ? 'border-[#3d3d3a]' : 'border-[#f0eee6]'}`}>
+          <div className={`pt-3 border-t ${isDark ? 'border-brand-tint' : 'border-brand-tint'}`}>
             <button
               onClick={handleSaveEdit}
-              className="w-full py-3 bg-[#c96442] text-white rounded-xl font-medium"
+              className="w-full py-3 bg-brand text-white rounded-xl font-medium"
             >
               保存修改
             </button>
@@ -459,7 +459,7 @@ export default function CategoriesPage() {
 
       {/* Toast */}
       {showToast && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[60] bg-[var(--text-primary)] text-[var(--bg-secondary)] px-4 py-2 rounded-full text-sm font-medium animate-bounce-once">
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[60] bg-ink text-surface px-4 py-2 rounded-full text-sm font-medium animate-bounce-once">
           {toastMsg}
         </div>
       )}

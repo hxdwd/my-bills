@@ -137,18 +137,18 @@ export default function TransactionListPage() {
   const monthNames = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月']
 
   return (
-    <div className={`min-h-screen ${theme === 'dark' ? 'bg-[#141413]' : 'bg-[#f5f4ed]'}`}>
+    <div className={`min-h-screen bg-bg`}>
       {/* Header */}
-      <header className={`sticky top-0 z-40 px-4 pt-3 pb-2 ${theme === 'dark' ? 'bg-[#141413]' : 'bg-[#f5f4ed]'}`}>
+      <header className={`sticky top-0 z-40 bg-bg/80 backdrop-blur-md safe-area-top px-5 pt-3 pb-2 `}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button 
               onClick={() => navigate('/', { replace: true })} 
-              className={`p-1.5 rounded-full ${theme === 'dark' ? 'hover:bg-[#30302e]' : 'hover:bg-white'}`}
+              className={`p-1.5 rounded-full ${theme === 'dark' ? 'hover:bg-surface' : 'hover:bg-white'}`}
             >
-              <ArrowLeft size={22} className={theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#5e5d59]'} />
+              <ArrowLeft size={22} className={theme === 'dark' ? 'text-ink-2' : 'text-ink-2'} />
             </button>
-            <h1 className={`text-lg font-semibold ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+            <h1 className={`text-lg font-semibold ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
               交易明细
             </h1>
           </div>
@@ -162,8 +162,8 @@ export default function TransactionListPage() {
             onClick={() => setFilterMode('all')}
             className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
               filterMode === 'all'
-                ? 'bg-[#c96442] text-white'
-                : theme === 'dark' ? 'bg-[#30302e] text-[#b0aea5]' : 'bg-white text-[#5e5d59]'
+                ? 'bg-brand text-white'
+                : theme === 'dark' ? 'bg-surface text-ink-2' : 'bg-white text-ink-2'
             }`}
           >
             全部
@@ -172,8 +172,8 @@ export default function TransactionListPage() {
             onClick={() => setFilterMode('month')}
             className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
               filterMode === 'month'
-                ? 'bg-[#c96442] text-white'
-                : theme === 'dark' ? 'bg-[#30302e] text-[#b0aea5]' : 'bg-white text-[#5e5d59]'
+                ? 'bg-brand text-white'
+                : theme === 'dark' ? 'bg-surface text-ink-2' : 'bg-white text-ink-2'
             }`}
           >
             按月筛选
@@ -183,7 +183,7 @@ export default function TransactionListPage() {
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
               className={`px-4 py-2 rounded-full text-sm font-medium ${
-                theme === 'dark' ? 'bg-[#30302e] text-[#b0aea5]' : 'bg-white text-[#5e5d59]'
+                theme === 'dark' ? 'bg-surface text-ink-2' : 'bg-white text-ink-2'
               }`}
             >
               {monthNames.map((name, idx) => (
@@ -192,15 +192,15 @@ export default function TransactionListPage() {
             </select>
           )}
         </div>
-        <div className={`text-xs mt-2 ${theme === 'dark' ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}>
+        <div className={`text-xs mt-2 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
           共 {filteredTransactions.length} 条交易
         </div>
       </div>
 
       {/* 交易列表 */}
-      <main className="px-4 pb-24">
+      <main className="px-5 pb-24 animate-page-fade">
         {filteredTransactions.length === 0 ? (
-          <div className={`text-center py-16 ${theme === 'dark' ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}>
+          <div className={`text-center py-16 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
             <div className="text-4xl mb-3">📋</div>
             <p>暂无交易记录</p>
           </div>
@@ -212,12 +212,12 @@ export default function TransactionListPage() {
                 <div key={date}>
                   {/* 日期头部 */}
                   <div className="flex items-center justify-between mb-2 px-1">
-                    <span className={`text-sm font-semibold ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+                    <span className={`text-sm font-semibold ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
                       {date}
                     </span>
-                    <span className={`text-xs ${theme === 'dark' ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}>
-                      {expense > 0 && <span className="text-[#e05555] mr-2">支出 ¥{expense.toFixed(2)}</span>}
-                      {income > 0 && <span className="text-[#2d8a5e]">收入 ¥{income.toFixed(2)}</span>}
+                    <span className={`text-xs ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
+                      {expense > 0 && <span className="text-danger mr-2">支出 ¥{expense.toFixed(2)}</span>}
+                      {income > 0 && <span className="text-ok">收入 ¥{income.toFixed(2)}</span>}
                     </span>
                   </div>
                   <Card className="!p-0 divide-y divide-[#f0eee6] dark:divide-[#3d3d3a]">
@@ -264,40 +264,40 @@ export default function TransactionListPage() {
                     {getCategory(selectedTransaction).icon}
                   </div>
                   <div className={`text-3xl font-bold font-mono ${
-                    selectedTransaction.type === 'expense' ? 'text-[#e05555]' : 
-                    selectedTransaction.type === 'income' ? 'text-[#2d8a5e]' : 'text-[#5b8dee]'
+                    selectedTransaction.type === 'expense' ? 'text-danger' : 
+                    selectedTransaction.type === 'income' ? 'text-ok' : 'text-[#5b8dee]'
                   }`}>
                     {selectedTransaction.type === 'expense' ? '-' : selectedTransaction.type === 'income' ? '+' : ''}
                     ¥{selectedTransaction.amount.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
                   </div>
-                  <div className={`text-sm mt-1 ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>
+                  <div className={`text-sm mt-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                     {selectedTransaction.type === 'expense' ? '支出' : selectedTransaction.type === 'income' ? '收入' : '转账'}
                   </div>
                 </div>
 
                 {/* 详情字段 */}
-                <div className={`rounded-xl p-4 space-y-3 ${theme === 'dark' ? 'bg-[#30302e]' : 'bg-white'}`}>
+                <div className={`rounded-xl p-4 space-y-3 ${theme === 'dark' ? 'bg-surface' : 'bg-white'}`}>
                   <div className="flex items-center justify-between">
-                    <span className={`text-sm ${theme === 'dark' ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}>分类</span>
-                    <span className={`text-sm ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+                    <span className={`text-sm ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>分类</span>
+                    <span className={`text-sm ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
                       {getCategory(selectedTransaction).icon} {selectedTransaction.categoryName}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className={`text-sm ${theme === 'dark' ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}>账户</span>
-                    <span className={`text-sm ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+                    <span className={`text-sm ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>账户</span>
+                    <span className={`text-sm ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
                       {selectedTransaction.accountName}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className={`text-sm ${theme === 'dark' ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}>日期</span>
-                    <span className={`text-sm ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+                    <span className={`text-sm ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>日期</span>
+                    <span className={`text-sm ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
                       {selectedTransaction.date} {selectedTransaction.time}
                     </span>
                   </div>
                   {selectedTransaction.tags && selectedTransaction.tags.length > 0 && (
                     <div className="flex items-center justify-between">
-                      <span className={`text-sm ${theme === 'dark' ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}>标签</span>
+                      <span className={`text-sm ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>标签</span>
                       <div className="flex gap-1 flex-wrap justify-end">
                         {selectedTransaction.tags.map(tagId => {
                           const tag = tags.find(t => t.id === tagId);
@@ -316,8 +316,8 @@ export default function TransactionListPage() {
                   )}
                   {selectedTransaction.note && (
                     <div className="flex items-center justify-between">
-                      <span className={`text-sm ${theme === 'dark' ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}>备注</span>
-                      <span className={`text-sm ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+                      <span className={`text-sm ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>备注</span>
+                      <span className={`text-sm ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
                         {selectedTransaction.note}
                       </span>
                     </div>
@@ -328,13 +328,13 @@ export default function TransactionListPage() {
                 <div className="flex gap-3">
                   <button
                     onClick={() => { setEditMode(true); setShowDeleteConfirm(false); }}
-                    className="flex-1 py-3 rounded-xl bg-[#c96442] text-white font-medium hover:bg-[#b55335] transition-colors"
+                    className="flex-1 py-3 rounded-xl bg-brand text-white font-medium hover:bg-[#b55335] transition-colors"
                   >
                     修改
                   </button>
                   <button
                     onClick={() => setShowDeleteConfirm(true)}
-                    className="flex-1 py-3 rounded-xl bg-[#e05555]/10 text-[#e05555] font-medium hover:bg-[#e05555]/20 transition-colors"
+                    className="flex-1 py-3 rounded-xl bg-danger/10 text-danger font-medium hover:bg-danger/20 transition-colors"
                   >
                     删除
                   </button>
@@ -342,22 +342,22 @@ export default function TransactionListPage() {
 
                 {/* 删除确认 */}
                 {showDeleteConfirm && (
-                  <div className={`p-4 rounded-xl ${theme === 'dark' ? 'bg-[#30302e]' : 'bg-white'}`}>
-                    <p className={`text-sm text-center mb-3 ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>
+                  <div className={`p-4 rounded-xl ${theme === 'dark' ? 'bg-surface' : 'bg-white'}`}>
+                    <p className={`text-sm text-center mb-3 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                       确定要删除这笔交易吗？此操作不可撤销。
                     </p>
                     <div className="flex gap-3">
                       <button
                         onClick={() => setShowDeleteConfirm(false)}
                         className={`flex-1 py-2 rounded-lg text-sm ${
-                          theme === 'dark' ? 'bg-[#4a4a47] text-[#b0aea5]' : 'bg-[#e8e6dc] text-[#5e5d59]'
+                          theme === 'dark' ? 'bg-[#4a4a47] text-ink-2' : 'bg-brand-tint text-ink-2'
                         }`}
                       >
                         取消
                       </button>
                       <button
                         onClick={handleDelete}
-                        className="flex-1 py-2 rounded-lg bg-[#e05555] text-white text-sm"
+                        className="flex-1 py-2 rounded-lg bg-danger text-white text-sm"
                       >
                         确认删除
                       </button>
@@ -369,18 +369,18 @@ export default function TransactionListPage() {
               <>
                 {/* 编辑模式 */}
                 <div>
-                  <label className={`text-sm mb-2 block ${theme === 'dark' ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}>
+                  <label className={`text-sm mb-2 block ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                     金额
                   </label>
                   <div className="flex items-center gap-2">
-                    <span className={`text-lg ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>¥</span>
+                    <span className={`text-lg ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>¥</span>
                     <input
                       type="number"
                       value={editAmount}
                       onChange={(e) => setEditAmount(e.target.value)}
                       className={`flex-1 px-4 py-3 rounded-xl text-lg font-mono ${
-                        theme === 'dark' ? 'bg-[#30302e] text-[#faf9f5]' : 'bg-white text-[#141413]'
-                      } focus:outline-none focus:ring-2 focus:ring-[#c96442]/50`}
+                        theme === 'dark' ? 'bg-surface text-ink' : 'bg-white text-ink'
+                      } focus:outline-none focus:ring-2 focus:ring-brand/40`}
                       step="0.01"
                       min="0.01"
                     />
@@ -388,7 +388,7 @@ export default function TransactionListPage() {
                 </div>
 
                 <div>
-                  <label className={`text-sm mb-2 block ${theme === 'dark' ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}>
+                  <label className={`text-sm mb-2 block ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                     备注
                   </label>
                   <textarea
@@ -397,13 +397,13 @@ export default function TransactionListPage() {
                     placeholder="添加备注..."
                     rows={3}
                     className={`w-full px-4 py-3 rounded-xl resize-none ${
-                      theme === 'dark' ? 'bg-[#30302e] text-[#faf9f5] placeholder-[#87867f]' : 'bg-white text-[#141413] placeholder-[#b0aea5]'
-                    } focus:outline-none focus:ring-2 focus:ring-[#c96442]/50`}
+                      theme === 'dark' ? 'bg-surface text-ink placeholder-[#87867f]' : 'bg-white text-ink placeholder-[#b0aea5]'
+                    } focus:outline-none focus:ring-2 focus:ring-brand/40`}
                   />
                 </div>
 
                 {/* 分类和账户信息（只读提示） */}
-                <div className={`p-3 rounded-xl text-xs ${theme === 'dark' ? 'bg-[#30302e] text-[#87867f]' : 'bg-[#f5f4ed] text-[#b0aea5]'}`}>
+                <div className={`p-3 rounded-xl text-xs ${theme === 'dark' ? 'bg-surface text-ink-2' : 'bg-bg text-ink-2'}`}>
                   分类: {selectedTransaction.categoryName} · 账户: {selectedTransaction.accountName} · 日期: {selectedTransaction.date}
                 </div>
 
@@ -411,14 +411,14 @@ export default function TransactionListPage() {
                   <button
                     onClick={() => setEditMode(false)}
                     className={`flex-1 py-3 rounded-xl ${
-                      theme === 'dark' ? 'bg-[#4a4a47] text-[#b0aea5]' : 'bg-[#e8e6dc] text-[#5e5d59]'
+                      theme === 'dark' ? 'bg-[#4a4a47] text-ink-2' : 'bg-brand-tint text-ink-2'
                     }`}
                   >
                     取消
                   </button>
                   <button
                     onClick={handleSaveEdit}
-                    className="flex-1 py-3 rounded-xl bg-[#c96442] text-white font-medium hover:bg-[#b55335] transition-colors"
+                    className="flex-1 py-3 rounded-xl bg-brand text-white font-medium hover:bg-[#b55335] transition-colors"
                   >
                     保存
                   </button>

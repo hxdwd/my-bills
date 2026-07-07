@@ -1,43 +1,20 @@
-import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useTheme } from '../context/ThemeContext'
 import { useApp } from '../context/AppContext'
+import { useAuthStore } from '../stores/useAuthStore'
 import Card from '../components/ui/Card'
-import ProgressRing from '../components/ui/ProgressRing'
 import TransactionItem from '../components/ui/TransactionItem'
-import { 
-  TrendingUp, 
-  TrendingDown, 
-  Wallet, 
-  PiggyBank,
-  ChevronRight,
-  Sun,
-  Moon,
-} from 'lucide-react'
+import { TrendingUp, TrendingDown, PiggyBank, ChevronRight, Sparkles, PieChart, Search } from 'lucide-react'
 
-// 首页快捷入口的日历图标：与 emoji 风格协调，中间动态显示“今天”的日期数字
-const HomeCalendarIcon: React.FC<{ size?: number; color?: string }> = ({ size = 24, color = '#5b8dee' }) => {
+// 首页日历图标：中间动态显示"今天"日期
+const HomeCalendarIcon: React.FC<{ size?: number; color?: string }> = ({ size = 24, color = '#222222' }) => {
   const today = new Date().getDate()
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
-      {/* 日历主体：圆角卡片，浅色填充 + 主题色描边 */}
-      <rect x="3" y="4.5" width="18" height="16.5" rx="3" fill={`${color}1f`} stroke={color} strokeWidth="1.6" />
-      {/* 顶部横条（标题栏） */}
+      <rect x="3" y="4.5" width="18" height="16.5" rx="5" fill="#FFF7E6" stroke={color} strokeWidth="1.6" />
       <path d="M3 9h18" stroke={color} strokeWidth="1.6" strokeLinecap="round" />
-      {/* 左右挂环 */}
       <path d="M8 3v3.5" stroke={color} strokeWidth="1.6" strokeLinecap="round" />
       <path d="M16 3v3.5" stroke={color} strokeWidth="1.6" strokeLinecap="round" />
-      {/* 今日日期数字：垂直居中于卡片主体 */}
-      <text
-        x="12"
-        y="15"
-        textAnchor="middle"
-        dominantBaseline="central"
-        fontSize="9"
-        fontWeight="700"
-        fill={color}
-        stroke="none"
-      >
+      <text x="12" y="15" textAnchor="middle" dominantBaseline="central" fontSize="9" fontWeight="700" fill={color} stroke="none">
         {today}
       </text>
     </svg>
@@ -45,20 +22,20 @@ const HomeCalendarIcon: React.FC<{ size?: number; color?: string }> = ({ size = 
 }
 
 interface HomePageProps {
-  onAddTransaction?: () => void;
+  onAddTransaction?: () => void
 }
 
 export default function HomePage({ onAddTransaction }: HomePageProps = {}) {
   const navigate = useNavigate()
-  const { theme, toggleTheme } = useTheme()
-  const { 
+  const {
     getTotalAssets,
-    getMonthlyIncome, 
-    getMonthlyExpense, 
+    getMonthlyIncome,
+    getMonthlyExpense,
     getBudgetProgress,
     transactions,
     categories,
   } = useApp()
+  const user = useAuthStore(state => state.user)
 
   const totalAssets = getTotalAssets()
   const monthlyIncome = getMonthlyIncome()
@@ -67,201 +44,149 @@ export default function HomePage({ onAddTransaction }: HomePageProps = {}) {
   const budget = getBudgetProgress()
 
   const currentMonth = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long' })
+  const hour = new Date().getHours()
+  const greeting = hour < 6 ? '凌晨好' : hour < 12 ? '早上好' : hour < 14 ? '中午好' : hour < 18 ? '下午好' : '晚上好'
+
+  const fmt = (n: number) => n.toLocaleString('zh-CN', { minimumFractionDigits: 2 })
 
   const quickActions = [
-    { icon: '📊', label: '报表', color: '#a855f7', path: '/reports' },
-    { icon: '📅', label: '预算', color: '#f59e0b', path: '/budget' },
-    { icon: <HomeCalendarIcon color="#5b8dee" />, label: '日历', color: '#5b8dee', path: '/calendar' },
-    { icon: '🤖', label: 'AI助手', color: '#c96442', path: '/ai' },
+    { icon: <PieChart size={22} color="#222" />, label: '报表', color: '#FFF7E6', path: '/reports' },
+    { icon: <HomeCalendarIcon color="#222" />, label: '日历', color: '#FFF7E6', path: '/calendar' },
+    { icon: <Sparkles size={22} color="#222" />, label: 'AI助手', color: '#FFF7E6', path: '/ai' },
+    { icon: <Search size={22} color="#222" />, label: '搜索', color: '#FFF7E6', path: '/search' },
   ]
 
+  const recent = transactions.slice(0, 5)
+
   return (
-    <div className={`min-h-screen ${theme === 'dark' ? 'bg-[#141413]' : 'bg-[#f5f4ed]'} transition-colors`}>
+    <div className="min-h-screen bg-bg">
       {/* Header */}
-      <header className={`sticky top-0 z-40 px-4 pt-3 pb-2 ${theme === 'dark' ? 'bg-[#141413]' : 'bg-[#f5f4ed]'}`}>
-        <div className="flex items-center justify-between">
+      <header className="sticky top-0 z-40 bg-bg/80 backdrop-blur-md safe-area-top">
+        <div className="flex items-center justify-between h-14 px-5">
           <div>
-            <h1 className={`text-lg font-semibold ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
-              钱盒子
-            </h1>
-            <p className={`text-xs ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>
-              {currentMonth}
-            </p>
+            <h1 className="text-xl font-serif font-semibold text-ink">钱盒子</h1>
+            <p className="text-xs text-ink-2 mt-0.5">{currentMonth}</p>
           </div>
-          <div className="flex items-center gap-2">
-            <button 
-              onClick={() => navigate('/search')}
-              className={`p-2 rounded-full ${theme === 'dark' ? 'hover:bg-[#30302e]' : 'hover:bg-[#faf9f5]'}`}
-            >
-              <svg className={`w-5 h-5 ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#5e5d59]'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-            </button>
-            <button 
-              onClick={toggleTheme}
-              className={`p-2 rounded-full ${theme === 'dark' ? 'hover:bg-[#30302e]' : 'hover:bg-[#faf9f5]'}`}
-            >
-              {theme === 'dark' ? (
-                <Sun size={20} className="text-[#f59e0b]" />
-              ) : (
-                <Moon size={20} className="text-[#5e5d59]" />
-              )}
-            </button>
-          </div>
+          <button
+            onClick={() => navigate('/search')}
+            className="p-2 -mr-2 text-ink-2 hover:text-ink hover:bg-brand-tint rounded-full transition-colors"
+          >
+            <Search size={20} />
+          </button>
         </div>
       </header>
 
-      <main className="px-4 pb-4 space-y-4 overflow-x-hidden">
-        {/* Stats Cards */}
-        <div className="grid grid-cols-2 gap-3">
-          {/* Monthly Income */}
-          <Card className="!p-4 min-w-0">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-8 h-8 rounded-lg bg-[#2d8a5e]/10 flex items-center justify-center shrink-0">
-                <TrendingUp size={16} className="text-[#2d8a5e]" />
-              </div>
-              <span className={`text-xs truncate ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>本月收入</span>
-            </div>
-            <div className="text-base sm:text-xl font-bold text-[#2d8a5e] font-mono truncate">
-              ¥{monthlyIncome.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
-            </div>
-          </Card>
-
-          {/* Monthly Expense */}
-          <Card className="!p-4 min-w-0">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-8 h-8 rounded-lg bg-[#e05555]/10 flex items-center justify-center shrink-0">
-                <TrendingDown size={16} className="text-[#e05555]" />
-              </div>
-              <span className={`text-xs truncate ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>本月支出</span>
-            </div>
-            <div className="text-base sm:text-xl font-bold text-[#e05555] font-mono truncate">
-              ¥{monthlyExpense.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
-            </div>
-          </Card>
-
-          {/* Balance */}
-          <Card className="!p-4 min-w-0">
-            <div className="flex items-center gap-2 mb-2">
-              <div className={`w-8 h-8 rounded-lg ${balance >= 0 ? 'bg-[#5b8dee]/10' : 'bg-[#e05555]/10'} flex items-center justify-center shrink-0`}>
-                <PiggyBank size={16} className={balance >= 0 ? 'text-[#5b8dee]' : 'text-[#e05555]'} />
-              </div>
-              <span className={`text-xs truncate ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>本月结余</span>
-            </div>
-            <div className={`text-base sm:text-xl font-bold font-mono truncate ${balance >= 0 ? 'text-[#5b8dee]' : 'text-[#e05555]'}`}>
-              {balance >= 0 ? '+' : ''}¥{balance.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
-            </div>
-          </Card>
-
-          {/* Total Assets */}
-          <Card className="!p-4 min-w-0" onClick={() => navigate('/assets')}>
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-8 h-8 rounded-lg bg-[#c96442]/10 flex items-center justify-center shrink-0">
-                <Wallet size={16} className="text-[#c96442]" />
-              </div>
-              <span className={`text-xs truncate ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>总资产</span>
-            </div>
-            <div className="text-base sm:text-xl font-bold text-[#c96442] font-mono truncate">
-              ¥{totalAssets.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
-            </div>
-          </Card>
-        </div>
-
-        {/* Budget Progress */}
-        <Card className="!p-4">
-          <div className="flex items-center justify-between">
+      <main className="px-5 pb-[150px] space-y-4 overflow-x-hidden animate-page-fade">
+        {/* 顶部大卡：欢迎 + 总资产 + 当月统计 */}
+        <Card className="bg-gradient-to-br from-brand to-brand-soft text-ink shadow-soft-brand stagger">
+          <div className="flex items-start justify-between">
             <div>
-              <h3 className={`font-medium mb-1 ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
-                本月预算
-              </h3>
-              <div className="flex items-baseline gap-2 min-w-0">
-                <span className={`text-xl sm:text-2xl font-bold font-mono truncate ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
-                  ¥{budget.spent.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
-                </span>
-                <span className={`text-sm shrink-0 ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>
-                  / ¥{budget.total.toLocaleString()}
-                </span>
-              </div>
-              <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>
-                剩余 ¥{(budget.total - budget.spent).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
-              </p>
+              <p className="text-sm font-medium opacity-70">{greeting}，{user?.username ?? '晓东'} 👋</p>
+              <p className="text-xs opacity-60 mt-0.5">总资产</p>
+              <p className="text-3xl font-bold font-amount mt-1">¥{fmt(totalAssets)}</p>
             </div>
-            <ProgressRing 
-              progress={budget.percentage} 
-              size={80} 
-              strokeWidth={8}
-              color={budget.percentage > 80 ? '#e05555' : '#c96442'}
+            <button
+              onClick={() => navigate('/assets')}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-white/50 text-xs font-medium active:scale-95 transition-all"
             >
-              <span className={`text-lg font-bold ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
-                {budget.percentage}%
-              </span>
-            </ProgressRing>
+              资产 <ChevronRight size={14} />
+            </button>
           </div>
-          <button 
-            onClick={() => navigate('/budget')}
-            className={`w-full mt-3 flex items-center justify-center gap-1 py-2 rounded-lg text-sm font-medium transition-colors
-              ${theme === 'dark' ? 'bg-[#3d3d3a] text-[#b0aea5] hover:bg-[#4a4a47]' : 'bg-[#e8e6dc] text-[#4d4c48] hover:bg-[#dedad0]'}
-            `}
-          >
-            查看详情 <ChevronRight size={16} />
-          </button>
+
+          {/* 当月三统计：点击进入预算页 */}
+          <div className="grid grid-cols-3 gap-3 mt-5 pt-4 border-t border-black/5">
+            <button
+              onClick={() => navigate('/budget')}
+              className="text-left active:scale-95 transition-transform"
+            >
+              <div className="flex items-center gap-1 text-xs opacity-60 mb-1">
+                <TrendingUp size={13} /> 收入
+              </div>
+              <div className="text-base font-bold font-amount">¥{fmt(monthlyIncome)}</div>
+            </button>
+            <button
+              onClick={() => navigate('/budget')}
+              className="text-left active:scale-95 transition-transform"
+            >
+              <div className="flex items-center gap-1 text-xs opacity-60 mb-1">
+                <TrendingDown size={13} /> 支出
+              </div>
+              <div className="text-base font-bold font-amount">¥{fmt(monthlyExpense)}</div>
+            </button>
+            <button
+              onClick={() => navigate('/budget')}
+              className="text-left active:scale-95 transition-transform"
+            >
+              <div className="flex items-center gap-1 text-xs opacity-60 mb-1">
+                <PiggyBank size={13} /> 结余
+              </div>
+              <div className={`text-base font-bold font-amount ${balance >= 0 ? '' : 'text-danger'}`}>
+                {balance >= 0 ? '+' : ''}¥{fmt(balance)}
+              </div>
+            </button>
+          </div>
         </Card>
 
-        {/* Quick Actions */}
-        <div className="grid grid-cols-4 gap-3">
-          {quickActions.map((action) => (
-            <button
-              key={action.label}
-              onClick={() => navigate(action.path)}
-              className="flex flex-col items-center gap-1.5 p-3 rounded-xl transition-all active:scale-95"
-              style={{ backgroundColor: `${action.color}10` }}
-            >
-              <span className="text-2xl flex items-center justify-center">{action.icon}</span>
-              <span className={`text-xs font-medium ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#5e5d59]'}`}>
-                {action.label}
-              </span>
-            </button>
-          ))}
-        </div>
+        {/* 快捷入口：一行四宫格 */}
+        <Card className="flex flex-col justify-center">
+          <div className="flex items-center justify-between gap-2">
+            {quickActions.map((action) => (
+              <button
+                key={action.label}
+                onClick={() => navigate(action.path)}
+                className="flex flex-1 flex-col items-center gap-1.5 py-2.5 rounded-2xl bg-brand-tint active:scale-95 transition-all"
+              >
+                <span className="flex items-center justify-center">{action.icon}</span>
+                <span className="text-[11px] font-medium text-ink">{action.label}</span>
+              </button>
+            ))}
+          </div>
+        </Card>
 
-        {/* Recent Transactions */}
+        {/* AI 助手卡 */}
+        <Card hoverable onClick={() => navigate('/ai')} className="flex items-center gap-3 bg-gradient-to-r from-brand-tint to-surface">
+          <div className="w-11 h-11 rounded-2xl bg-brand flex items-center justify-center shrink-0">
+            <Sparkles size={22} color="#222" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="font-semibold text-ink">AI 消费洞察</div>
+            <div className="text-xs text-ink-2 mt-0.5 truncate">本月饮食占比偏高，看看分析 →</div>
+          </div>
+          <ChevronRight size={18} className="text-ink-2 shrink-0" />
+        </Card>
+
+        {/* 最近交易 */}
         <div>
-          <div className="flex items-center justify-between mb-3">
-            <h3 className={`font-semibold ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
-              最近交易
-            </h3>
-            <button 
-              onClick={() => navigate('/transactions')}
-              className={`text-sm ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}
-            >
+          <div className="flex items-center justify-between mb-3 px-1">
+            <h3 className="font-semibold text-ink">最近交易</h3>
+            <button onClick={() => navigate('/transactions')} className="text-sm text-ink-2 active:scale-95 transition-all">
               查看全部
             </button>
           </div>
-          
-          <Card className="!p-0 divide-y divide-[#f0eee6] dark:divide-[#3d3d3a]">
-            {transactions.slice(0, 5).map((t) => {
-              const category = t.type === 'transfer' 
-                ? { icon: '↔️', color: '#5b8dee' }
-                : (categories[t.type === 'expense' ? 'expense' : 'income'] as any[]).find(c => c.id === t.categoryId) || { icon: '📝', color: '#87867f' }
-              
-              return (
-                <TransactionItem
-                  key={t.id}
-                  icon={category.icon}
-                  iconBg={`${category.color}15`}
-                  title={t.categoryName}
-                  subtitle={`${t.date} ${t.time}`}
-                  amount={t.amount}
-                  type={t.type}
-                  account={t.accountName}
-                />
-              )
-            })}
+          <Card className="!p-2">
+            {recent.length > 0 ? (
+              recent.map((t) => {
+                const category = t.type === 'transfer'
+                  ? { icon: '↔️', color: '#888888' }
+                  : (categories[t.type === 'expense' ? 'expense' : 'income'] as any[])?.find(c => c.id === t.categoryId) || { icon: '📝', color: '#888888' }
+                return (
+                  <TransactionItem
+                    key={t.id}
+                    icon={category.icon}
+                    iconBg={`${category.color}15`}
+                    title={t.categoryName}
+                    subtitle={`${t.date} ${t.time}`}
+                    amount={t.amount}
+                    type={t.type}
+                    account={t.accountName}
+                  />
+                )
+              })
+            ) : (
+              <div className="py-10 text-center text-ink-2 text-sm">暂无交易记录</div>
+            )}
           </Card>
         </div>
-
-
-
       </main>
     </div>
   )

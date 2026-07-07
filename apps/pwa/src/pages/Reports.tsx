@@ -218,12 +218,12 @@ export default function ReportsPage() {
     datasets: [{
       label: '支出',
       data: monthWeekExpense.values,
-      backgroundColor: '#c96442',
+      backgroundColor: '#F4D77C',
       borderRadius: 6,
     }]
   } : {
     labels: [],
-    datasets: [{ label: '支出', data: [], backgroundColor: '#c96442', borderRadius: 6 }]
+    datasets: [{ label: '支出', data: [], backgroundColor: '#F4D77C', borderRadius: 6 }]
   }
 
   const lineChartData = timeRange === 'year' && yearMonthExpense ? {
@@ -232,8 +232,8 @@ export default function ReportsPage() {
       {
         label: '收入',
         data: yearMonthExpense.income,
-        borderColor: '#2d8a5e',
-        backgroundColor: 'rgba(45, 138, 94, 0.1)',
+        borderColor: '#4CAF50',
+        backgroundColor: 'rgba(76, 175, 80, 0.1)',
         fill: true,
         tension: 0.3,
         pointRadius: 4,
@@ -242,8 +242,8 @@ export default function ReportsPage() {
       {
         label: '支出',
         data: yearMonthExpense.expense,
-        borderColor: '#e05555',
-        backgroundColor: 'rgba(224, 85, 85, 0.1)',
+        borderColor: '#FF6B6B',
+        backgroundColor: 'rgba(255, 107, 107, 0.1)',
         fill: true,
         tension: 0.3,
         pointRadius: 4,
@@ -261,12 +261,12 @@ export default function ReportsPage() {
     scales: {
       x: {
         grid: { display: false },
-        ticks: { color: theme === 'dark' ? '#87867f' : '#b0aea5' }
+        ticks: { color: '#888888' }
       },
       y: {
         grid: { color: theme === 'dark' ? '#3d3d3a' : '#f0eee6' },
         ticks: { 
-          color: theme === 'dark' ? '#87867f' : '#b0aea5',
+          color: '#888888',
           callback: (value: any) => `¥${value}`
         }
       }
@@ -283,19 +283,19 @@ export default function ReportsPage() {
         labels: {
           usePointStyle: true,
           padding: 16,
-          color: theme === 'dark' ? '#b0aea5' : '#5e5d59',
+          color: '#888888',
         }
       },
     },
     scales: {
       x: {
         grid: { display: false },
-        ticks: { color: theme === 'dark' ? '#87867f' : '#b0aea5' }
+        ticks: { color: '#888888' }
       },
       y: {
         grid: { color: theme === 'dark' ? '#3d3d3a' : '#f0eee6' },
         ticks: { 
-          color: theme === 'dark' ? '#87867f' : '#b0aea5',
+          color: '#888888',
           callback: (value: any) => `¥${value}`
         }
       }
@@ -318,25 +318,25 @@ export default function ReportsPage() {
   const monthOptions = Array.from({ length: 12 }, (_, i) => i + 1)
 
   return (
-    <div className={`min-h-screen ${theme === 'dark' ? 'bg-[#141413]' : 'bg-[#f5f4ed]'}`}>
+    <div className={`min-h-screen bg-bg`}>
       {/* Header */}
-      <header className={`sticky top-0 z-40 px-4 pt-3 pb-2 ${theme === 'dark' ? 'bg-[#141413]' : 'bg-[#f5f4ed]'}`}>
-        <h1 className={`text-lg font-semibold ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+      <header className={`sticky top-0 z-40 bg-bg/80 backdrop-blur-md safe-area-top px-5 pt-3 pb-2 `}>
+        <h1 className={`text-lg font-semibold ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
           报表
         </h1>
       </header>
 
-      <main className="px-4 pb-24 space-y-4">
+      <main className="px-5 pb-24 space-y-4 animate-page-fade">
         {/* Time Range Tabs */}
-        <div className={`flex p-1 rounded-xl ${theme === 'dark' ? 'bg-[#30302e]' : 'bg-[#e8e6dc]'}`}>
+        <div className={`flex p-1 rounded-xl ${theme === 'dark' ? 'bg-surface' : 'bg-brand-tint'}`}>
           {(['month', 'year'] as TimeRange[]).map((range) => (
             <button
               key={range}
               onClick={() => setTimeRange(range)}
               className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all
                 ${timeRange === range
-                  ? 'bg-[#c96442] text-white'
-                  : theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#5e5d59]'
+                  ? 'bg-brand text-white'
+                  : theme === 'dark' ? 'text-ink-2' : 'text-ink-2'
                 }`}
             >
               {range === 'month' ? '按月' : '按年'}
@@ -348,7 +348,7 @@ export default function ReportsPage() {
         <div className="flex items-center justify-between">
           <button
             onClick={goPrev}
-            className={`p-2 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-[#30302e] text-[#b0aea5]' : 'hover:bg-[#e8e6dc] text-[#5e5d59]'}`}
+            className={`p-2 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-surface text-ink-2' : 'hover:bg-brand-tint text-ink-2'}`}
           >
             <ChevronLeft size={22} />
           </button>
@@ -361,10 +361,10 @@ export default function ReportsPage() {
             onMouseUp={cancelLongPress}
             onMouseLeave={cancelLongPress}
             className={`cursor-pointer select-none px-3 py-1 rounded-lg transition-colors ${
-              theme === 'dark' ? 'hover:bg-[#30302e]' : 'hover:bg-[#e8e6dc]'
+              theme === 'dark' ? 'hover:bg-surface' : 'hover:bg-brand-tint'
             }`}
           >
-            <h2 className={`text-base font-semibold ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+            <h2 className={`text-base font-semibold ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
               {timeDisplay}
             </h2>
           </div>
@@ -374,7 +374,7 @@ export default function ReportsPage() {
             className={`p-2 rounded-lg transition-colors ${
               isCurrent 
                 ? 'opacity-30 cursor-not-allowed'
-                : theme === 'dark' ? 'hover:bg-[#30302e] text-[#b0aea5]' : 'hover:bg-[#e8e6dc] text-[#5e5d59]'
+                : theme === 'dark' ? 'hover:bg-surface text-ink-2' : 'hover:bg-brand-tint text-ink-2'
             }`}
           >
             <ChevronRight size={22} />
@@ -385,20 +385,20 @@ export default function ReportsPage() {
         {timeRange === 'month' && monthSummary ? (
           <div className="grid grid-cols-3 gap-3">
             <Card className="!p-3 text-center">
-              <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>收入</div>
-              <div className={`text-lg font-bold font-mono text-[#2d8a5e]`}>
+              <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>收入</div>
+              <div className={`text-lg font-bold font-mono text-ok`}>
                 ¥{monthSummary.income.toLocaleString()}
               </div>
             </Card>
             <Card className="!p-3 text-center">
-              <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>支出</div>
-              <div className={`text-lg font-bold font-mono text-[#e05555]`}>
+              <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>支出</div>
+              <div className={`text-lg font-bold font-mono text-danger`}>
                 ¥{monthSummary.expense.toLocaleString()}
               </div>
             </Card>
             <Card className="!p-3 text-center">
-              <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>结余</div>
-              <div className={`text-lg font-bold font-mono ${(monthSummary.income - monthSummary.expense) >= 0 ? 'text-[#5b8dee]' : 'text-[#e05555]'}`}>
+              <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>结余</div>
+              <div className={`text-lg font-bold font-mono ${(monthSummary.income - monthSummary.expense) >= 0 ? 'text-[#5b8dee]' : 'text-danger'}`}>
                 ¥{((monthSummary.income - monthSummary.expense) / 1000).toFixed(1)}k
               </div>
             </Card>
@@ -411,20 +411,20 @@ export default function ReportsPage() {
             return (
               <div className="grid grid-cols-3 gap-3">
                 <Card className="!p-3 text-center">
-                  <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>年收入</div>
-                  <div className={`text-lg font-bold font-mono text-[#2d8a5e]`}>
+                  <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>年收入</div>
+                  <div className={`text-lg font-bold font-mono text-ok`}>
                     ¥{(totalIncome / 10000).toFixed(1)}万
                   </div>
                 </Card>
                 <Card className="!p-3 text-center">
-                  <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>年支出</div>
-                  <div className={`text-lg font-bold font-mono text-[#e05555]`}>
+                  <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>年支出</div>
+                  <div className={`text-lg font-bold font-mono text-danger`}>
                     ¥{(totalExpense2 / 10000).toFixed(1)}万
                   </div>
                 </Card>
                 <Card className="!p-3 text-center">
-                  <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>年结余</div>
-                  <div className={`text-lg font-bold font-mono ${totalBalance >= 0 ? 'text-[#5b8dee]' : 'text-[#e05555]'}`}>
+                  <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>年结余</div>
+                  <div className={`text-lg font-bold font-mono ${totalBalance >= 0 ? 'text-[#5b8dee]' : 'text-danger'}`}>
                     ¥{(totalBalance / 10000).toFixed(1)}万
                   </div>
                 </Card>
@@ -435,7 +435,7 @@ export default function ReportsPage() {
 
         {/* Expense Distribution */}
         <Card className="!p-4">
-          <h3 className={`font-semibold mb-3 ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+          <h3 className={`font-semibold mb-3 ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
             支出分布
           </h3>
           {expenseByCategory.length > 0 ? (
@@ -458,15 +458,15 @@ export default function ReportsPage() {
                           className="w-2.5 h-2.5 rounded-full"
                           style={{ backgroundColor: cat.color }}
                         />
-                        <span className={`text-sm ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+                        <span className={`text-sm ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
                           {cat.icon} {cat.name}
                         </span>
                       </div>
                       <div className="text-right">
-                        <span className={`text-sm font-mono ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+                        <span className={`text-sm font-mono ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
                           ¥{cat.total.toLocaleString()}
                         </span>
-                        <span className={`text-xs ml-1 ${theme === 'dark' ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}>
+                        <span className={`text-xs ml-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                           {percent}%
                         </span>
                       </div>
@@ -476,7 +476,7 @@ export default function ReportsPage() {
               </div>
             </div>
           ) : (
-            <div className={`text-center py-8 ${theme === 'dark' ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}>
+            <div className={`text-center py-8 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
               暂无支出数据
             </div>
           )}
@@ -484,7 +484,7 @@ export default function ReportsPage() {
 
         {/* 收支趋势 - 按月显示周支出柱状图，按年显示收入+支出折线图 */}
         <Card className="!p-4">
-          <h3 className={`font-semibold mb-3 ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+          <h3 className={`font-semibold mb-3 ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
             {timeRange === 'month' ? '每周支出趋势' : '收支趋势'}
           </h3>
           <div className="h-48">
@@ -499,7 +499,7 @@ export default function ReportsPage() {
         {/* 大额支出 — 仅按月显示 */}
         {timeRange === 'month' && (
           <Card className="!p-4">
-            <h3 className={`font-semibold mb-3 ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+            <h3 className={`font-semibold mb-3 ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
               大额支出 (≥¥{bigExpenseThreshold.toLocaleString()})
             </h3>
             {topExpenses.length > 0 ? (
@@ -507,26 +507,26 @@ export default function ReportsPage() {
                 {topExpenses.map((t) => (
                   <div key={t.id} className="flex items-center gap-3">
                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl
-                      ${theme === 'dark' ? 'bg-[#3d3d3a]' : 'bg-[#f5f4ed]'}`}>
+                      ${theme === 'dark' ? 'bg-surface' : 'bg-bg'}`}>
                       {t.categoryIcon}
                     </div>
                     <div className="flex-1">
-                      <div className={`font-medium ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+                      <div className={`font-medium ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
                         {t.categoryName}
-                        {t.note && <span className={`text-xs ml-2 ${theme === 'dark' ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}>{t.note}</span>}
+                        {t.note && <span className={`text-xs ml-2 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>{t.note}</span>}
                       </div>
-                      <div className={`text-xs ${theme === 'dark' ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}>
+                      <div className={`text-xs ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                         {t.date} · {t.accountName}
                       </div>
                     </div>
-                    <div className="text-[#e05555] font-mono font-medium">
+                    <div className="text-danger font-mono font-medium">
                       -¥{t.amount.toLocaleString()}
                     </div>
                   </div>
                 ))}
               </div>
             ) : (
-              <div className={`text-center py-4 ${theme === 'dark' ? 'text-[#87867f]' : 'text-[#b0aea5]'}`}>
+              <div className={`text-center py-4 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                 无大额支出记录
               </div>
             )}
@@ -536,48 +536,48 @@ export default function ReportsPage() {
         {/* 按年：每月收支明细表 */}
         {timeRange === 'year' && yearMonthDetail && (
           <Card className="!p-4">
-            <h3 className={`font-semibold mb-3 ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+            <h3 className={`font-semibold mb-3 ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
               每月收支明细
             </h3>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className={`border-b ${theme === 'dark' ? 'border-[#3d3d3a]' : 'border-[#e8e6dc]'}`}>
-                    <th className={`text-left py-2 px-2 font-medium ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>月份</th>
-                    <th className={`text-right py-2 px-2 font-medium text-[#2d8a5e]`}>收入</th>
-                    <th className={`text-right py-2 px-2 font-medium text-[#e05555]`}>支出</th>
-                    <th className={`text-right py-2 px-2 font-medium ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>结余</th>
+                  <tr className={`border-b ${theme === 'dark' ? 'border-brand-tint' : 'border-brand-tint'}`}>
+                    <th className={`text-left py-2 px-2 font-medium ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>月份</th>
+                    <th className={`text-right py-2 px-2 font-medium text-ok`}>收入</th>
+                    <th className={`text-right py-2 px-2 font-medium text-danger`}>支出</th>
+                    <th className={`text-right py-2 px-2 font-medium ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>结余</th>
                   </tr>
                 </thead>
                 <tbody>
                   {yearMonthDetail.map((row) => (
                     <tr
                       key={row.month}
-                      className={`border-b ${theme === 'dark' ? 'border-[#3d3d3a] hover:bg-[#30302e]' : 'border-[#f0eee6] hover:bg-[#f5f4ed]'} transition-colors`}
+                      className={`border-b ${theme === 'dark' ? 'border-brand-tint hover:bg-surface' : 'border-brand-tint hover:bg-bg'} transition-colors`}
                     >
-                      <td className={`py-2.5 px-2 font-medium ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>{row.month}</td>
-                      <td className="py-2.5 px-2 text-right font-mono text-[#2d8a5e]">
+                      <td className={`py-2.5 px-2 font-medium ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>{row.month}</td>
+                      <td className="py-2.5 px-2 text-right font-mono text-ok">
                         ¥{row.income.toLocaleString()}
                       </td>
-                      <td className="py-2.5 px-2 text-right font-mono text-[#e05555]">
+                      <td className="py-2.5 px-2 text-right font-mono text-danger">
                         ¥{row.expense.toLocaleString()}
                       </td>
-                      <td className={`py-2.5 px-2 text-right font-mono font-medium ${row.balance >= 0 ? 'text-[#5b8dee]' : 'text-[#e05555]'}`}>
+                      <td className={`py-2.5 px-2 text-right font-mono font-medium ${row.balance >= 0 ? 'text-[#5b8dee]' : 'text-danger'}`}>
                         ¥{row.balance.toLocaleString()}
                       </td>
                     </tr>
                   ))}
                 </tbody>
                 <tfoot>
-                  <tr className={`border-t-2 ${theme === 'dark' ? 'border-[#faf9f5]/20' : 'border-[#141413]/20'}`}>
-                    <td className={`py-3 px-2 font-bold ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>合计</td>
-                    <td className="py-3 px-2 text-right font-mono font-bold text-[#2d8a5e]">
+                  <tr className={`border-t-2 ${theme === 'dark' ? 'border-ink/10' : 'border-ink/10'}`}>
+                    <td className={`py-3 px-2 font-bold ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>合计</td>
+                    <td className="py-3 px-2 text-right font-mono font-bold text-ok">
                       ¥{yearMonthDetail.reduce((s, r) => s + r.income, 0).toLocaleString()}
                     </td>
-                    <td className="py-3 px-2 text-right font-mono font-bold text-[#e05555]">
+                    <td className="py-3 px-2 text-right font-mono font-bold text-danger">
                       ¥{yearMonthDetail.reduce((s, r) => s + r.expense, 0).toLocaleString()}
                     </td>
-                    <td className={`py-3 px-2 text-right font-mono font-bold ${yearMonthDetail.reduce((s, r) => s + r.balance, 0) >= 0 ? 'text-[#5b8dee]' : 'text-[#e05555]'}`}>
+                    <td className={`py-3 px-2 text-right font-mono font-bold ${yearMonthDetail.reduce((s, r) => s + r.balance, 0) >= 0 ? 'text-[#5b8dee]' : 'text-danger'}`}>
                       ¥{yearMonthDetail.reduce((s, r) => s + r.balance, 0).toLocaleString()}
                     </td>
                   </tr>
@@ -607,7 +607,7 @@ export default function ReportsPage() {
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
               {/* 年份选择 */}
               <div>
-                <h3 className={`text-sm font-medium mb-2 ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>选择年份</h3>
+                <h3 className={`text-sm font-medium mb-2 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>选择年份</h3>
                 <div className="grid grid-cols-4 gap-2">
                   {yearOptions.map(y => (
                     <button
@@ -615,8 +615,8 @@ export default function ReportsPage() {
                       onClick={() => quickSelectYear(y)}
                       className={`py-2.5 rounded-lg text-sm font-medium transition-all ${
                         selectedYear === y
-                          ? 'bg-[#c96442] text-white'
-                          : theme === 'dark' ? 'bg-[#30302e] text-[#faf9f5] hover:bg-[#3d3d3a]' : 'bg-[#f5f4ed] text-[#141413] hover:bg-[#e8e6dc]'
+                          ? 'bg-brand text-white'
+                          : theme === 'dark' ? 'bg-surface text-ink hover:bg-surface' : 'bg-bg text-ink hover:bg-brand-tint'
                       }`}
                     >
                       {y}年
@@ -627,7 +627,7 @@ export default function ReportsPage() {
               {/* 月份选择 */}
               {timeRange === 'month' && (
                 <div>
-                  <h3 className={`text-sm font-medium mb-2 ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>选择月份</h3>
+                  <h3 className={`text-sm font-medium mb-2 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>选择月份</h3>
                   <div className="grid grid-cols-4 gap-2">
                     {monthOptions.map(m => (
                       <button
@@ -635,8 +635,8 @@ export default function ReportsPage() {
                         onClick={() => quickSelectMonth(m)}
                         className={`py-2.5 rounded-lg text-sm font-medium transition-all ${
                           selectedMonth === m
-                            ? 'bg-[#c96442] text-white'
-                            : theme === 'dark' ? 'bg-[#30302e] text-[#faf9f5] hover:bg-[#3d3d3a]' : 'bg-[#f5f4ed] text-[#141413] hover:bg-[#e8e6dc]'
+                            ? 'bg-brand text-white'
+                            : theme === 'dark' ? 'bg-surface text-ink hover:bg-surface' : 'bg-bg text-ink hover:bg-brand-tint'
                         }`}
                       >
                         {m}月

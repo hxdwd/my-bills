@@ -20,7 +20,7 @@ export default function AIPage() {
 
   const features = [
     { id: 'analysis' as AIFeature, icon: TrendingUp, label: '消费分析', color: '#a855f7', desc: '分析您的消费习惯' },
-    { id: 'suggestion' as AIFeature, icon: Lightbulb, label: '预算建议', color: '#f59e0b', desc: '智能预算推荐' },
+    { id: 'suggestion' as AIFeature, icon: Lightbulb, label: '预算建议', color: '#E5C45E', desc: '智能预算推荐' },
     { id: 'report' as AIFeature, icon: FileText, label: '月报生成', color: '#5b8dee', desc: '生成财务月报' },
     { id: 'warning' as AIFeature, icon: AlertTriangle, label: '异常提醒', color: '#e05555', desc: '消费异常预警' },
   ]
@@ -123,18 +123,18 @@ ${overBudget.map(b => `• ${b.categoryName}：已超支 ¥${(b.spent - b.amount
   }
 
   return (
-    <div className={`min-h-screen ${theme === 'dark' ? 'bg-[#141413]' : 'bg-[#f5f4ed]'} flex flex-col`}>
+    <div className={`min-h-screen bg-bg flex flex-col`}>
       {/* Header */}
-      <header className={`sticky top-0 z-40 px-4 pt-3 pb-2 ${theme === 'dark' ? 'bg-[#141413]' : 'bg-[#f5f4ed]'}`}>
+      <header className={`sticky top-0 z-40 bg-bg/80 backdrop-blur-md safe-area-top px-5 pt-3 pb-2 `}>
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#c96442] to-[#d97757] flex items-center justify-center">
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-brand to-brand-strong flex items-center justify-center">
             <Sparkles size={20} className="text-white" />
           </div>
           <div>
-            <h1 className={`text-lg font-semibold ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>
+            <h1 className={`text-lg font-semibold ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
               AI 财务助手
             </h1>
-            <p className={`text-xs ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>
+            <p className={`text-xs ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
               智能分析 · 个性建议
             </p>
           </div>
@@ -148,7 +148,7 @@ ${overBudget.map(b => `• ${b.categoryName}：已超支 ¥${(b.spent - b.amount
             <button
               key={f.id}
               onClick={() => handleFeatureClick(f.id)}
-              className={`p-4 rounded-2xl text-left transition-all active:scale-95 ${theme === 'dark' ? 'bg-[#30302e]' : 'bg-[#faf9f5]'}`}
+              className={`p-4 rounded-2xl text-left transition-all active:scale-95 ${theme === 'dark' ? 'bg-surface' : 'bg-[#faf9f5]'}`}
             >
               <div 
                 className="w-10 h-10 rounded-xl flex items-center justify-center mb-2"
@@ -156,8 +156,8 @@ ${overBudget.map(b => `• ${b.categoryName}：已超支 ¥${(b.spent - b.amount
               >
                 <f.icon size={20} style={{ color: f.color }} />
               </div>
-              <div className={`font-medium mb-0.5 ${theme === 'dark' ? 'text-[#faf9f5]' : 'text-[#141413]'}`}>{f.label}</div>
-              <div className={`text-xs ${theme === 'dark' ? 'text-[#b0aea5]' : 'text-[#87867f]'}`}>{f.desc}</div>
+              <div className={`font-medium mb-0.5 ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>{f.label}</div>
+              <div className={`text-xs ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>{f.desc}</div>
             </button>
           ))}
         </div>
@@ -169,8 +169,8 @@ ${overBudget.map(b => `• ${b.categoryName}：已超支 ¥${(b.spent - b.amount
           <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div className={`max-w-[85%] rounded-2xl px-4 py-3 ${
               msg.role === 'user' 
-                ? 'bg-[#c96442] text-white rounded-br-md' 
-                : theme === 'dark' ? 'bg-[#30302e] text-[#faf9f5] rounded-bl-md' : 'bg-[#faf9f5] text-[#141413] rounded-bl-md'
+                ? 'bg-brand text-white rounded-br-md' 
+                : theme === 'dark' ? 'bg-surface text-ink rounded-bl-md' : 'bg-[#faf9f5] text-ink rounded-bl-md'
             }`}>
               <p className="whitespace-pre-wrap text-sm leading-relaxed">{msg.content}</p>
             </div>
@@ -179,7 +179,7 @@ ${overBudget.map(b => `• ${b.categoryName}：已超支 ¥${(b.spent - b.amount
       </div>
 
       {/* Input */}
-      <div className={`px-4 py-3 border-t ${theme === 'dark' ? 'bg-[#1a1a19] border-[#3d3d3a]' : 'bg-white border-[#f0eee6]'}`}>
+      <div className={`px-4 py-3 border-t ${theme === 'dark' ? 'bg-[#1a1a19] border-brand-tint' : 'bg-white border-brand-tint'}`}>
         <div className="flex items-center gap-2">
           <input
             type="text"
@@ -189,15 +189,15 @@ ${overBudget.map(b => `• ${b.categoryName}：已超支 ¥${(b.spent - b.amount
             placeholder="输入您的问题..."
             className={`flex-1 px-4 py-3 rounded-full text-sm ${
               theme === 'dark' 
-                ? 'bg-[#30302e] text-[#faf9f5] placeholder-[#87867f]' 
-                : 'bg-[#f5f4ed] text-[#141413] placeholder-[#b0aea5]'
+                ? 'bg-surface text-ink placeholder-[#87867f]' 
+                : 'bg-bg text-ink placeholder-[#b0aea5]'
             } outline-none`}
           />
           <button
             onClick={handleSend}
             disabled={!input.trim()}
             className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors
-              ${input.trim() ? 'bg-[#c96442] text-white' : theme === 'dark' ? 'bg-[#30302e] text-[#4a4a47]' : 'bg-[#e8e6dc] text-[#b0aea5]'}`}
+              ${input.trim() ? 'bg-brand text-white' : theme === 'dark' ? 'bg-surface text-ink-2' : 'bg-brand-tint text-ink-2'}`}
           >
             <Send size={20} />
           </button>
