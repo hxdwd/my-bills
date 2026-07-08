@@ -26,6 +26,22 @@ const TABLE_NAMES = [
 
 type TableName = (typeof TABLE_NAMES)[number]
 
+// 本地 Dexie 表名使用驼峰（如 subCategories），但远程 Supabase 表名为蛇形
+// （sub_categories）。拉取/推送 REST URL 需映射到远程真实表名。
+const REMOTE_TABLE_MAP: Record<TableName, string> = {
+  accounts: 'accounts',
+  categories: 'categories',
+  transactions: 'transactions',
+  budgets: 'budgets',
+  subCategories: 'sub_categories',
+  tags: 'tags',
+  profiles: 'profiles',
+}
+
+function remoteTable(tableName: TableName): string {
+  return REMOTE_TABLE_MAP[tableName] ?? tableName
+}
+
 // ============================================================
 // 同步元数据
 // ============================================================
@@ -55,11 +71,13 @@ async function pullTable(tableName: TableName, userId: string): Promise<void> {
   const supabaseUrl = (supabase as any)['supabaseUrl']
   const supabaseKey = (supabase as any)['supabaseKey']
 
-  let url = `${supabaseUrl}/rest/v1/${tableName}?select=*`
+  let url = `${supabaseUrl}/rest/v1/${remoteTable(tableName)}?select=*`
   if (tableName === 'profiles') {
     url += `&id=eq.${userId}`
   }
-  if (lastSync) {
+  // tags 表数据量小且用户期望本地与远程始终一致，跳过增量过滤做全量拉取，
+  // 否则 old 标签在 lastSync 之前创建、之后无更新时永远拉不回来。
+  if (lastSync && tableName !== 'tags') {
     url += `&updated_at=gt.${encodeURIComponent(lastSync)}`
   }
 
@@ -81,6 +99,9 @@ async function pullTable(tableName: TableName, userId: string): Promise<void> {
     if (!lastSync) {
       await setLastSync(tableName, new Date().toISOString())
     }
+    // 远程返回空集合时，一律不清理本地数据。tags 表也与其他表一致：
+    // 增量拉取窗口内无变更返回空数组是常态，绝不能据此删本地，否则会
+    // 误删用户在远程正常存在的标签（远程有数据但 lastSync 之后无更新时）。
     return
   }
 
@@ -88,13 +109,11 @@ async function pullTable(tableName: TableName, userId: string): Promise<void> {
 
   // 检查哪些记录是本地已删除的（不覆盖本地删除操作）
   const localDeletedIds = new Set<string>()
-  if (lastSync) {
-    const deletedRecords = await table
-      .where('_sync_status')
-      .equals('pending_delete')
-      .toArray()
-    deletedRecords.forEach((r: any) => localDeletedIds.add(r.id))
-  }
+  const deletedRecords = await table
+    .where('_sync_status')
+    .equals('pending_delete')
+    .toArray()
+  deletedRecords.forEach((r: any) => localDeletedIds.add(r.id))
 
   // 批量 upsert 到 IndexedDB
   const records = data
@@ -158,7 +177,7 @@ async function pushTable(tableName: TableName, userId: string): Promise<void> {
       // 清理同步字段后上传
       const { _sync_status, _updated_at_local, ...cleanRecord } = record
 
-      const resp = await fetch(`${supabaseUrl}/rest/v1/${tableName}?on_conflict=id`, {
+      const resp = await fetch(`${supabaseUrl}/rest/v1/${remoteTable(tableName)}?on_conflict=id`, {
         method: 'POST',
         headers: {
           'apikey': supabaseKey,
@@ -197,7 +216,7 @@ async function pushTable(tableName: TableName, userId: string): Promise<void> {
 
   for (const record of deleteRecords) {
     try {
-      const resp = await fetch(`${supabaseUrl}/rest/v1/${tableName}?id=eq.${encodeURIComponent(record.id)}`, {
+      const resp = await fetch(`${supabaseUrl}/rest/v1/${remoteTable(tableName)}?id=eq.${encodeURIComponent(record.id)}`, {
         method: 'DELETE',
         headers: {
           'apikey': supabaseKey,
@@ -320,6 +339,8 @@ async function clearAllData(): Promise<void> {
   await db.subCategories.clear()
   await db.tags.clear()
   await db.profiles.clear()
+  // 必须同时清除同步基准，否则 lastSync 残留会让后续同步走"增量"分支，
+  // 早于 lastSync 创建的远程数据（如老标签）永远拉不回来。
   await db.syncMeta.clear()
   removeNetworkListener()
   console.log('[Sync] ✅ 本地数据已清除')

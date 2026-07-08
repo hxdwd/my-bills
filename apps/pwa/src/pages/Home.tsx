@@ -67,12 +67,6 @@ export default function HomePage({ onAddTransaction }: HomePageProps = {}) {
             <h1 className="text-xl font-serif font-semibold text-ink">钱盒子</h1>
             <p className="text-xs text-ink-2 mt-0.5">{currentMonth}</p>
           </div>
-          <button
-            onClick={() => navigate('/search')}
-            className="p-2 -mr-2 text-ink-2 hover:text-ink hover:bg-brand-tint rounded-full transition-colors"
-          >
-            <Search size={20} />
-          </button>
         </div>
       </header>
 

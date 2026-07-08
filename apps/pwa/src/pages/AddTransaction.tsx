@@ -10,11 +10,16 @@ import {
   Plus,
   Trash2,
   Tag,
+  Search,
 } from 'lucide-react';
 import BottomSheet from '../components/ui/BottomSheet';
 import { NumberKeyboard } from '../components/ui/NumberKeyboard';
 import { TransactionFormData, Category } from '../types';
 import { useApp } from '../context/AppContext';
+import { useAuthStore } from '../stores/useAuthStore';
+import SubCategoryManagerModal from '../components/SubCategoryManagerModal';
+import TagSelectModal from '../components/TagSelectModal';
+import { recordTagUsage } from '../utils/tagUsage';
 
 // 预设图标
 const PRESET_ICONS = ['🏷️', '🎯', '⭐', '❤️', '🌟', '💫', '✨', '🔥', '💖', '🎪', '🎨', '🎭', '🎪', '🎯', '🎲', '🎱', '🛍️', '📦', '🎁', '🎀', '🌈', '⚡', '🌸', '🍀'];
@@ -45,7 +50,7 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
   onClose,
   onSave,
 }) => {
-  const { accounts, categories: appCategories, addCategory, updateCategory, deleteCategory, addTransaction, subCategories, addSubCategory, updateSubCategory, deleteSubCategory, tags, addTag, updateTag, deleteTag } = useApp();
+  const { accounts, categories: appCategories, addCategory, updateCategory, deleteCategory, addTransaction, subCategories, addSubCategory, updateSubCategory, deleteSubCategory, tags } = useApp();
 
   // 状态管理
   const [transactionType, setTransactionType] = useState<TransactionType>('expense');
@@ -75,12 +80,10 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
   const [selectedSubCategoryId, setSelectedSubCategoryId] = useState<string>('');
   // 标签（全局自由标签，多选）
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
-  // 标签管理弹窗
-  const [showTagManager, setShowTagManager] = useState(false);
-  const [editingTag, setEditingTag] = useState<{ id: string; name: string; color: string } | null>(null);
-  const [newTagName, setNewTagName] = useState('');
-  const [newTagColor, setNewTagColor] = useState('#818cf8');
-  const [newTagNameError, setNewTagNameError] = useState(false);
+  // 子分类管理弹窗
+  const [showSubManager, setShowSubManager] = useState(false);
+  // 标签选择弹窗
+  const [showTagSelect, setShowTagSelect] = useState(false);
 
   // 日期时间
   const [date, setDate] = useState(new Date());
@@ -94,14 +97,13 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
   // 获取选中的分类
   const selectedCategory = allCategories.find((c) => c.id === selectedCategoryId);
 
-  // 当前分类下的子分类（绑一级分类，最末级）
+  // 当前分类下的子分类（绑一级分类，最末级，按 order 排序）
   const categorySubCategories = useMemo(() => {
     if (!selectedCategoryId) return [];
-    return subCategories.filter(s => s.categoryId === selectedCategoryId);
+    return subCategories
+      .filter(s => s.categoryId === selectedCategoryId)
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   }, [subCategories, selectedCategoryId]);
-
-  // 全局标签（跨分类，可多选）
-  const allTags = tags;
 
   // 获取选中的账户
   const selectedAccount = accounts.find((a) => a.id === selectedAccountId);
@@ -378,75 +380,14 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
     setSelectedSubCategoryId(prev => (prev === subId ? '' : subId));
   };
 
-  // 打开标签管理
-  const openTagManager = () => {
-    setEditingTag(null);
-    setNewTagName('');
-    setNewTagColor('#818cf8');
-    setNewTagNameError(false);
-    setShowTagManager(true);
-  };
-
-  // 创建标签
-  const handleCreateTag = async () => {
-    if (!newTagName.trim()) {
-      setNewTagNameError(true);
-      return;
-    }
-    setNewTagNameError(false);
-    try {
-      const newTag = await addTag({
-        name: newTagName.trim(),
-        color: newTagColor,
-      });
-      setNewTagName('');
-      setNewTagColor('#818cf8');
-      setNewTagNameError(false);
-      // 创建后自动选中（多选）
-      if (newTag) setSelectedTagIds(prev => [...prev, newTag.id]);
-      displayToast('标签创建成功');
-    } catch (err) {
-      displayToast('标签创建失败');
-    }
-  };
-
-  // 编辑标签
-  const handleEditTag = (tagId: string, name: string, color: string) => {
-    setEditingTag({ id: tagId, name, color });
-    setNewTagName(name);
-    setNewTagColor(color);
-  };
-
-  // 保存编辑标签
-  const handleSaveEditTag = async () => {
-    if (!editingTag || !newTagName.trim()) return;
-    try {
-      await updateTag(editingTag.id, {
-        name: newTagName.trim(),
-        color: newTagColor,
-      });
-      setEditingTag(null);
-      setNewTagName('');
-      setNewTagColor('#818cf8');
-      displayToast('标签更新成功');
-    } catch (err) {
-      displayToast('标签更新失败');
-    }
-  };
-
-  // 删除标签
-  const handleDeleteTag = async (tagId: string) => {
-    try {
-      await deleteTag(tagId);
-      setSelectedTagIds(prev => prev.filter(id => id !== tagId));
-      if (editingTag?.id === tagId) {
-        setEditingTag(null);
-        setNewTagName('');
-      }
-      displayToast('标签已删除');
-    } catch (err) {
-      displayToast('标签删除失败');
-    }
+  // 从标签选择弹窗选中标签（点击即选中、记录最近使用、关闭弹窗）
+  const handleSelectTagFromModal = (tagId: string) => {
+    setSelectedTagIds(prev =>
+      prev.includes(tagId) ? prev : [...prev, tagId]
+    );
+    const uid = useAuthStore.getState().user?.id
+    if (uid) recordTagUsage(uid, tagId)
+    setShowTagSelect(false);
   };
 
   // 切换交易类型
@@ -544,7 +485,7 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
                 className={`
                   flex-shrink-0 flex flex-col items-center gap-1 p-2 rounded-xl transition-all
                   ${selectedCategoryId === category.id
-                    ? 'bg-[var(--brand-primary)]/10 ring-2 ring-[var(--brand-primary)]'
+                    ? 'bg-brand/10 ring-2 ring-brand'
                     : 'bg-[var(--bg-secondary)] hover:bg-[var(--surface-warm)]'
                   }
                 `}
@@ -642,6 +583,13 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
               <Tag size={16} />
               子分类
             </label>
+            <button
+              onClick={() => setShowSubManager(true)}
+              disabled={!selectedCategoryId || selectedCategoryId === 't1'}
+              className="text-sm text-ink hover:text-brand-secondary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              管理
+            </button>
           </div>
           <div className="flex flex-wrap gap-2">
             {selectedCategoryId && selectedCategoryId !== 't1' && categorySubCategories.length > 0 ? (
@@ -674,7 +622,7 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
         </div>
         )}
 
-        {/* 标签（全局自由标签，多选；转账时隐藏） */}
+        {/* 标签（全局自由标签，多选；仅展示已选，转账时隐藏） */}
         {transactionType !== 'transfer' && (
         <div className="px-4 mt-4">
           <div className="flex items-center justify-between mb-2">
@@ -683,36 +631,37 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
               标签
             </label>
             <button
-              onClick={openTagManager}
-              className="text-xs text-ink hover:text-brand-secondary transition-colors"
+              onClick={() => setShowTagSelect(true)}
+              className="text-sm text-ink hover:text-brand-secondary transition-colors"
             >
-              管理标签
+              + 添加标签
             </button>
           </div>
           <div className="flex flex-wrap gap-2">
-            {allTags.length > 0 ? (
-              allTags.map((tag: any) => {
-                const isSelected = selectedTagIds.includes(tag.id);
+            {selectedTagIds.length > 0 ? (
+              selectedTagIds.map((tagId) => {
+                const tag = tags.find((t: any) => t.id === tagId)
+                if (!tag) return null
                 return (
-                  <button
-                    key={tag.id}
-                    onClick={() => toggleTag(tag.id)}
-                    className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-sm transition-all ${
-                      isSelected
-                        ? 'text-white ring-2 ring-offset-1 ring-current'
-                        : 'bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:bg-[var(--surface-warm)]'
-                    }`}
-                    style={isSelected ? { backgroundColor: tag.color || '#818cf8' } : undefined}
+                  <span
+                    key={tagId}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-sm text-white"
+                    style={{ backgroundColor: tag.color || '#818cf8' }}
                   >
-                    {isSelected && (
-                      <X size={12} className="hover:bg-white/20 rounded-full" />
-                    )}
+                    <Tag size={12} />
                     {tag.name}
-                  </button>
-                );
+                    <button
+                      onClick={() => toggleTag(tagId)}
+                      className="ml-0.5 -mr-1 p-0.5 rounded-full hover:bg-white/20 transition-colors"
+                      aria-label="删除标签"
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                )
               })
             ) : (
-              <span className="text-xs text-[var(--text-tertiary)] py-1.5">暂无标签，点击"管理标签"添加</span>
+              <span className="text-xs text-[var(--text-tertiary)] py-1.5">点击"添加标签"选择或新建</span>
             )}
           </div>
         </div>
@@ -1155,127 +1104,20 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
         </div>
       </BottomSheet>
 
-      {/* 标签管理弹窗 */}
-      <BottomSheet
-        isOpen={showTagManager}
-        onClose={() => {
-          setShowTagManager(false);
-          setEditingTag(null);
-          setNewTagName('');
-          setNewTagColor('#818cf8');
-          setNewTagNameError(false);
-        }}
-        title="管理标签"
-      >
-        <div className="p-4 space-y-4">
-          {/* 已有标签列表 */}
-          {tags.length > 0 && (
-            <div className="space-y-1">
-              <label className="text-sm text-[var(--text-secondary)]">已有标签</label>
-              <div className="space-y-1 max-h-40 overflow-y-auto">
-                {tags.map((tag: any) => (
-                  <div
-                    key={tag.id}
-                    className="flex items-center justify-between p-3 bg-[var(--bg-elevated)] rounded-xl"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span
-                        className="w-3 h-3 rounded-full"
-                        style={{ backgroundColor: tag.color }}
-                      />
-                      <span className="text-[var(--text-primary)]">{tag.name}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleEditTag(tag.id, tag.name, tag.color)}
-                        className="text-xs text-ink hover:underline"
-                      >
-                        编辑
-                      </button>
-                      <button
-                        onClick={() => handleDeleteTag(tag.id)}
-                        className="p-1 text-[var(--text-tertiary)] hover:text-red-500"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+      {/* 子分类管理弹窗（居中 Modal） */}
+      <SubCategoryManagerModal
+        visible={showSubManager}
+        categoryId={selectedCategoryId}
+        categoryName={selectedCategory?.name || ''}
+        onClose={() => setShowSubManager(false)}
+      />
 
-          {/* 创建/编辑标签表单 */}
-          <div className="border-t border-[var(--border-warm)] pt-4">
-            <label className="text-sm text-[var(--text-secondary)] mb-2 block">
-              {editingTag ? '编辑标签' : '新建标签'}
-            </label>
-
-            {/* 标签名称 */}
-            <div className="mb-3">
-              <input
-                type="text"
-                value={newTagName}
-                onChange={(e) => setNewTagName(e.target.value)}
-                placeholder="输入标签名称"
-                maxLength={6}
-                className="w-full px-4 py-3 bg-[var(--bg-elevated)] rounded-xl text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-brand/40"
-              />
-            </div>
-
-            {/* 选择颜色 */}
-            <div className="mb-3">
-              <label className="text-xs text-[var(--text-tertiary)] mb-2 block">选择颜色</label>
-              <div className="grid grid-cols-8 gap-2">
-                {PRESET_COLORS.map((color) => (
-                  <button
-                    key={color}
-                    onClick={() => setNewTagColor(color)}
-                    className={`p-3 rounded-lg transition-all ${
-                      newTagColor === color ? 'ring-2 ring-offset-2 ring-brand' : ''
-                    }`}
-                    style={{ backgroundColor: color }}
-                  >
-                    {newTagColor === color && <Check size={16} className="text-white mx-auto" />}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* 预览 */}
-            <div className="flex items-center justify-center gap-3 py-3 bg-[var(--bg-elevated)] rounded-xl mb-3">
-              <span
-                className="px-3 py-1.5 rounded-full text-sm text-white"
-                style={{ backgroundColor: newTagColor }}
-              >
-                {newTagName || '标签预览'}
-              </span>
-            </div>
-
-            {/* 按钮 */}
-            <div className="flex gap-3">
-              {editingTag && (
-                <button
-                  onClick={() => {
-                    setEditingTag(null);
-                    setNewTagName('');
-                    setNewTagColor('#818cf8');
-                  }}
-                  className="flex-1 py-3 bg-[var(--bg-elevated)] text-[var(--text-secondary)] rounded-xl font-medium"
-                >
-                  取消编辑
-                </button>
-              )}
-              <button
-                onClick={editingTag ? handleSaveEditTag : handleCreateTag}
-                className="flex-1 py-3 bg-brand text-ink rounded-xl font-medium hover:bg-brand-strong transition-colors"
-              >
-                {editingTag ? '保存修改' : '创建标签'}
-              </button>
-            </div>
-          </div>
-        </div>
-      </BottomSheet>
+      {/* 标签选择弹窗（居中 Modal） */}
+      <TagSelectModal
+        visible={showTagSelect}
+        onClose={() => setShowTagSelect(false)}
+        onSelect={handleSelectTagFromModal}
+      />
 
       {/* Toast */}
       <Toast message={toastMessage} visible={showToast} />

@@ -8,7 +8,7 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      registerType: 'prompt',
       includeAssets: ['favicon.ico', 'favicon.svg', 'pwa-512x512.svg'],
       manifest: {
         name: '钱盒子 - 个人记账',

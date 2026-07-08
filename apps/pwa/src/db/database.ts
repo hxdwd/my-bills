@@ -88,6 +88,7 @@ export interface SubCategoryRecord {
   name: string
   color: string
   category_id: string
+  sort_order: number
   created_at: string
   updated_at: string
   _sync_status: SyncStatus
@@ -182,7 +183,57 @@ class BillsDatabase extends Dexie {
             _sync_status: t._sync_status,
             _updated_at_local: t._updated_at_local,
           }))
-        return tx.table('subCategories').bulkPut(subs)
+        // 迁移后的旧 tags 行从 tags 表删除，避免脏数据残留在全局标签表
+        const migratedIds = subs.map(s => s.id)
+        return tx.table('subCategories').bulkPut(subs).then(() => {
+          if (migratedIds.length > 0) {
+            return tx.table('tags').bulkDelete(migratedIds)
+          }
+        })
+      })
+    })
+    // v4: transactions 表补齐 tags 索引，与 TS 类型及远程表保持一致
+    this.version(4).stores({
+      accounts: 'id, user_id, _sync_status, type, is_active, is_default',
+      categories: 'id, user_id, _sync_status, type',
+      transactions: 'id, user_id, _sync_status, transaction_date, account_id, type, category_id, subcategory_id, tags',
+      budgets: 'id, user_id, _sync_status, month, category_id',
+      subCategories: 'id, user_id, _sync_status, category_id',
+      tags: 'id, user_id, _sync_status',
+      profiles: 'id, _sync_status',
+      syncMeta: 'key',
+    })
+    // v5: subCategories 增加 sort_order 字段，支持子分类排序持久化
+    this.version(5).stores({
+      accounts: 'id, user_id, _sync_status, type, is_active, is_default',
+      categories: 'id, user_id, _sync_status, type',
+      transactions: 'id, user_id, _sync_status, transaction_date, account_id, type, category_id, subcategory_id, tags',
+      budgets: 'id, user_id, _sync_status, month, category_id',
+      subCategories: 'id, user_id, _sync_status, category_id, sort_order',
+      tags: 'id, user_id, _sync_status',
+      profiles: 'id, _sync_status',
+      syncMeta: 'key',
+    }).upgrade(tx => {
+      // 旧 subCategories 行补全 sort_order（按现有顺序从 0 递增）
+      return tx.table('subCategories').toCollection().toArray().then((subs: any[]) => {
+        const byCategory = new Map<string, any[]>()
+        subs
+          .filter(s => s._sync_status !== 'pending_delete')
+          .forEach(s => {
+            const arr = byCategory.get(s.category_id) || []
+            arr.push(s)
+            byCategory.set(s.category_id, arr)
+          })
+        const updates: Promise<any>[] = []
+        byCategory.forEach(arr => {
+          arr.forEach((s, i) => {
+            if (typeof s.sort_order !== 'number') {
+              s.sort_order = i
+              updates.push(tx.table('subCategories').put(s))
+            }
+          })
+        })
+        return Promise.all(updates)
       })
     })
   }

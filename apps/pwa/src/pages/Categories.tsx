@@ -353,7 +353,7 @@ export default function CategoriesPage() {
                   onClick={() => setNewCatIcon(icon)}
                   className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl transition-all
                     ${newCatIcon === icon
-                      ? 'bg-brand/20 ring-2 ring-brand-primary'
+                      ? 'bg-brand/20 ring-2 ring-brand'
                       : isDark ? 'bg-surface hover:bg-brand-tint' : 'bg-bg hover:bg-brand-tint'
                     }`}
                 >
@@ -374,7 +374,7 @@ export default function CategoriesPage() {
                   key={color}
                   onClick={() => setNewCatColor(color)}
                   className={`w-10 h-10 rounded-xl transition-transform hover:scale-110 ${
-                    newCatColor === color ? 'ring-2 ring-offset-2 ring-brand-primary' : ''
+                    newCatColor === color ? 'ring-2 ring-offset-2 ring-brand' : ''
                   }`}
                   style={{ backgroundColor: color }}
                 >
@@ -478,7 +478,7 @@ export default function CategoriesPage() {
                     onClick={() => setEditCatIcon(icon)}
                     className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl transition-all flex-shrink-0
                       ${editCatIcon === icon
-                        ? 'bg-brand/20 ring-2 ring-brand-primary'
+                        ? 'bg-brand/20 ring-2 ring-brand'
                         : isDark ? 'bg-surface hover:bg-brand-tint' : 'bg-bg hover:bg-brand-tint'
                       }`}
                   >
@@ -499,7 +499,7 @@ export default function CategoriesPage() {
                     key={color}
                     onClick={() => setEditCatColor(color)}
                     className={`w-10 h-10 rounded-xl transition-transform hover:scale-110 ${
-                      editCatColor === color ? 'ring-2 ring-offset-2 ring-brand-primary' : ''
+                      editCatColor === color ? 'ring-2 ring-offset-2 ring-brand' : ''
                     }`}
                     style={{ backgroundColor: color }}
                   >
@@ -559,7 +559,7 @@ export default function CategoriesPage() {
                   onClick={() => setSubTargetCategoryId(cat.id)}
                   className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm transition-all
                     ${subTargetCategoryId === cat.id
-                      ? 'bg-brand/20 ring-2 ring-brand-primary text-[var(--text-primary)]'
+                      ? 'bg-brand/20 ring-2 ring-brand text-[var(--text-primary)]'
                       : isDark ? 'bg-surface text-ink-2 hover:bg-brand-tint' : 'bg-bg text-ink-2 hover:bg-brand-tint'
                     }`}
                 >
@@ -608,7 +608,7 @@ export default function CategoriesPage() {
                   key={color}
                   onClick={() => setNewSubColor(color)}
                   className={`w-10 h-10 rounded-xl transition-transform hover:scale-110 ${
-                    newSubColor === color ? 'ring-2 ring-offset-2 ring-brand-primary' : ''
+                    newSubColor === color ? 'ring-2 ring-offset-2 ring-brand' : ''
                   }`}
                   style={{ backgroundColor: color }}
                 >

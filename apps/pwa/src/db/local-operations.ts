@@ -270,6 +270,25 @@ export const localSubCategories = {
     return record
   },
 
+  /** 调整子分类排序：写入新的 sort_order 列表 */
+  async reorder(userId: string, orderedIds: string[]): Promise<void> {
+    const existingMap = new Map<string, SubCategoryRecord>()
+    const all = await this.getAll(userId)
+    all.forEach(r => existingMap.set(r.id, r))
+    await db.subCategories.transaction('rw', db.subCategories, async () => {
+      for (let i = 0; i < orderedIds.length; i++) {
+        const rec = existingMap.get(orderedIds[i])
+        if (rec) {
+          await db.subCategories.update(orderedIds[i], {
+            sort_order: i,
+            _sync_status: 'local_dirty',
+            _updated_at_local: new Date().toISOString(),
+          } as Partial<SubCategoryRecord>)
+        }
+      }
+    })
+  },
+
   /** 更新子分类 */
   async update(id: string, data: Partial<SubCategoryRecord>): Promise<void> {
     const existing = await db.subCategories.get(id)

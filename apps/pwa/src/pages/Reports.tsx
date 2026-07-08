@@ -2,8 +2,10 @@ import { useState, useRef, useEffect } from 'react'
 import { useTheme } from '../context/ThemeContext'
 import { useApp } from '../context/AppContext'
 import Card from '../components/ui/Card'
+import CategoryDistributionSheet from '../components/CategoryDistributionSheet'
+import { DonutChart } from '../components/charts/DonutChart'
 import { ChevronLeft, ChevronRight, X } from 'lucide-react'
-import { Pie, Bar, Line } from 'react-chartjs-2'
+import { Bar, Line } from 'react-chartjs-2'
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -65,7 +67,32 @@ export default function ReportsPage() {
     return () => { if (longPressTimer.current) clearTimeout(longPressTimer.current) }
   }, [])
 
-  const [selectedCategoryForDrill, setSelectedCategoryForDrill] = useState<{ id: string; name: string; icon: string; color: string } | null>(null)
+  const [drillCategoryId, setDrillCategoryId] = useState<string | null>(null)
+  const [distExpanded, setDistExpanded] = useState(false)
+
+  // 当前报表时间范围（与报表统计口径一致）
+  const { startStr: rangeStartStr, endStr: rangeEndStr } = (() => {
+    if (timeRange === 'month') {
+      const start = new Date(selectedYear, selectedMonth - 1, 1)
+      const end = new Date(selectedYear, selectedMonth, 0) // 当月最后一天
+      return { startStr: start, endStr: end }
+    } else {
+      const start = new Date(selectedYear, 0, 1)
+      const end = new Date(selectedYear, 11, 31)
+      return { startStr: start, endStr: end }
+    }
+  })()
+
+  // Map: categoryId -> SubCategory[]，避免重复遍历 subCategories
+  const subCategoryByCategory = (() => {
+    const m = new Map<string, typeof subCategories>()
+    for (const s of subCategories) {
+      const arr = m.get(s.categoryId)
+      if (arr) arr.push(s)
+      else m.set(s.categoryId, [s])
+    }
+    return m
+  })()
 
   // 切换时间
   const goPrev = () => {
@@ -157,61 +184,6 @@ export default function ReportsPage() {
   const topExpenses = timeRange === 'month'
     ? getMonthTopExpenses(selectedYear, selectedMonth, bigExpenseThreshold)
     : []
-
-  // 子分类下钻（按子分类看分类下支出分布）
-  const subCategoryDistribution = selectedCategoryForDrill ? (() => {
-    const categorySubs = subCategories.filter(s => s.categoryId === selectedCategoryForDrill.id);
-
-    const categoryTransactions = transactions.filter(
-      t => t.type === 'expense' && t.categoryId === selectedCategoryForDrill.id
-    );
-
-    if (categorySubs.length === 0) return null;
-
-    const subStats = categorySubs.map(sub => {
-      const total = categoryTransactions
-        .filter(t => t.subcategoryId === sub.id)
-        .reduce((sum, t) => sum + t.amount, 0);
-      return { ...sub, total };
-    }).filter(s => s.total > 0).sort((a, b) => b.total - a.total);
-
-    const unsubTotal = categoryTransactions
-      .filter(t => !t.subcategoryId)
-      .reduce((sum, t) => sum + t.amount, 0);
-
-    const categoryTotal = categoryTransactions.reduce((sum, t) => sum + t.amount, 0);
-
-    return { subStats, unsubTotal, categoryTotal };
-  })() : null;
-
-  // 饼图数据
-  const pieData = {
-    labels: expenseByCategory.map(c => c.name),
-    datasets: [{
-      data: expenseByCategory.map(c => c.total),
-      backgroundColor: expenseByCategory.map(c => c.color),
-      borderWidth: 0,
-      hoverOffset: 8,
-    }]
-  }
-
-  const pieOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: { display: false },
-      tooltip: {
-        callbacks: {
-          label: (context: any) => {
-            const value = context.raw as number
-            const percent = totalExpense > 0 ? ((value / totalExpense) * 100).toFixed(1) : '0'
-            return ` ¥${value.toLocaleString()} (${percent}%)`
-          }
-        }
-      }
-    },
-    cutout: '55%',
-  }
 
   // 按月：柱状图显示每周支出 / 按年：折线图显示每月收入+支出
   const barChartData = timeRange === 'month' && monthWeekExpense ? {
@@ -434,46 +406,87 @@ export default function ReportsPage() {
           })()
         ) : null}
 
-        {/* Expense Distribution */}
+        {/* Expense Distribution —— 上下布局 */}
         <Card className="!p-4">
-          <h3 className={`font-semibold mb-3 ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
+          <h3 className={`font-semibold mb-6 ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
             支出分布
           </h3>
           {expenseByCategory.length > 0 ? (
-            <div className="flex items-start gap-4">
-              <div className="w-36 h-36">
-                <Pie data={pieData} options={pieOptions} />
+            <div className="flex flex-col">
+              {/* ① 图表区域：Donut 居中 + 总支出 */}
+              <div className="flex flex-col items-center mb-6">
+                <div className="w-44 h-44">
+                  <DonutChart
+                    data={{
+                      labels: expenseByCategory.map(c => c.name),
+                      values: expenseByCategory.map(c => c.total),
+                      colors: expenseByCategory.map(c => c.color),
+                    }}
+                    size={176}
+                    centerText={{
+                      main: `¥${totalExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                      sub: '总支出',
+                    }}
+                    onClick={(_e: any, elements: any[]) => {
+                      if (elements.length === 0) return
+                      const cat = expenseByCategory[elements[0].index]
+                      if (cat && subCategoryByCategory.has(cat.id)) setDrillCategoryId(cat.id)
+                    }}
+                  />
+                </div>
               </div>
-              <div className="flex-1 space-y-2 max-h-36 overflow-y-auto hide-scrollbar">
-                {expenseByCategory.slice(0, 5).map((cat) => {
-                  const percent = totalExpense > 0 ? ((cat.total / totalExpense) * 100).toFixed(1) : '0'
-                  const hasSubs = subCategories.some(s => s.categoryId === cat.id)
-                  return (
-                    <button
-                      key={cat.id}
-                      onClick={() => hasSubs ? setSelectedCategoryForDrill({ id: cat.id, name: cat.name, icon: cat.icon, color: cat.color }) : null}
-                      className={`w-full flex items-center justify-between hover:bg-[var(--surface-warm)] rounded-lg px-1 py-1 transition-colors ${hasSubs ? 'cursor-pointer' : 'cursor-default'}`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div 
-                          className="w-2.5 h-2.5 rounded-full"
-                          style={{ backgroundColor: cat.color }}
-                        />
-                        <span className={`text-sm ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
-                          {cat.icon} {cat.name}
-                        </span>
-                      </div>
-                      <div className="text-right">
-                        <span className={`text-sm font-mono ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
-                          ¥{cat.total.toLocaleString()}
-                        </span>
-                        <span className={`text-xs ml-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
-                          {percent}%
-                        </span>
-                      </div>
-                    </button>
-                  )
-                })}
+
+              {/* ② 分类列表区域 */}
+              <div className="overflow-hidden">
+                {expenseByCategory
+                  .slice(0, distExpanded ? expenseByCategory.length : 5)
+                  .map((cat) => {
+                    const percent = totalExpense > 0 ? ((cat.total / totalExpense) * 100).toFixed(1) : '0'
+                    const hasSubs = subCategoryByCategory.has(cat.id)
+                    return (
+                      <button
+                        key={cat.id}
+                        onClick={() => hasSubs ? setDrillCategoryId(cat.id) : null}
+                        className={`w-full text-left block py-4 ${hasSubs ? 'cursor-pointer' : 'cursor-default'} first:pt-0`}
+                      >
+                        {/* 第一行：图标+名称 | 百分比 */}
+                        <div className="flex items-center justify-between mb-2">
+                          <span className={`text-base font-medium ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
+                            {cat.icon} {cat.name}
+                          </span>
+                          <span className={`text-[15px] font-medium ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
+                            {percent}%
+                          </span>
+                        </div>
+                        {/* 第二行：彩色进度条 */}
+                        <div className="w-full h-1.5 rounded-[999px] bg-[#F5F5F5] overflow-hidden">
+                          <div
+                            className="h-full rounded-[999px]"
+                            style={{
+                              width: `${percent}%`,
+                              backgroundColor: cat.color,
+                            }}
+                          />
+                        </div>
+                        {/* 第三行：金额 */}
+                        <div className={`mt-2 text-[18px] font-semibold font-mono ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
+                          ¥{cat.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                      </button>
+                    )
+                  })}
+
+                {/* 展开更多（高度动画） */}
+                {expenseByCategory.length > 5 && (
+                  <button
+                    onClick={() => setDistExpanded(v => !v)}
+                    className="w-full text-center pt-4 text-sm font-medium text-[var(--brand)] hover:opacity-80 transition-opacity"
+                  >
+                    {distExpanded
+                      ? '收起'
+                      : `展开更多（${expenseByCategory.length - 5}）`}
+                  </button>
+                )}
               </div>
             </div>
           ) : (
@@ -651,62 +664,16 @@ export default function ReportsPage() {
         </div>
       )}
 
-      {/* 子分类下钻弹窗 */}
-      {selectedCategoryForDrill && subCategoryDistribution && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={() => setSelectedCategoryForDrill(null)}>
-          <div
-            className="w-full max-w-lg bg-[var(--bg-primary)] rounded-t-3xl animate-slide-up max-h-[70vh] flex flex-col"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-warm)]">
-              <button onClick={() => setSelectedCategoryForDrill(null)} className="p-2 -ml-2">
-                <X size={20} className="text-[var(--text-secondary)]" />
-              </button>
-              <h2 className="text-lg font-semibold text-[var(--text-primary)]">
-                {selectedCategoryForDrill.icon} {selectedCategoryForDrill.name} - 子分类分布
-              </h2>
-              <div className="w-10" />
-            </div>
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              {subCategoryDistribution.subStats.map((sub) => {
-                const percent = subCategoryDistribution.categoryTotal > 0
-                  ? ((sub.total / subCategoryDistribution.categoryTotal) * 100).toFixed(1)
-                  : '0'
-                return (
-                  <div key={sub.id} className="flex items-center justify-between p-3 bg-[var(--bg-secondary)] rounded-xl">
-                    <div className="flex items-center gap-3">
-                      <span
-                        className="w-3 h-3 rounded-full"
-                        style={{ backgroundColor: sub.color }}
-                      />
-                      <span className="text-[var(--text-primary)]">{sub.name}</span>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-[var(--text-primary)] font-mono">¥{sub.total.toLocaleString()}</div>
-                      <div className="text-xs text-[var(--text-tertiary)]">{percent}%</div>
-                    </div>
-                  </div>
-                )
-              })}
-              {subCategoryDistribution.unsubTotal > 0 && (
-                <div className="flex items-center justify-between p-3 bg-[var(--bg-secondary)] rounded-xl opacity-60">
-                  <div className="flex items-center gap-3">
-                    <span className="w-3 h-3 rounded-full bg-[var(--text-tertiary)]" />
-                    <span className="text-[var(--text-tertiary)]">未分子类</span>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-[var(--text-tertiary)] font-mono">¥{subCategoryDistribution.unsubTotal.toLocaleString()}</div>
-                    <div className="text-xs text-[var(--text-tertiary)]">
-                      {subCategoryDistribution.categoryTotal > 0
-                        ? ((subCategoryDistribution.unsubTotal / subCategoryDistribution.categoryTotal) * 100).toFixed(1)
-                        : '0'}%
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+      {/* 子分类分布下钻 */}
+      {drillCategoryId && (
+        <CategoryDistributionSheet
+          visible={true}
+          categoryId={drillCategoryId}
+          startDate={rangeStartStr}
+          endDate={rangeEndStr}
+          type="expense"
+          onClose={() => setDrillCategoryId(null)}
+        />
       )}
     </div>
   )

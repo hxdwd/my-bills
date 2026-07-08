@@ -15,7 +15,6 @@ import {
   Bell,
   Shield,
   Info,
-  Palette,
   Wallet,
   Tag,
   Globe,
@@ -64,7 +63,7 @@ function SettingItem({ icon, title, subtitle, onClick, rightElement }: SettingIt
 export default function SettingsPage() {
   const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
-  const { bigExpenseThreshold, setBigExpenseThreshold } = useApp()
+  const { bigExpenseThreshold, setBigExpenseThreshold, refreshData } = useApp()
   const { logout } = useAuthStore()
   const [showExport, setShowExport] = useState(false)
   const [showThresholdEdit, setShowThresholdEdit] = useState(false)
@@ -78,6 +77,9 @@ export default function SettingsPage() {
     try {
       await syncEngine.clearAllData()
       localStorage.removeItem('mybills_user')
+      // 清完本地后立即全量重新拉取云端数据并刷新 UI（clearAllData 已清 syncMeta，
+      // 此处走首次全量同步分支，可把远程老标签等数据完整恢复）。
+      await refreshData()
       setShowClearCache(false)
     } catch (err) {
       console.error('清除缓存失败:', err)

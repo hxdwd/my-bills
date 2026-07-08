@@ -19,6 +19,7 @@ import {
   CategoriesPage as Categories,
 } from './pages';
 import { TabType } from './types';
+import { UpdatePrompt } from './pwa/UpdatePrompt';
 
 // URL 路径到 Tab 的映射
 const pathToTab: Record<string, TabType> = {
@@ -134,6 +135,8 @@ function AppContent() {
         isOpen={showAddTransaction}
         onClose={() => setShowAddTransaction(false)}
       />
+
+      <UpdatePrompt />
     </div>
   );
 }

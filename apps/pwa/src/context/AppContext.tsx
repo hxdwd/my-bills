@@ -63,6 +63,7 @@ export interface SubCategory {
   name: string
   color: string
   categoryId: string
+  order?: number
 }
 
 export interface Tag {
@@ -105,7 +106,8 @@ interface AppContextType {
   addSubCategory: (s: Omit<SubCategory, 'id'>) => Promise<void>
   updateSubCategory: (id: string, data: Partial<SubCategory>) => Promise<void>
   deleteSubCategory: (id: string) => Promise<void>
-  addTag: (t: Omit<Tag, 'id'>) => Promise<void>
+  reorderSubCategories: (categoryId: string, orderedIds: string[]) => Promise<void>
+  addTag: (t: Omit<Tag, 'id'>) => Promise<Tag | undefined>
   updateTag: (id: string, data: Partial<Tag>) => Promise<void>
   deleteTag: (id: string) => Promise<void>
   getTotalAssets: () => number
@@ -192,7 +194,7 @@ function mapTransaction(
     time: record.transaction_time?.slice(0, 5) || '00:00',
     tags: record.tags || undefined,
     subcategoryId: record.subcategory_id || undefined,
-    subcategoryName: record.subcategory_id ? (subCategoryMap.get(record.subcategory_id) || undefined) : undefined,
+    subcategoryName: record.subcategory_id ? (subCategoryMap?.get(record.subcategory_id) || undefined) : undefined,
     note: record.note || undefined,
     images: record.images || undefined,
     location: record.location || undefined,
@@ -216,6 +218,7 @@ function mapSubCategory(record: SubCategoryRecord): SubCategory {
     name: record.name,
     color: record.color || '#818cf8',
     categoryId: record.category_id,
+    order: record.sort_order ?? 0,
   }
 }
 
@@ -475,21 +478,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
     })
 
     // 2. 构建 UI 数据并立即更新 state
-    const accountNameMap = new Map<string, string>()
-    accountsWithBalance.forEach(a => accountNameMap.set(a.id, a.name))
-    const categoryMap = new Map<string, { name: string; icon: string }>()
-    categories.expense.forEach(c => categoryMap.set(c.id, { name: c.name, icon: c.icon }))
-    categories.income.forEach(c => categoryMap.set(c.id, { name: c.name, icon: c.icon }))
+    // 注意：本地写入已成功（record 已落库），UI 映射层即使异常也只影响展示，
+    // 绝不能因此让 addTransaction 抛错导致上层误报「保存失败」。
+    try {
+      const accountNameMap = new Map<string, string>()
+      accountsWithBalance.forEach(a => accountNameMap.set(a.id, a.name))
+      const categoryMap = new Map<string, { name: string; icon: string }>()
+      categories.expense.forEach(c => categoryMap.set(c.id, { name: c.name, icon: c.icon }))
+      categories.income.forEach(c => categoryMap.set(c.id, { name: c.name, icon: c.icon }))
+      const subCategoryMap = new Map<string, string>()
+      subCategories.forEach(s => subCategoryMap.set(s.id, s.name))
 
-    const newTransaction = mapTransaction(record, accountNameMap, categoryMap)
+      const newTransaction = mapTransaction(record, accountNameMap, categoryMap, subCategoryMap)
 
-    setTransactions(prev => [newTransaction, ...prev])
+      setTransactions(prev => [newTransaction, ...prev])
+    } catch (mapErr) {
+      console.error('构建交易 UI 数据失败（不影响已保存）:', mapErr)
+    }
 
-    // 3. 后台异步同步到 Supabase
+    // 3. 后台异步同步到 Supabase（fire-and-forget，失败不影响保存结果）
     syncEngine.syncAfterWrite('transactions', userId).catch(err => {
       console.error('后台同步交易失败:', err)
     })
-  }, [userId, accountsWithBalance, categories])
+  }, [userId, accountsWithBalance, categories, subCategories])
+
 
   // ============================================================
   // CRUD: 删除交易
@@ -533,6 +545,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (data.toAccountId !== undefined) dbUpdates.to_account_id = data.toAccountId || null
     if (data.note !== undefined) dbUpdates.note = data.note || null
     if (data.tags !== undefined) dbUpdates.tags = data.tags.length ? data.tags : null
+    if (data.date !== undefined) dbUpdates.transaction_date = data.date
+    if (data.time !== undefined) dbUpdates.transaction_time = data.time.length <= 5 ? data.time + ':00' : data.time
 
     // 2. 更新 IndexedDB
     await localTransactions.update(id, dbUpdates)
@@ -751,6 +765,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       name: s.name,
       color: s.color,
       category_id: s.categoryId,
+      sort_order: s.order ?? 0,
     })
 
     setSubCategories(prev => [...prev, mapSubCategory(record)])
@@ -767,6 +782,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (data.name !== undefined) dbUpdates.name = data.name
     if (data.color !== undefined) dbUpdates.color = data.color
     if (data.categoryId !== undefined) dbUpdates.category_id = data.categoryId
+    if (data.order !== undefined) dbUpdates.sort_order = data.order
 
     await localSubCategories.update(id, dbUpdates)
 
@@ -774,6 +790,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     syncEngine.syncAfterWrite('subCategories', userId).catch(err => {
       console.error('后台同步更新子分类失败:', err)
+    })
+  }, [userId])
+
+  const reorderSubCategories = useCallback(async (categoryId: string, orderedIds: string[]) => {
+    if (!userId) throw new Error('未登录')
+
+    // 1. 立即更新本地 state（仅当前分类下的顺序生效）
+    setSubCategories(prev => {
+      const inCat = prev.filter(s => s.categoryId === categoryId)
+      const others = prev.filter(s => s.categoryId !== categoryId)
+      const orderMap = new Map(orderedIds.map((id, i) => [id, i]))
+      const sorted = [...inCat].sort((a, b) => {
+        const ia = orderMap.has(a.id) ? orderMap.get(a.id)! : 999
+        const ib = orderMap.has(b.id) ? orderMap.get(b.id)! : 999
+        return ia - ib
+      })
+      return [...others, ...sorted]
+    })
+
+    // 2. 持久化到 IndexedDB
+    await localSubCategories.reorder(userId, orderedIds)
+
+    syncEngine.syncAfterWrite('subCategories', userId).catch(err => {
+      console.error('后台同步子分类排序失败:', err)
     })
   }, [userId])
 
@@ -793,7 +833,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // CRUD: 标签（全局自由标签，跨分类）
   // ============================================================
 
-  const addTag = useCallback(async (t: Omit<Tag, 'id'>) => {
+  const addTag = useCallback(async (t: Omit<Tag, 'id'>): Promise<Tag | undefined> => {
     if (!userId) throw new Error('未登录')
 
     const record = await localTags.insert(userId, {
@@ -801,11 +841,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       color: t.color,
     })
 
-    setTags(prev => [...prev, mapTag(record)])
+    const newTag = mapTag(record)
+    setTags(prev => [...prev, newTag])
 
     syncEngine.syncAfterWrite('tags', userId).catch(err => {
       console.error('后台同步标签失败:', err)
     })
+
+    return newTag
   }, [userId])
 
   const updateTag = useCallback(async (id: string, data: Partial<Tag>) => {
@@ -1133,6 +1176,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       addSubCategory,
       updateSubCategory,
       deleteSubCategory,
+      reorderSubCategories,
       tags,
       addTag,
       updateTag,

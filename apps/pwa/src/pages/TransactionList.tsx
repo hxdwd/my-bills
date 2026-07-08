@@ -5,6 +5,9 @@ import { useApp } from '../context/AppContext'
 import Card from '../components/ui/Card'
 import TransactionItem from '../components/ui/TransactionItem'
 import BottomSheet from '../components/ui/BottomSheet'
+import TagSelectModal from '../components/TagSelectModal'
+import { recordTagUsage } from '../utils/tagUsage'
+import { useAuthStore } from '../stores/useAuthStore'
 import { 
   ArrowLeft, 
   Calendar, 
@@ -12,7 +15,10 @@ import {
   Wallet, 
   FileText, 
   Trash2,
-  Clock
+  Clock,
+  Tag,
+  Plus,
+  X
 } from 'lucide-react'
 
 type FilterMode = 'all' | 'month'
@@ -25,6 +31,7 @@ export default function TransactionListPage() {
     categories, 
     accounts,
     tags,
+    subCategories,
     updateTransaction,
     deleteTransaction,
   } = useApp()
@@ -42,6 +49,10 @@ export default function TransactionListPage() {
   // 编辑表单
   const [editAmount, setEditAmount] = useState('')
   const [editNote, setEditNote] = useState('')
+  const [editSubCategoryId, setEditSubCategoryId] = useState<string | undefined>(undefined)
+  const [editTagIds, setEditTagIds] = useState<string[]>([])
+  // 标签选择弹窗
+  const [showEditTagSelect, setShowEditTagSelect] = useState(false)
 
   // 生成可用月份列表（从交易记录中提取）
   const availableMonths = useMemo(() => {
@@ -84,13 +95,36 @@ export default function TransactionListPage() {
     return list.find(c => c.id === t.categoryId) || { icon: '📝', color: '#87867f', name: '未分类' }
   }
 
+  // 当前交易分类下的子分类列表
+  const currentSubCategories = useMemo(() => {
+    if (!selectedTransaction || selectedTransaction.type === 'transfer') return []
+    return subCategories.filter(s => s.categoryId === selectedTransaction.categoryId)
+  }, [selectedTransaction, subCategories])
+
   // 点击交易
   const handleTransactionClick = (t: typeof transactions[0]) => {
     setSelectedTransaction(t)
     setEditAmount(t.amount.toString())
     setEditNote(t.note || '')
+    setEditSubCategoryId(t.subcategoryId || undefined)
+    setEditTagIds(t.tags || [])
     setEditMode(false)
     setShowDetailSheet(true)
+  }
+
+  // 从标签选择弹窗选中标签（点击即选中、记录最近使用、关闭弹窗）
+  const handleSelectEditTag = (tagId: string) => {
+    setEditTagIds(prev =>
+      prev.includes(tagId) ? prev : [...prev, tagId]
+    )
+    const uid = useAuthStore.getState().user?.id
+    if (uid) recordTagUsage(uid, tagId)
+    setShowEditTagSelect(false)
+  }
+
+  // 取消某个已选标签（仅取消选择，不删库）
+  const removeEditTag = (tagId: string) => {
+    setEditTagIds(prev => prev.filter(id => id !== tagId))
   }
 
   // 保存编辑
@@ -103,6 +137,8 @@ export default function TransactionListPage() {
       await updateTransaction(selectedTransaction.id, {
         amount: newAmount,
         note: editNote || undefined,
+        subcategoryId: editSubCategoryId,
+        tags: editTagIds,
       })
       setShowDetailSheet(false)
       setSelectedTransaction(null)
@@ -232,6 +268,7 @@ export default function TransactionListPage() {
                           icon={cat.icon}
                           iconBg={`${cat.color}15`}
                           title={t.categoryName}
+                          subcategory={t.type === 'transfer' ? undefined : t.subcategoryName}
                           subtitle={`${t.time} · ${t.accountName}`}
                           amount={t.amount}
                           type={t.type}
@@ -276,13 +313,40 @@ export default function TransactionListPage() {
                 </div>
 
                 {/* 详情字段 */}
-                <div className={`rounded-xl p-4 space-y-3 ${theme === 'dark' ? 'bg-surface' : 'bg-white'}`}>
+                <div className={`rounded-xl p-4 space-y-3 ${theme === 'dark' ? 'bg-[var(--bg-secondary)]' : 'bg-[var(--bg-secondary)]'}`}>
                   <div className="flex items-center justify-between">
                     <span className={`text-sm ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>分类</span>
                     <span className={`text-sm ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
                       {getCategory(selectedTransaction).icon} {selectedTransaction.categoryName}
                     </span>
                   </div>
+                  {selectedTransaction.type !== 'transfer' && selectedTransaction.subcategoryName && (
+                    <div className="flex items-center justify-between">
+                      <span className={`text-sm ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>子分类</span>
+                      <span className={`text-sm ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
+                        {selectedTransaction.subcategoryName}
+                      </span>
+                    </div>
+                  )}
+                  {selectedTransaction.tags && selectedTransaction.tags.length > 0 && (
+                    <div className="flex items-center justify-between">
+                      <span className={`text-sm ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>标签</span>
+                      <div className="flex gap-1 flex-wrap justify-end">
+                        {selectedTransaction.tags.map(tagId => {
+                          const tag = tags.find(t => t.id === tagId);
+                          return tag ? (
+                            <span
+                              key={tagId}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs text-white"
+                              style={{ backgroundColor: tag.color }}
+                            >
+                              {tag.name}
+                            </span>
+                          ) : null;
+                        })}
+                      </div>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between">
                     <span className={`text-sm ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>账户</span>
                     <span className={`text-sm ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
@@ -295,25 +359,6 @@ export default function TransactionListPage() {
                       {selectedTransaction.date} {selectedTransaction.time}
                     </span>
                   </div>
-                  {selectedTransaction.tags && selectedTransaction.tags.length > 0 && (
-                    <div className="flex items-center justify-between">
-                      <span className={`text-sm ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>标签</span>
-                      <div className="flex gap-1 flex-wrap justify-end">
-                        {selectedTransaction.tags.map(tagId => {
-                          const tag = tags.find(t => t.id === tagId);
-                          return tag ? (
-                            <span
-                              key={tagId}
-                              className="px-2 py-0.5 rounded-full text-xs text-white"
-                              style={{ backgroundColor: tag.color }}
-                            >
-                              {tag.name}
-                            </span>
-                          ) : null;
-                        })}
-                      </div>
-                    </div>
-                  )}
                   {selectedTransaction.note && (
                     <div className="flex items-center justify-between">
                       <span className={`text-sm ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>备注</span>
@@ -373,13 +418,13 @@ export default function TransactionListPage() {
                     金额
                   </label>
                   <div className="flex items-center gap-2">
-                    <span className={`text-lg ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>¥</span>
+                    <span className={`text-2xl ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>¥</span>
                     <input
                       type="number"
                       value={editAmount}
                       onChange={(e) => setEditAmount(e.target.value)}
-                      className={`flex-1 px-4 py-3 rounded-xl text-lg font-mono ${
-                        theme === 'dark' ? 'bg-surface text-ink' : 'bg-white text-ink'
+                      className={`flex-1 px-4 py-3 rounded-xl text-2xl font-mono ${
+                        theme === 'dark' ? 'bg-[var(--bg-secondary)] text-ink' : 'bg-[var(--bg-secondary)] text-ink'
                       } focus:outline-none focus:ring-2 focus:ring-brand/40`}
                       step="0.01"
                       min="0.01"
@@ -397,28 +442,107 @@ export default function TransactionListPage() {
                     placeholder="添加备注..."
                     rows={3}
                     className={`w-full px-4 py-3 rounded-xl resize-none ${
-                      theme === 'dark' ? 'bg-surface text-ink placeholder-[#87867f]' : 'bg-white text-ink placeholder-[#b0aea5]'
+                      theme === 'dark' ? 'bg-[var(--bg-secondary)] text-ink placeholder-[var(--text-tertiary)]' : 'bg-[var(--bg-secondary)] text-ink placeholder-[var(--text-tertiary)]'
                     } focus:outline-none focus:ring-2 focus:ring-brand/40`}
                   />
                 </div>
 
+                {selectedTransaction.type !== 'transfer' && (
+                  <div>
+                    <label className={`text-sm mb-2 block ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
+                      子分类
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {currentSubCategories.length > 0 ? (
+                        currentSubCategories.map((sub) => {
+                          const isSelected = editSubCategoryId === sub.id
+                          return (
+                            <button
+                              key={sub.id}
+                              type="button"
+                              onClick={() => setEditSubCategoryId(isSelected ? undefined : sub.id)}
+                              className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-sm transition-all ${
+                                isSelected
+                                  ? 'text-white ring-2 ring-offset-1 ring-current'
+                                  : 'bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:bg-[var(--surface-warm)]'
+                              }`}
+                              style={isSelected ? { backgroundColor: sub.color || '#818cf8' } : undefined}
+                            >
+                              {sub.name}
+                            </button>
+                          )
+                        })
+                      ) : (
+                        <span className={`text-xs py-1.5 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
+                          该分类暂无子分类
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* 标签（全局自由标签，多选；仅展示已选，与记一笔一致） */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className={`flex items-center gap-2 text-sm block ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
+                      <Tag size={16} />
+                      标签
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setShowEditTagSelect(true)}
+                      className={`text-sm transition-colors ${theme === 'dark' ? 'text-ink-2 hover:text-ink' : 'text-ink-2 hover:text-ink'}`}
+                    >
+                      + 添加标签
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {editTagIds.length > 0 ? (
+                      editTagIds.map((tagId) => {
+                        const tag = tags.find((t: any) => t.id === tagId)
+                        if (!tag) return null
+                        return (
+                          <span
+                            key={tagId}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-sm text-white"
+                            style={{ backgroundColor: tag.color || '#818cf8' }}
+                          >
+                            <Tag size={12} />
+                            {tag.name}
+                            <button
+                              type="button"
+                              onClick={() => removeEditTag(tagId)}
+                              className="ml-0.5 -mr-1 p-0.5 rounded-full hover:bg-white/20 transition-colors"
+                              aria-label="删除标签"
+                            >
+                              <X size={12} />
+                            </button>
+                          </span>
+                        )
+                      })
+                    ) : (
+                      <span className={`text-xs py-1.5 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
+                        点击"添加标签"选择或新建
+                      </span>
+                    )}
+                  </div>
+                </div>
+
                 {/* 分类和账户信息（只读提示） */}
-                <div className={`p-3 rounded-xl text-xs ${theme === 'dark' ? 'bg-surface text-ink-2' : 'bg-bg text-ink-2'}`}>
+                <div className={`p-3 rounded-xl text-xs ${theme === 'dark' ? 'bg-[var(--bg-secondary)] text-[var(--text-secondary)]' : 'bg-[var(--bg-secondary)] text-[var(--text-secondary)]'}`}>
                   分类: {selectedTransaction.categoryName} · 账户: {selectedTransaction.accountName} · 日期: {selectedTransaction.date}
                 </div>
 
                 <div className="flex gap-3">
                   <button
                     onClick={() => setEditMode(false)}
-                    className={`flex-1 py-3 rounded-xl ${
-                      theme === 'dark' ? 'bg-[#4a4a47] text-ink-2' : 'bg-brand-tint text-ink-2'
-                    }`}
+                    className="flex-1 py-3 rounded-xl bg-[var(--bg-secondary)] text-[var(--text-secondary)] font-medium transition-colors"
                   >
                     取消
                   </button>
                   <button
                     onClick={handleSaveEdit}
-                    className="flex-1 py-3 rounded-xl bg-brand text-white font-medium hover:bg-[#b55335] transition-colors"
+                    className="flex-1 py-3 rounded-xl bg-brand text-ink font-medium hover:bg-brand-strong transition-colors"
                   >
                     保存
                   </button>
@@ -428,6 +552,13 @@ export default function TransactionListPage() {
           </div>
         )}
       </BottomSheet>
+
+      {/* 标签选择弹窗（编辑交易时复用记账页逻辑） */}
+      <TagSelectModal
+        visible={showEditTagSelect}
+        onClose={() => setShowEditTagSelect(false)}
+        onSelect={handleSelectEditTag}
+      />
     </div>
   )
 }

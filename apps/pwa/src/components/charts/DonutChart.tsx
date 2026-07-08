@@ -15,28 +15,18 @@ interface DonutChartProps {
     sub?: string;
   };
   size?: number;
+  onClick?: (event: any, elements: any[]) => void;
 }
 
-export function DonutChart({ data, centerText, size = 200 }: DonutChartProps) {
+export function DonutChart({ data, centerText, size = 200, onClick }: DonutChartProps) {
   const { isDark } = useTheme();
   const textColor = isDark ? '#b0aea5' : '#5e5d59';
-
-  const chartData = {
-    labels: data.labels,
-    datasets: [
-      {
-        data: data.values,
-        backgroundColor: data.colors,
-        borderWidth: 0,
-        hoverOffset: 4,
-      },
-    ],
-  };
 
   const options = {
     responsive: true,
     maintainAspectRatio: true,
     cutout: '70%',
+    onClick: onClick as any,
     plugins: {
       legend: {
         display: false,
@@ -58,6 +48,20 @@ export function DonutChart({ data, centerText, size = 200 }: DonutChartProps) {
       },
     },
   };
+
+  const chartData = {
+    labels: data.labels,
+    datasets: [
+      {
+        data: data.values,
+        backgroundColor: data.colors,
+        borderWidth: 0,
+        hoverOffset: 4,
+      },
+    ],
+  };
+
+
 
   return (
     <div className="relative inline-flex items-center justify-center">

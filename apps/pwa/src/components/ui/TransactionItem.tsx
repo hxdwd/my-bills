@@ -1,6 +1,8 @@
+import { ReactNode } from 'react'
+
 interface TagInfo {
   id: string
-  name: string
+  name: ReactNode
   color: string
 }
 
@@ -12,6 +14,7 @@ interface TransactionItemProps {
   amount: number
   type: 'expense' | 'income' | 'transfer'
   account?: string
+  subcategory?: string
   tags?: TagInfo[]
   onClick?: () => void
 }
@@ -24,6 +27,7 @@ export default function TransactionItem({
   amount,
   type,
   account,
+  subcategory,
   tags,
   onClick
 }: TransactionItemProps) {
@@ -52,25 +56,30 @@ export default function TransactionItem({
 
       {/* Content */}
       <div className="flex-1 min-w-0">
-        <div className="font-medium text-ink truncate">
-          {title}
+        {/* 第一行：分类 - 子分类 - 标签 统一内联，保证有/无标签高度一致、视觉和谐 */}
+        <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+          <span className="font-medium text-ink truncate shrink-0">{title}</span>
+          {subcategory && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-md font-medium shrink-0 leading-relaxed bg-surface text-ink-2 border border-[#e6e3da] dark:border-[#4a4a47]">
+              {subcategory}
+            </span>
+          )}
+          {tags && tags.length > 0 && (
+            <>
+              {tags.map(tag => (
+                <span
+                  key={tag.id}
+                  className="text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0 leading-relaxed bg-brand-tint text-ink"
+                >
+                  {tag.name}
+                </span>
+              ))}
+            </>
+          )}
         </div>
         {subtitle && (
           <div className="text-xs text-ink-2 mt-0.5 truncate">
             {subtitle}
-          </div>
-        )}
-        {/* Tags */}
-        {tags && tags.length > 0 && (
-          <div className="flex gap-1 flex-wrap mt-1.5">
-            {tags.map(tag => (
-              <span
-                key={tag.id}
-                className="text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0 leading-relaxed bg-brand-tint text-ink"
-              >
-                {tag.name}
-              </span>
-            ))}
           </div>
         )}
       </div>
