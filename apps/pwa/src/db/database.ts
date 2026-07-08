@@ -53,6 +53,7 @@ export interface TransactionRecord {
   type: 'expense' | 'income'
   amount: number
   category_id: string | null
+  subcategory_id: string | null
   account_id: string
   to_account_id: string | null
   transaction_date: string  // YYYY-MM-DD
@@ -80,13 +81,25 @@ export interface BudgetRecord {
   _updated_at_local: string
 }
 
-// 标签
+// 子分类（二级分类，绑在一级分类下，最末级）
+export interface SubCategoryRecord {
+  id: string
+  user_id: string
+  name: string
+  color: string
+  category_id: string
+  created_at: string
+  updated_at: string
+  _sync_status: SyncStatus
+  _updated_at_local: string
+}
+
+// 标签（全局自由标签，跨分类，可多选）
 export interface TagRecord {
   id: string
   user_id: string
   name: string
   color: string
-  category_id: string | null
   created_at: string
   updated_at: string
   _sync_status: SyncStatus
@@ -113,6 +126,7 @@ class BillsDatabase extends Dexie {
   categories!: Table<CategoryRecord, string>
   transactions!: Table<TransactionRecord, string>
   budgets!: Table<BudgetRecord, string>
+  subCategories!: Table<SubCategoryRecord, string>
   tags!: Table<TagRecord, string>
   profiles!: Table<ProfileRecord, string>
   syncMeta!: Table<SyncMeta, string>
@@ -140,6 +154,35 @@ class BillsDatabase extends Dexie {
     }).upgrade(tx => {
       return tx.table('accounts').toCollection().modify(account => {
         account.is_default = account.is_default ?? false
+      })
+    })
+    // v3: 拆分 tags 为 sub_categories（绑分类）+ 全局 tags
+    this.version(3).stores({
+      accounts: 'id, user_id, _sync_status, type, is_active, is_default',
+      categories: 'id, user_id, _sync_status, type',
+      transactions: 'id, user_id, _sync_status, transaction_date, account_id, type, category_id, subcategory_id',
+      budgets: 'id, user_id, _sync_status, month, category_id',
+      subCategories: 'id, user_id, _sync_status, category_id',
+      tags: 'id, user_id, _sync_status',
+      profiles: 'id, _sync_status',
+      syncMeta: 'key',
+    }).upgrade(tx => {
+      // 旧 tags 行（含 category_id）全部迁移为 sub_categories；全局 tags 表留空
+      return tx.table('tags').toCollection().toArray().then((oldTags: any[]) => {
+        const subs = oldTags
+          .filter(t => t._sync_status !== 'pending_delete' && t.category_id)
+          .map(t => ({
+            id: t.id,
+            user_id: t.user_id,
+            name: t.name,
+            color: t.color,
+            category_id: t.category_id,
+            created_at: t.created_at,
+            updated_at: t.updated_at,
+            _sync_status: t._sync_status,
+            _updated_at_local: t._updated_at_local,
+          }))
+        return tx.table('subCategories').bulkPut(subs)
       })
     })
   }

@@ -12,6 +12,7 @@ import type {
   CategoryRecord,
   TransactionRecord,
   BudgetRecord,
+  SubCategoryRecord,
   TagRecord,
   ProfileRecord,
 } from './database'
@@ -233,7 +234,61 @@ export const localBudgets = {
 }
 
 // ============================================================
-// Tags
+// SubCategories（子分类，绑一级分类）
+// ============================================================
+
+export const localSubCategories = {
+  /** 获取某用户全部子分类 */
+  async getAll(userId: string): Promise<SubCategoryRecord[]> {
+    const records = await db.subCategories
+      .where('user_id').equals(userId)
+      .filter(r => r._sync_status !== 'pending_delete')
+      .toArray()
+    return records
+  },
+
+  /** 获取某分类下的子分类 */
+  async getByCategory(userId: string, categoryId: string): Promise<SubCategoryRecord[]> {
+    const records = await this.getAll(userId)
+    return records.filter(r => r.category_id === categoryId)
+  },
+
+  /** 获取单个子分类 */
+  async getById(id: string): Promise<SubCategoryRecord | undefined> {
+    const record = await db.subCategories.get(id)
+    if (record && record._sync_status === 'pending_delete') return undefined
+    return record
+  },
+
+  /** 新增子分类 */
+  async insert(userId: string, data: Omit<SubCategoryRecord, keyof ReturnType<typeof newRecordBase> | '_sync_status' | '_updated_at_local'>): Promise<SubCategoryRecord> {
+    const record: SubCategoryRecord = {
+      ...newRecordBase(userId),
+      ...data,
+    }
+    await db.subCategories.put(record)
+    return record
+  },
+
+  /** 更新子分类 */
+  async update(id: string, data: Partial<SubCategoryRecord>): Promise<void> {
+    const existing = await db.subCategories.get(id)
+    if (!existing) return
+    const updated = markDirty({ ...existing, ...data })
+    await db.subCategories.put(updated)
+  },
+
+  /** 删除子分类 */
+  async remove(id: string): Promise<void> {
+    const existing = await db.subCategories.get(id)
+    if (!existing) return
+    const deleted = markDeleted(existing)
+    await db.subCategories.put(deleted)
+  },
+}
+
+// ============================================================
+// Tags（全局自由标签，跨分类）
 // ============================================================
 
 export const localTags = {

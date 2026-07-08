@@ -45,7 +45,7 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
   onClose,
   onSave,
 }) => {
-  const { accounts, categories: appCategories, addCategory, updateCategory, deleteCategory, addTransaction, tags, addTag, updateTag, deleteTag } = useApp();
+  const { accounts, categories: appCategories, addCategory, updateCategory, deleteCategory, addTransaction, subCategories, addSubCategory, updateSubCategory, deleteSubCategory, tags, addTag, updateTag, deleteTag } = useApp();
 
   // 状态管理
   const [transactionType, setTransactionType] = useState<TransactionType>('expense');
@@ -71,11 +71,12 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
 
   // 备注
   const [note, setNote] = useState('');
-  // 标签
-  const [selectedTagId, setSelectedTagId] = useState<string>('');
+  // 子分类（绑一级分类，单选）
+  const [selectedSubCategoryId, setSelectedSubCategoryId] = useState<string>('');
+  // 标签（全局自由标签，多选）
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   // 标签管理弹窗
   const [showTagManager, setShowTagManager] = useState(false);
-  const [tagManagerCategoryId, setTagManagerCategoryId] = useState('');
   const [editingTag, setEditingTag] = useState<{ id: string; name: string; color: string } | null>(null);
   const [newTagName, setNewTagName] = useState('');
   const [newTagColor, setNewTagColor] = useState('#818cf8');
@@ -93,11 +94,14 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
   // 获取选中的分类
   const selectedCategory = allCategories.find((c) => c.id === selectedCategoryId);
 
-  // 当前分类下的标签
-  const categoryTags = useMemo(() => {
+  // 当前分类下的子分类（绑一级分类，最末级）
+  const categorySubCategories = useMemo(() => {
     if (!selectedCategoryId) return [];
-    return tags.filter(t => t.categoryId === selectedCategoryId);
-  }, [tags, selectedCategoryId]);
+    return subCategories.filter(s => s.categoryId === selectedCategoryId);
+  }, [subCategories, selectedCategoryId]);
+
+  // 全局标签（跨分类，可多选）
+  const allTags = tags;
 
   // 获取选中的账户
   const selectedAccount = accounts.find((a) => a.id === selectedAccountId);
@@ -299,7 +303,8 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
         date: `${date.getMonth() + 1}月${date.getDate()}日`,
         time: localTimeStr,
         note: note || undefined,
-        tags: selectedTagId ? [selectedTagId] : undefined,
+        subcategoryId: selectedSubCategoryId || undefined,
+        tags: selectedTagIds.length > 0 ? selectedTagIds : undefined,
       });
 
       displayToast('保存成功');
@@ -310,12 +315,13 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
           type: transactionType,
           amount: amount,
           categoryId: transactionType === 'transfer' ? 't1' : selectedCategoryId,
+          subcategoryId: selectedSubCategoryId || undefined,
           accountId: selectedAccountId,
           toAccountId: transactionType === 'transfer' ? toAccountId : undefined,
           date,
           time,
           note,
-          tags: selectedTagId ? [selectedTagId] : undefined,
+          tags: selectedTagIds.length > 0 ? selectedTagIds : undefined,
         });
       }
 
@@ -335,7 +341,8 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
     setSelectedCategoryId('');
     setToAccountId('');
     setNote('');
-    setSelectedTagId('');
+    setSelectedSubCategoryId('');
+    setSelectedTagIds([]);
     setDate(new Date());
     setTime(new Date());
     // 自动选择默认账户
@@ -359,23 +366,20 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
     }
   }, [isOpen, accounts]);
 
-  // 选择标签（单选）
-  const selectTag = (tagId: string) => {
-    setSelectedTagId(tagId);
+  // 选择/取消标签（多选）
+  const toggleTag = (tagId: string) => {
+    setSelectedTagIds(prev =>
+      prev.includes(tagId) ? prev.filter(id => id !== tagId) : [...prev, tagId]
+    );
   };
 
-  // 清除标签
-  const clearTag = () => {
-    setSelectedTagId('');
+  // 选择/取消子分类（单选）
+  const selectSubCategory = (subId: string) => {
+    setSelectedSubCategoryId(prev => (prev === subId ? '' : subId));
   };
 
   // 打开标签管理
   const openTagManager = () => {
-    if (!selectedCategoryId) {
-      displayToast('请先选择分类');
-      return;
-    }
-    setTagManagerCategoryId(selectedCategoryId);
     setEditingTag(null);
     setNewTagName('');
     setNewTagColor('#818cf8');
@@ -391,14 +395,15 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
     }
     setNewTagNameError(false);
     try {
-      await addTag({
+      const newTag = await addTag({
         name: newTagName.trim(),
         color: newTagColor,
-        categoryId: tagManagerCategoryId,
       });
       setNewTagName('');
       setNewTagColor('#818cf8');
       setNewTagNameError(false);
+      // 创建后自动选中（多选）
+      if (newTag) setSelectedTagIds(prev => [...prev, newTag.id]);
       displayToast('标签创建成功');
     } catch (err) {
       displayToast('标签创建失败');
@@ -433,7 +438,7 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
   const handleDeleteTag = async (tagId: string) => {
     try {
       await deleteTag(tagId);
-      if (selectedTagId === tagId) setSelectedTagId('');
+      setSelectedTagIds(prev => prev.filter(id => id !== tagId));
       if (editingTag?.id === tagId) {
         setEditingTag(null);
         setNewTagName('');
@@ -448,7 +453,8 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
   const handleTypeChange = (type: TransactionType) => {
     setTransactionType(type);
     setSelectedCategoryId('');
-    setSelectedTagId('');
+    setSelectedSubCategoryId('');
+    setSelectedTagIds([]);
     if (type === 'transfer') {
       setSelectedCategoryId('t1');
     }
@@ -628,7 +634,47 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
           </div>
         </div>
 
-        {/* 标签（转账时隐藏） */}
+        {/* 子分类（绑一级分类，最末级；转账时隐藏） */}
+        {transactionType !== 'transfer' && (
+        <div className="px-4 mt-4">
+          <div className="flex items-center justify-between mb-2">
+            <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+              <Tag size={16} />
+              子分类
+            </label>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {selectedCategoryId && selectedCategoryId !== 't1' && categorySubCategories.length > 0 ? (
+              categorySubCategories.map((sub: any) => {
+                const isSelected = selectedSubCategoryId === sub.id;
+                return (
+                  <button
+                    key={sub.id}
+                    onClick={() => selectSubCategory(sub.id)}
+                    className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-sm transition-all ${
+                      isSelected
+                        ? 'text-white ring-2 ring-offset-1 ring-current'
+                        : 'bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:bg-[var(--surface-warm)]'
+                    }`}
+                    style={isSelected ? { backgroundColor: sub.color || '#818cf8' } : undefined}
+                  >
+                    {isSelected && (
+                      <X size={12} className="hover:bg-white/20 rounded-full" />
+                    )}
+                    {sub.name}
+                  </button>
+                );
+              })
+            ) : selectedCategoryId && selectedCategoryId !== 't1' ? (
+              <span className="text-xs text-[var(--text-tertiary)] py-1.5">该分类暂无子分类</span>
+            ) : (
+              <span className="text-xs text-[var(--text-tertiary)] py-1.5">请先选择分类</span>
+            )}
+          </div>
+        </div>
+        )}
+
+        {/* 标签（全局自由标签，多选；转账时隐藏） */}
         {transactionType !== 'transfer' && (
         <div className="px-4 mt-4">
           <div className="flex items-center justify-between mb-2">
@@ -644,13 +690,13 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
             </button>
           </div>
           <div className="flex flex-wrap gap-2">
-            {selectedCategoryId && selectedCategoryId !== 't1' && categoryTags.length > 0 ? (
-              categoryTags.map((tag: any) => {
-                const isSelected = selectedTagId === tag.id;
+            {allTags.length > 0 ? (
+              allTags.map((tag: any) => {
+                const isSelected = selectedTagIds.includes(tag.id);
                 return (
                   <button
                     key={tag.id}
-                    onClick={() => isSelected ? clearTag() : selectTag(tag.id)}
+                    onClick={() => toggleTag(tag.id)}
                     className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-sm transition-all ${
                       isSelected
                         ? 'text-white ring-2 ring-offset-1 ring-current'
@@ -665,10 +711,8 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
                   </button>
                 );
               })
-            ) : selectedCategoryId && selectedCategoryId !== 't1' ? (
-              <span className="text-xs text-[var(--text-tertiary)] py-1.5">暂无标签，点击"管理标签"添加</span>
             ) : (
-              <span className="text-xs text-[var(--text-tertiary)] py-1.5">请先选择分类</span>
+              <span className="text-xs text-[var(--text-tertiary)] py-1.5">暂无标签，点击"管理标签"添加</span>
             )}
           </div>
         </div>
@@ -1124,41 +1168,39 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
         title="管理标签"
       >
         <div className="p-4 space-y-4">
-          {/* 当前分类的已有标签列表 */}
-          {tags.filter((t: any) => t.categoryId === tagManagerCategoryId).length > 0 && (
+          {/* 已有标签列表 */}
+          {tags.length > 0 && (
             <div className="space-y-1">
               <label className="text-sm text-[var(--text-secondary)]">已有标签</label>
               <div className="space-y-1 max-h-40 overflow-y-auto">
-                {tags
-                  .filter((t: any) => t.categoryId === tagManagerCategoryId)
-                  .map((tag: any) => (
-                    <div
-                      key={tag.id}
-                      className="flex items-center justify-between p-3 bg-[var(--bg-elevated)] rounded-xl"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span
-                          className="w-3 h-3 rounded-full"
-                          style={{ backgroundColor: tag.color }}
-                        />
-                        <span className="text-[var(--text-primary)]">{tag.name}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleEditTag(tag.id, tag.name, tag.color)}
-                          className="text-xs text-ink hover:underline"
-                        >
-                          编辑
-                        </button>
-                        <button
-                          onClick={() => handleDeleteTag(tag.id)}
-                          className="p-1 text-[var(--text-tertiary)] hover:text-red-500"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
+                {tags.map((tag: any) => (
+                  <div
+                    key={tag.id}
+                    className="flex items-center justify-between p-3 bg-[var(--bg-elevated)] rounded-xl"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span
+                        className="w-3 h-3 rounded-full"
+                        style={{ backgroundColor: tag.color }}
+                      />
+                      <span className="text-[var(--text-primary)]">{tag.name}</span>
                     </div>
-                  ))}
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleEditTag(tag.id, tag.name, tag.color)}
+                        className="text-xs text-ink hover:underline"
+                      >
+                        编辑
+                      </button>
+                      <button
+                        onClick={() => handleDeleteTag(tag.id)}
+                        className="p-1 text-[var(--text-tertiary)] hover:text-red-500"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -1168,15 +1210,6 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
             <label className="text-sm text-[var(--text-secondary)] mb-2 block">
               {editingTag ? '编辑标签' : '新建标签'}
             </label>
-
-            {/* 所属分类 */}
-            <div className="mb-3">
-              <span className="text-xs text-[var(--text-tertiary)]">所属分类</span>
-              <div className="text-sm text-[var(--text-primary)] mt-1">
-                {allCategories.find(c => c.id === tagManagerCategoryId)?.icon}{' '}
-                {allCategories.find(c => c.id === tagManagerCategoryId)?.name || '未选择'}
-              </div>
-            </div>
 
             {/* 标签名称 */}
             <div className="mb-3">

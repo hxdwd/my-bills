@@ -17,7 +17,7 @@ const PRESET_COLORS = [
 export default function CategoriesPage() {
   const navigate = useNavigate()
   const { theme } = useTheme()
-  const { categories, addCategory, updateCategory, deleteCategory } = useApp()
+  const { categories, addCategory, updateCategory, deleteCategory, subCategories, addSubCategory, deleteSubCategory } = useApp()
   const [activeTab, setActiveTab] = useState<'expense' | 'income'>('expense')
   const [showAddCategory, setShowAddCategory] = useState(false)
   const [editMode, setEditMode] = useState(false)
@@ -128,6 +128,48 @@ export default function CategoriesPage() {
     }
   }
 
+  // 删除子分类
+  const handleDeleteSub = async (id: string) => {
+    try {
+      await deleteSubCategory(id)
+      displayToast('子分类已删除')
+    } catch {
+      displayToast('删除失败')
+    }
+  }
+
+  // 添加子分类（弹窗）
+  const [showAddSub, setShowAddSub] = useState(false)
+  const [subTargetCategoryId, setSubTargetCategoryId] = useState('')
+  const [newSubName, setNewSubName] = useState('')
+  const [newSubColor, setNewSubColor] = useState('#818cf8')
+  const [newSubError, setNewSubError] = useState(false)
+
+  const handleAddSub = async () => {
+    if (!subTargetCategoryId) {
+      displayToast('请选择所属分类')
+      return
+    }
+    if (!newSubName.trim()) {
+      setNewSubError(true)
+      return
+    }
+    setNewSubError(false)
+    try {
+      await addSubCategory({
+        name: newSubName.trim(),
+        color: newSubColor,
+        categoryId: subTargetCategoryId,
+      })
+      setNewSubName('')
+      setNewSubColor('#818cf8')
+      setShowAddSub(false)
+      displayToast('子分类创建成功')
+    } catch {
+      displayToast('创建失败')
+    }
+  }
+
   const isDark = theme === 'dark'
   const currentCategories = categories[activeTab]
 
@@ -235,18 +277,59 @@ export default function CategoriesPage() {
                     </span>
                   )}
                 </div>
+                {/* 子分类（该一级分类下的二级分类） */}
+                {!editMode && (
+                  <div className="px-4 pb-3 -mt-1">
+                    {subCategories.filter(s => s.categoryId === cat.id).length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {subCategories.filter(s => s.categoryId === cat.id).map(sub => (
+                          <span
+                            key={sub.id}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs bg-[var(--bg-secondary)] text-[var(--text-secondary)]"
+                          >
+                            {sub.name}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleDeleteSub(sub.id)
+                              }}
+                              className="text-[var(--text-tertiary)] hover:text-danger"
+                            >
+                              <X size={11} />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className={`text-xs ${isDark ? 'text-ink-2' : 'text-ink-2'}`}>暂无子分类</span>
+                    )}
+                  </div>
+                )}
               </Card>
             )
           })}
         </div>
 
+        {/* Add SubCategory Button */}
+        <button
+          onClick={() => {
+            setSubTargetCategoryId(activeTab === 'expense' ? (currentCategories[0]?.id || '') : (currentCategories[0]?.id || ''))
+            setShowAddSub(true)
+          }}
+          className={`w-full flex items-center justify-center gap-2 py-3.5 mt-4 rounded-xl border border-dashed transition-colors
+            ${isDark ? 'border-brand-tint text-ink-2 hover:bg-surface' : 'border-brand-tint text-ink-2 hover:bg-[#faf9f5]'}`}
+        >
+          <Plus size={18} />
+          <span className="font-medium">添加子分类</span>
+        </button>
+
         {/* Add Button */}
         <button
           onClick={() => setShowAddCategory(true)}
-          className={`w-full flex items-center justify-center gap-2 py-4 mt-4 rounded-xl border border-dashed transition-colors
+          className={`w-full flex items-center justify-center gap-2 py-3.5 mt-3 rounded-xl border border-dashed transition-colors
             ${isDark ? 'border-brand-tint text-ink-2 hover:bg-surface' : 'border-brand-tint text-ink-2 hover:bg-[#faf9f5]'}`}
         >
-          <Plus size={20} />
+          <Plus size={18} />
           <span className="font-medium">添加分类</span>
         </button>
       </main>
@@ -454,6 +537,93 @@ export default function CategoriesPage() {
               保存修改
             </button>
           </div>
+        </div>
+      </BottomSheet>
+
+      {/* Add SubCategory Sheet */}
+      <BottomSheet
+        isOpen={showAddSub}
+        onClose={() => { setShowAddSub(false); setNewSubName(''); setNewSubError(false); }}
+        title="添加子分类"
+      >
+        <div className="p-4 space-y-4">
+          {/* 选择所属分类 */}
+          <div>
+            <label className={`block text-sm mb-2 ${isDark ? 'text-ink-2' : 'text-ink-2'}`}>
+              所属分类 <span className="text-red-500">*</span>
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {currentCategories.map((cat) => (
+                <button
+                  key={cat.id}
+                  onClick={() => setSubTargetCategoryId(cat.id)}
+                  className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm transition-all
+                    ${subTargetCategoryId === cat.id
+                      ? 'bg-brand/20 ring-2 ring-brand-primary text-[var(--text-primary)]'
+                      : isDark ? 'bg-surface text-ink-2 hover:bg-brand-tint' : 'bg-bg text-ink-2 hover:bg-brand-tint'
+                    }`}
+                >
+                  <span className="text-lg">{cat.icon}</span>
+                  <span className="truncate">{cat.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 子分类名称 */}
+          <div>
+            <label className={`block text-sm mb-2 ${isDark ? 'text-ink-2' : 'text-ink-2'}`}>
+              子分类名称 <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={newSubName}
+              onChange={(e) => {
+                setNewSubName(e.target.value)
+                if (e.target.value.trim()) setNewSubError(false)
+              }}
+              placeholder="如：正餐、外卖、打车"
+              maxLength={6}
+              className={`w-full px-4 py-3 rounded-xl outline-none transition-all ${
+                newSubError
+                  ? 'bg-red-500/10 ring-2 ring-red-500'
+                  : isDark
+                  ? 'bg-surface text-ink placeholder-[#87867f] focus:ring-2 focus:ring-brand/40'
+                  : 'bg-bg text-ink placeholder-[#b0aea5] focus:ring-2 focus:ring-brand/40'
+              }`}
+            />
+            {newSubError && (
+              <p className="text-xs text-red-500 mt-1.5 ml-1">请输入子分类名称</p>
+            )}
+          </div>
+
+          {/* 选择颜色 */}
+          <div>
+            <label className={`block text-sm mb-2 ${isDark ? 'text-ink-2' : 'text-ink-2'}`}>
+              选择颜色
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {PRESET_COLORS.map((color) => (
+                <button
+                  key={color}
+                  onClick={() => setNewSubColor(color)}
+                  className={`w-10 h-10 rounded-xl transition-transform hover:scale-110 ${
+                    newSubColor === color ? 'ring-2 ring-offset-2 ring-brand-primary' : ''
+                  }`}
+                  style={{ backgroundColor: color }}
+                >
+                  {newSubColor === color && <Check size={16} className="text-white mx-auto" />}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <button
+            onClick={handleAddSub}
+            className="w-full py-3 bg-brand text-white rounded-xl font-medium"
+          >
+            保存
+          </button>
         </div>
       </BottomSheet>
 

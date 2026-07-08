@@ -9,7 +9,7 @@ import { Search, X, Filter, Clock } from 'lucide-react'
 export default function SearchPage() {
   const navigate = useNavigate()
   const { theme } = useTheme()
-  const { transactions, categories } = useApp()
+  const { transactions, categories, subCategories, tags } = useApp()
   
   const [query, setQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState<'all' | 'expense' | 'income' | 'transfer'>('all')
@@ -17,28 +17,56 @@ export default function SearchPage() {
 
   const searchHistory = ['星巴克', '餐饮', '工资']
 
+  // 构建 tagId -> name 映射，便于搜索与展示
+  const tagNameMap = useMemo(() => {
+    const m = new Map<string, string>()
+    tags.forEach(t => m.set(t.id, t.name))
+    return m
+  }, [tags])
+
+  const subCategoryNameMap = useMemo(() => {
+    const m = new Map<string, string>()
+    subCategories.forEach(s => m.set(s.id, s.name))
+    return m
+  }, [subCategories])
+
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
       // Type filter
       if (typeFilter !== 'all' && t.type !== typeFilter) return false
-      
+
       // Search query
       if (query) {
         const q = query.toLowerCase()
+        const tagNames = (t.tags || []).map(id => tagNameMap.get(id) || '').join(' ')
+        const subName = t.subcategoryId ? (subCategoryNameMap.get(t.subcategoryId) || '') : ''
         const searchableText = [
           t.categoryName,
+          subName,
           t.note,
           t.accountName,
+          tagNames,
           t.amount.toString(),
           t.date,
         ].filter(Boolean).join(' ').toLowerCase()
-        
+
         return searchableText.includes(q)
       }
-      
+
       return true
     })
-  }, [transactions, query, typeFilter])
+  }, [transactions, query, typeFilter, tagNameMap, subCategoryNameMap])
+
+  // 汇总卡：搜索结果的总笔数、总支出、总收入
+  const summary = useMemo(() => {
+    let expense = 0
+    let income = 0
+    filteredTransactions.forEach(t => {
+      if (t.type === 'expense') expense += t.amount
+      else if (t.type === 'income') income += t.amount
+    })
+    return { count: filteredTransactions.length, expense, income }
+  }, [filteredTransactions])
 
   const highlightMatch = (text: string, query: string) => {
     if (!query) return text
@@ -115,6 +143,30 @@ export default function SearchPage() {
             <div className={`text-sm mb-3 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
               找到 {filteredTransactions.length} 条结果
             </div>
+
+            {/* 汇总卡 */}
+            {query && filteredTransactions.length > 0 && (
+              <div className="grid grid-cols-3 gap-3 mb-3">
+                <div className="bg-brand-tint/40 rounded-xl py-3 text-center">
+                  <div className={`text-xs ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>笔数</div>
+                  <div className={`text-lg font-bold font-mono ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
+                    {summary.count}
+                  </div>
+                </div>
+                <div className="bg-brand-tint/40 rounded-xl py-3 text-center">
+                  <div className={`text-xs ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>支出</div>
+                  <div className="text-lg font-bold font-mono text-danger">
+                    ¥{summary.expense.toLocaleString()}
+                  </div>
+                </div>
+                <div className="bg-brand-tint/40 rounded-xl py-3 text-center">
+                  <div className={`text-xs ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>收入</div>
+                  <div className="text-lg font-bold font-mono text-ok">
+                    ¥{summary.income.toLocaleString()}
+                  </div>
+                </div>
+              </div>
+            )}
             
             {filteredTransactions.length > 0 ? (
               <Card className="!p-0 divide-y divide-[#f0eee6] dark:divide-[#3d3d3a]">

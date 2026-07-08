@@ -21,6 +21,8 @@ export interface Transaction {
   categoryName: string;
   categoryIcon: string;
   categoryColor: string;
+  subcategoryId?: string;
+  subcategoryName?: string;
   accountId: string;
   accountName: string;
   toAccountId?: string;
@@ -100,6 +102,7 @@ export interface TransactionFormData {
   type: TransactionType;
   amount: string;
   categoryId: string;
+  subcategoryId?: string;
   accountId: string;
   toAccountId?: string;
   date: Date;
@@ -110,10 +113,17 @@ export interface TransactionFormData {
   location?: { lat: number; lng: number; name: string };
 }
 
-// 标签
-export interface Tag {
+// 子分类（二级分类，绑在一级分类下）
+export interface SubCategory {
   id: string;
   name: string;
   color: string;
   categoryId: string;
+}
+
+// 标签（全局自由标签，跨分类）
+export interface Tag {
+  id: string;
+  name: string;
+  color: string;
 }

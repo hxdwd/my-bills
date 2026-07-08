@@ -19,6 +19,7 @@ const TABLE_NAMES = [
   'categories',
   'transactions',
   'budgets',
+  'subCategories',
   'tags',
   'profiles',
 ] as const
@@ -316,6 +317,7 @@ async function clearAllData(): Promise<void> {
   await db.categories.clear()
   await db.transactions.clear()
   await db.budgets.clear()
+  await db.subCategories.clear()
   await db.tags.clear()
   await db.profiles.clear()
   await db.syncMeta.clear()

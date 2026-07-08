@@ -33,8 +33,8 @@ type TimeRange = 'month' | 'year'
 
 export default function ReportsPage() {
   const { theme } = useTheme()
-  const { 
-    categories, tags, transactions, bigExpenseThreshold,
+  const {
+    categories, subCategories, transactions, bigExpenseThreshold,
     getMonthSummary, getMonthWeekExpense, getYearMonthExpense, getYearMonthDetail,
     getMonthExpenseByCategory, getMonthTopExpenses
   } = useApp()
@@ -158,29 +158,30 @@ export default function ReportsPage() {
     ? getMonthTopExpenses(selectedYear, selectedMonth, bigExpenseThreshold)
     : []
 
-  // 标签下钻
-  const tagDistribution = selectedCategoryForDrill ? (() => {
-    const categoryTags = tags.filter(t => t.categoryId === selectedCategoryForDrill.id);
-    if (categoryTags.length === 0) return null;
+  // 子分类下钻（按子分类看分类下支出分布）
+  const subCategoryDistribution = selectedCategoryForDrill ? (() => {
+    const categorySubs = subCategories.filter(s => s.categoryId === selectedCategoryForDrill.id);
 
     const categoryTransactions = transactions.filter(
       t => t.type === 'expense' && t.categoryId === selectedCategoryForDrill.id
     );
 
-    const tagStats = categoryTags.map(tag => {
-      const total = categoryTransactions
-        .filter(t => t.tags?.includes(tag.id))
-        .reduce((sum, t) => sum + t.amount, 0);
-      return { ...tag, total };
-    }).filter(t => t.total > 0).sort((a, b) => b.total - a.total);
+    if (categorySubs.length === 0) return null;
 
-    const untaggedTotal = categoryTransactions
-      .filter(t => !t.tags || t.tags.length === 0)
+    const subStats = categorySubs.map(sub => {
+      const total = categoryTransactions
+        .filter(t => t.subcategoryId === sub.id)
+        .reduce((sum, t) => sum + t.amount, 0);
+      return { ...sub, total };
+    }).filter(s => s.total > 0).sort((a, b) => b.total - a.total);
+
+    const unsubTotal = categoryTransactions
+      .filter(t => !t.subcategoryId)
       .reduce((sum, t) => sum + t.amount, 0);
 
     const categoryTotal = categoryTransactions.reduce((sum, t) => sum + t.amount, 0);
 
-    return { tagStats, untaggedTotal, categoryTotal };
+    return { subStats, unsubTotal, categoryTotal };
   })() : null;
 
   // 饼图数据
@@ -446,12 +447,12 @@ export default function ReportsPage() {
               <div className="flex-1 space-y-2 max-h-36 overflow-y-auto hide-scrollbar">
                 {expenseByCategory.slice(0, 5).map((cat) => {
                   const percent = totalExpense > 0 ? ((cat.total / totalExpense) * 100).toFixed(1) : '0'
-                  const hasTags = tags.some(t => t.categoryId === cat.id)
+                  const hasSubs = subCategories.some(s => s.categoryId === cat.id)
                   return (
                     <button
                       key={cat.id}
-                      onClick={() => hasTags ? setSelectedCategoryForDrill({ id: cat.id, name: cat.name, icon: cat.icon, color: cat.color }) : null}
-                      className={`w-full flex items-center justify-between hover:bg-[var(--surface-warm)] rounded-lg px-1 py-1 transition-colors ${hasTags ? 'cursor-pointer' : 'cursor-default'}`}
+                      onClick={() => hasSubs ? setSelectedCategoryForDrill({ id: cat.id, name: cat.name, icon: cat.icon, color: cat.color }) : null}
+                      className={`w-full flex items-center justify-between hover:bg-[var(--surface-warm)] rounded-lg px-1 py-1 transition-colors ${hasSubs ? 'cursor-pointer' : 'cursor-default'}`}
                     >
                       <div className="flex items-center gap-2">
                         <div 
@@ -650,8 +651,8 @@ export default function ReportsPage() {
         </div>
       )}
 
-      {/* 标签下钻弹窗 */}
-      {selectedCategoryForDrill && tagDistribution && (
+      {/* 子分类下钻弹窗 */}
+      {selectedCategoryForDrill && subCategoryDistribution && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={() => setSelectedCategoryForDrill(null)}>
           <div
             className="w-full max-w-lg bg-[var(--bg-primary)] rounded-t-3xl animate-slide-up max-h-[70vh] flex flex-col"
@@ -662,42 +663,42 @@ export default function ReportsPage() {
                 <X size={20} className="text-[var(--text-secondary)]" />
               </button>
               <h2 className="text-lg font-semibold text-[var(--text-primary)]">
-                {selectedCategoryForDrill.icon} {selectedCategoryForDrill.name} - 标签分布
+                {selectedCategoryForDrill.icon} {selectedCategoryForDrill.name} - 子分类分布
               </h2>
               <div className="w-10" />
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              {tagDistribution.tagStats.map((tag) => {
-                const percent = tagDistribution.categoryTotal > 0
-                  ? ((tag.total / tagDistribution.categoryTotal) * 100).toFixed(1)
+              {subCategoryDistribution.subStats.map((sub) => {
+                const percent = subCategoryDistribution.categoryTotal > 0
+                  ? ((sub.total / subCategoryDistribution.categoryTotal) * 100).toFixed(1)
                   : '0'
                 return (
-                  <div key={tag.id} className="flex items-center justify-between p-3 bg-[var(--bg-secondary)] rounded-xl">
+                  <div key={sub.id} className="flex items-center justify-between p-3 bg-[var(--bg-secondary)] rounded-xl">
                     <div className="flex items-center gap-3">
                       <span
                         className="w-3 h-3 rounded-full"
-                        style={{ backgroundColor: tag.color }}
+                        style={{ backgroundColor: sub.color }}
                       />
-                      <span className="text-[var(--text-primary)]">{tag.name}</span>
+                      <span className="text-[var(--text-primary)]">{sub.name}</span>
                     </div>
                     <div className="text-right">
-                      <div className="text-[var(--text-primary)] font-mono">¥{tag.total.toLocaleString()}</div>
+                      <div className="text-[var(--text-primary)] font-mono">¥{sub.total.toLocaleString()}</div>
                       <div className="text-xs text-[var(--text-tertiary)]">{percent}%</div>
                     </div>
                   </div>
                 )
               })}
-              {tagDistribution.untaggedTotal > 0 && (
+              {subCategoryDistribution.unsubTotal > 0 && (
                 <div className="flex items-center justify-between p-3 bg-[var(--bg-secondary)] rounded-xl opacity-60">
                   <div className="flex items-center gap-3">
                     <span className="w-3 h-3 rounded-full bg-[var(--text-tertiary)]" />
-                    <span className="text-[var(--text-tertiary)]">未分类标签</span>
+                    <span className="text-[var(--text-tertiary)]">未分子类</span>
                   </div>
                   <div className="text-right">
-                    <div className="text-[var(--text-tertiary)] font-mono">¥{tagDistribution.untaggedTotal.toLocaleString()}</div>
+                    <div className="text-[var(--text-tertiary)] font-mono">¥{subCategoryDistribution.unsubTotal.toLocaleString()}</div>
                     <div className="text-xs text-[var(--text-tertiary)]">
-                      {tagDistribution.categoryTotal > 0
-                        ? ((tagDistribution.untaggedTotal / tagDistribution.categoryTotal) * 100).toFixed(1)
+                      {subCategoryDistribution.categoryTotal > 0
+                        ? ((subCategoryDistribution.unsubTotal / subCategoryDistribution.categoryTotal) * 100).toFixed(1)
                         : '0'}%
                     </div>
                   </div>

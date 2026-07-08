@@ -1,13 +1,14 @@
 import { createContext, useContext, useState, useEffect, ReactNode, useCallback, useMemo } from 'react'
 import { supabase, setSupabaseUserId } from '../services/supabase'
 import { useAuthStore } from '../stores/useAuthStore'
-import type { AccountRecord, CategoryRecord, TransactionRecord, BudgetRecord, TagRecord } from '../db/database'
+import type { AccountRecord, CategoryRecord, TransactionRecord, BudgetRecord, SubCategoryRecord, TagRecord } from '../db/database'
 import { syncEngine } from '../db/sync-engine'
 import {
   localAccounts,
   localCategories,
   localTransactions,
   localBudgets,
+  localSubCategories,
   localTags,
   localProfiles,
 } from '../db/local-operations'
@@ -49,17 +50,25 @@ export interface Transaction {
   date: string           // 显示格式 "X月X日"
   transactionDate: string // 原始日期 YYYY-MM-DD
   time: string
+  subcategoryId?: string
+  subcategoryName?: string
   tags?: string[]
   note?: string
   images?: string[]
   location?: { lat: number; lng: number; name: string }
 }
 
-export interface Tag {
+export interface SubCategory {
   id: string
   name: string
   color: string
   categoryId: string
+}
+
+export interface Tag {
+  id: string
+  name: string
+  color: string
 }
 
 export interface Budget {
@@ -77,6 +86,7 @@ interface AppContextType {
   transactions: Transaction[]
   budgets: Budget[]
 
+  subCategories: SubCategory[]
   tags: Tag[]
   loading: boolean
   addTransaction: (t: Omit<Transaction, 'id'>) => Promise<void>
@@ -92,6 +102,9 @@ interface AppContextType {
   updateCategory: (id: string, data: Partial<Category>) => Promise<void>
   deleteCategory: (id: string) => Promise<void>
   deleteBill: (id: string) => Promise<void>
+  addSubCategory: (s: Omit<SubCategory, 'id'>) => Promise<void>
+  updateSubCategory: (id: string, data: Partial<SubCategory>) => Promise<void>
+  deleteSubCategory: (id: string) => Promise<void>
   addTag: (t: Omit<Tag, 'id'>) => Promise<void>
   updateTag: (id: string, data: Partial<Tag>) => Promise<void>
   deleteTag: (id: string) => Promise<void>
@@ -147,7 +160,8 @@ function mapCategory(record: CategoryRecord): Category {
 function mapTransaction(
   record: TransactionRecord,
   accountNameMap: Map<string, string>,
-  categoryMap: Map<string, { name: string; icon: string }>
+  categoryMap: Map<string, { name: string; icon: string }>,
+  subCategoryMap: Map<string, string>
 ): Transaction {
   // 使用本地时间解析 transaction_date (YYYY-MM-DD 格式)
   let dateDisplay = '未知日期'
@@ -177,6 +191,8 @@ function mapTransaction(
     transactionDate: record.transaction_date,
     time: record.transaction_time?.slice(0, 5) || '00:00',
     tags: record.tags || undefined,
+    subcategoryId: record.subcategory_id || undefined,
+    subcategoryName: record.subcategory_id ? (subCategoryMap.get(record.subcategory_id) || undefined) : undefined,
     note: record.note || undefined,
     images: record.images || undefined,
     location: record.location || undefined,
@@ -194,12 +210,20 @@ function mapBudget(record: BudgetRecord, categoryMap: Map<string, string>): Budg
   }
 }
 
+function mapSubCategory(record: SubCategoryRecord): SubCategory {
+  return {
+    id: record.id,
+    name: record.name,
+    color: record.color || '#818cf8',
+    categoryId: record.category_id,
+  }
+}
+
 function mapTag(record: TagRecord): Tag {
   return {
     id: record.id,
     name: record.name,
     color: record.color || '#818cf8',
-    categoryId: record.category_id || '',
   }
 }
 
@@ -258,6 +282,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [categories, setCategories] = useState<{ expense: Category[]; income: Category[] }>({ expense: [], income: [] })
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [budgets, setBudgets] = useState<Budget[]>([])
+  const [subCategories, setSubCategories] = useState<SubCategory[]>([])
   const [tags, setTags] = useState<Tag[]>([])
   const [loading, setLoading] = useState(true)
   const [bigExpenseThreshold, setBigExpenseThresholdState] = useState<number>(3000)
@@ -272,6 +297,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setCategories({ expense: [], income: [] })
       setTransactions([])
       setBudgets([])
+      setSubCategories([])
       setTags([])
       setLoading(false)
       return
@@ -296,9 +322,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const categoryMap = new Map<string, { name: string; icon: string }>()
       rawCategories.forEach(c => categoryMap.set(c.id, { name: c.name, icon: c.icon }))
 
+      // 2.5 从 IndexedDB 加载子分类
+      const subCatRecords = await localSubCategories.getAll(userId)
+      const rawSubCategories = subCatRecords.map(mapSubCategory)
+      const subCategoryMap = new Map<string, string>()
+      rawSubCategories.forEach(s => subCategoryMap.set(s.id, s.name))
+
       // 3. 从 IndexedDB 加载交易
       const txnRecords = await localTransactions.getAll(userId)
-      const rawTransactions = txnRecords.map(r => mapTransaction(r, accountNameMap, categoryMap))
+      const rawTransactions = txnRecords.map(r => mapTransaction(r, accountNameMap, categoryMap, subCategoryMap))
 
       // 4. 从 IndexedDB 加载预算
       const bgtRecords = await localBudgets.getAll(userId)
@@ -324,6 +356,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       })
       setTransactions(rawTransactions)
       setBudgets(rawBudgets)
+      setSubCategories(rawSubCategories)
       setTags(rawTags)
 
       // 8. 后台同步 (先推送本地变更，再拉取远程数据，完成后刷新 UI)
@@ -334,7 +367,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         refreshedAcc.forEach(a => refreshedNameMap.set(a.id, a.name))
         const refreshedCatMap = new Map<string, { name: string; icon: string }>()
         refreshedCat.forEach(c => refreshedCatMap.set(c.id, { name: c.name, icon: c.icon }))
-        const refreshedTxn = (await localTransactions.getAll(userId)).map(r => mapTransaction(r, refreshedNameMap, refreshedCatMap))
+        const refreshedSub = (await localSubCategories.getAll(userId)).map(mapSubCategory)
+        const refreshedSubMap = new Map<string, string>()
+        refreshedSub.forEach(s => refreshedSubMap.set(s.id, s.name))
+        const refreshedTxn = (await localTransactions.getAll(userId)).map(r => mapTransaction(r, refreshedNameMap, refreshedCatMap, refreshedSubMap))
         const refreshedBgt = (await localBudgets.getAll(userId)).map(r => mapBudget(r, catNameMap))
         const refreshedTag = (await localTags.getAll(userId)).map(mapTag)
         const refreshedProfile = await localProfiles.get(userId)
@@ -346,6 +382,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         })
         setTransactions(refreshedTxn)
         setBudgets(refreshedBgt)
+        setSubCategories(refreshedSub)
         setTags(refreshedTag)
         if (refreshedProfile) {
           setBigExpenseThresholdState(refreshedProfile.big_expense_threshold)
@@ -426,6 +463,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       type: t.type === 'transfer' ? 'expense' : t.type,
       amount: t.amount,
       category_id: t.type === 'transfer' ? null : t.categoryId,
+      subcategory_id: t.type === 'transfer' ? null : (t.subcategoryId || null),
       account_id: t.accountId,
       to_account_id: t.toAccountId || null,
       transaction_date: transactionDate,
@@ -487,6 +525,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (data.amount !== undefined) dbUpdates.amount = data.amount
     if (data.categoryId !== undefined) {
       dbUpdates.category_id = data.type === 'transfer' ? null : data.categoryId
+    }
+    if (data.subcategoryId !== undefined) {
+      dbUpdates.subcategory_id = data.type === 'transfer' ? null : (data.subcategoryId || null)
     }
     if (data.accountId !== undefined) dbUpdates.account_id = data.accountId
     if (data.toAccountId !== undefined) dbUpdates.to_account_id = data.toAccountId || null
@@ -699,13 +740,65 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // CRUD: 标签
   // ============================================================
 
+  // ============================================================
+  // CRUD: 子分类（绑一级分类）
+  // ============================================================
+
+  const addSubCategory = useCallback(async (s: Omit<SubCategory, 'id'>) => {
+    if (!userId) throw new Error('未登录')
+
+    const record = await localSubCategories.insert(userId, {
+      name: s.name,
+      color: s.color,
+      category_id: s.categoryId,
+    })
+
+    setSubCategories(prev => [...prev, mapSubCategory(record)])
+
+    syncEngine.syncAfterWrite('subCategories', userId).catch(err => {
+      console.error('后台同步子分类失败:', err)
+    })
+  }, [userId])
+
+  const updateSubCategory = useCallback(async (id: string, data: Partial<SubCategory>) => {
+    if (!userId) throw new Error('未登录')
+
+    const dbUpdates: Partial<SubCategoryRecord> = {}
+    if (data.name !== undefined) dbUpdates.name = data.name
+    if (data.color !== undefined) dbUpdates.color = data.color
+    if (data.categoryId !== undefined) dbUpdates.category_id = data.categoryId
+
+    await localSubCategories.update(id, dbUpdates)
+
+    setSubCategories(prev => prev.map(s => s.id === id ? { ...s, ...data } : s))
+
+    syncEngine.syncAfterWrite('subCategories', userId).catch(err => {
+      console.error('后台同步更新子分类失败:', err)
+    })
+  }, [userId])
+
+  const deleteSubCategory = useCallback(async (id: string) => {
+    if (!userId) throw new Error('未登录')
+
+    await localSubCategories.remove(id)
+
+    setSubCategories(prev => prev.filter(s => s.id !== id))
+
+    syncEngine.syncAfterWrite('subCategories', userId).catch(err => {
+      console.error('后台同步删除子分类失败:', err)
+    })
+  }, [userId])
+
+  // ============================================================
+  // CRUD: 标签（全局自由标签，跨分类）
+  // ============================================================
+
   const addTag = useCallback(async (t: Omit<Tag, 'id'>) => {
     if (!userId) throw new Error('未登录')
 
     const record = await localTags.insert(userId, {
       name: t.name,
       color: t.color,
-      category_id: t.categoryId || null,
     })
 
     setTags(prev => [...prev, mapTag(record)])
@@ -721,7 +814,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const dbUpdates: Partial<TagRecord> = {}
     if (data.name !== undefined) dbUpdates.name = data.name
     if (data.color !== undefined) dbUpdates.color = data.color
-    if (data.categoryId !== undefined) dbUpdates.category_id = data.categoryId
 
     await localTags.update(id, dbUpdates)
 
@@ -1037,6 +1129,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       addCategory,
       updateCategory,
       deleteCategory,
+      subCategories,
+      addSubCategory,
+      updateSubCategory,
+      deleteSubCategory,
       tags,
       addTag,
       updateTag,

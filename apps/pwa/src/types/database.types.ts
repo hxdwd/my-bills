@@ -95,6 +95,7 @@ export interface Database {
           type: 'expense' | 'income'
           amount: number
           category_id: string | null
+          subcategory_id: string | null
           account_id: string
           to_account_id: string | null
           transaction_date: string
@@ -112,6 +113,7 @@ export interface Database {
           type: 'expense' | 'income'
           amount: number
           category_id?: string | null
+          subcategory_id?: string | null
           account_id: string
           to_account_id?: string | null
           transaction_date?: string
@@ -129,6 +131,7 @@ export interface Database {
           type?: 'expense' | 'income'
           amount?: number
           category_id?: string | null
+          subcategory_id?: string | null
           account_id?: string
           to_account_id?: string | null
           transaction_date?: string
@@ -237,8 +240,32 @@ export interface Database {
           user_id: string
           name: string
           color: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          name: string
+          color?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          name?: string
+          color?: string
+          created_at?: string
+        }
+      }
+      sub_categories: {
+        Row: {
+          id: string
+          user_id: string
+          name: string
+          color: string
           category_id: string
           created_at: string
+          updated_at: string
         }
         Insert: {
           id?: string
@@ -247,6 +274,7 @@ export interface Database {
           color?: string
           category_id: string
           created_at?: string
+          updated_at?: string
         }
         Update: {
           id?: string
@@ -255,6 +283,7 @@ export interface Database {
           color?: string
           category_id?: string
           created_at?: string
+          updated_at?: string
         }
       }
     }

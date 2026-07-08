@@ -46,16 +46,16 @@ INSERT INTO public.categories (user_id, name, icon, color, type, sort_order, is_
   ('00000000-0000-0000-0000-000000000000', '礼金', '🎊', '#ef4444', 'income', 5, true);
 
 -- ============================================================
--- 标签（子分类）：关联到父分类
--- 饮食子标签
+-- 子分类（sub_categories）：关联到父分类
+-- 饮食子分类
 -- ============================================================
-INSERT INTO public.tags (user_id, name, color, category_id) 
+INSERT INTO public.sub_categories (user_id, name, color, category_id) 
 SELECT '00000000-0000-0000-0000-000000000000', '正餐', '#ff6b6b', id FROM public.categories WHERE name = '饮食' AND user_id = '00000000-0000-0000-0000-000000000000'
 UNION ALL
 SELECT '00000000-0000-0000-0000-000000000000', '大餐', '#e05555', id FROM public.categories WHERE name = '饮食' AND user_id = '00000000-0000-0000-0000-000000000000'
 UNION ALL
 SELECT '00000000-0000-0000-0000-000000000000', '居家饮食', '#ff8a65', id FROM public.categories WHERE name = '饮食' AND user_id = '00000000-0000-0000-0000-000000000000'
--- 旅游子标签
+-- 旅游子分类
 UNION ALL
 SELECT '00000000-0000-0000-0000-000000000000', '交通', '#10b981', id FROM public.categories WHERE name = '旅游' AND user_id = '00000000-0000-0000-0000-000000000000'
 UNION ALL
