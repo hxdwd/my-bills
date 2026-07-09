@@ -8,6 +8,7 @@ import BottomSheet from '../components/ui/BottomSheet'
 import TagSelectModal from '../components/TagSelectModal'
 import { recordTagUsage } from '../utils/tagUsage'
 import { useAuthStore } from '../stores/useAuthStore'
+import { formatCurrency } from '../utils/format'
 import { 
   ArrowLeft, 
   Calendar, 
@@ -252,8 +253,8 @@ export default function TransactionListPage() {
                       {date}
                     </span>
                     <span className={`text-xs ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
-                      {expense > 0 && <span className="text-danger mr-2">支出 ¥{expense.toFixed(2)}</span>}
-                      {income > 0 && <span className="text-ok">收入 ¥{income.toFixed(2)}</span>}
+                      {expense > 0 && <span className="text-ink mr-2">支出 ¥{expense.toFixed(2)}</span>}
+                      {income > 0 && <span className="text-danger">收入 ¥{income.toFixed(2)}</span>}
                     </span>
                   </div>
                   <Card className="!p-0 divide-y divide-[#f0eee6] dark:divide-[#3d3d3a]">
@@ -300,12 +301,17 @@ export default function TransactionListPage() {
                   <div className="text-4xl mb-2">
                     {getCategory(selectedTransaction).icon}
                   </div>
-                  <div className={`text-3xl font-bold font-mono ${
-                    selectedTransaction.type === 'expense' ? 'text-danger' : 
-                    selectedTransaction.type === 'income' ? 'text-ok' : 'text-[#5b8dee]'
+                  <div className={`font-bold font-mono amount-fluid-lg ${
+                    selectedTransaction.type === 'income' ? 'text-danger' : 
+                    selectedTransaction.type === 'expense' ? 'text-ink' : 'text-[#5b8dee]'
                   }`}>
-                    {selectedTransaction.type === 'expense' ? '-' : selectedTransaction.type === 'income' ? '+' : ''}
-                    ¥{selectedTransaction.amount.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
+                    {formatCurrency(
+                      selectedTransaction.type === 'expense'
+                        ? -Math.abs(selectedTransaction.amount)
+                        : Math.abs(selectedTransaction.amount),
+                      selectedTransaction.type !== 'transfer',
+                      false
+                    )}
                   </div>
                   <div className={`text-sm mt-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                     {selectedTransaction.type === 'expense' ? '支出' : selectedTransaction.type === 'income' ? '收入' : '转账'}

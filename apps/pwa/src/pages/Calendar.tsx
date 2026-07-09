@@ -160,8 +160,8 @@ export default function CalendarPage() {
                 {day && (
                   <>
                     <span className="text-[13px] leading-none font-medium">{day}</span>
-                    {hasTransactions(day) && !selectedDate && (
-                      <div className="absolute bottom-1 w-1 h-1 rounded-full bg-brand" />
+                    {hasTransactions(day) && (
+                      <div className={`absolute bottom-1 w-1 h-1 rounded-full ${selectedDate === day ? 'bg-white' : 'bg-brand-strong'}`} />
                     )}
                   </>
                 )}

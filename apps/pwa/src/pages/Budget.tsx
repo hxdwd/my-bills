@@ -5,6 +5,7 @@ import Card from '../components/ui/Card'
 import ProgressRing from '../components/ui/ProgressRing'
 import BottomSheet from '../components/ui/BottomSheet'
 import { Plus, AlertTriangle, Edit3 } from 'lucide-react'
+import { formatCurrency } from '../utils/format'
 
 export default function BudgetPage() {
   const { theme } = useTheme()
@@ -159,16 +160,16 @@ export default function BudgetPage() {
               <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                 已花费
               </div>
-              <div className={`text-xl font-bold font-mono text-danger`}>
-                ¥{budgetProgress.spent.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
+              <div className={`text-xl font-bold font-mono amount-fluid-lg text-danger`}>
+                {formatCurrency(budgetProgress.spent, false, false)}
               </div>
             </div>
             <div className="text-center">
               <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                 剩余
               </div>
-              <div className={`text-xl font-bold font-mono ${budgetProgress.total - budgetProgress.spent >= 0 ? 'text-ok' : 'text-danger'}`}>
-                ¥{(budgetProgress.total - budgetProgress.spent).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
+              <div className={`text-xl font-bold font-mono amount-fluid-lg ${budgetProgress.total - budgetProgress.spent >= 0 ? 'text-ok' : 'text-danger'}`}>
+                {formatCurrency(budgetProgress.total - budgetProgress.spent, false, false)}
               </div>
             </div>
           </div>
@@ -220,8 +221,8 @@ export default function BudgetPage() {
                       <span className={`text-sm ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
                         {b.categoryName}
                       </span>
-                      <span className="text-sm text-danger">
-                        超支 ¥{(spent - b.amount).toLocaleString()}
+                      <span className="text-sm text-danger break-amount">
+                        超支 {formatCurrency(spent - b.amount, false, false)}
                       </span>
                     </div>
                   )
@@ -266,11 +267,11 @@ export default function BudgetPage() {
                         {budget.categoryName}
                       </div>
                       <div className="flex items-baseline gap-1">
-                        <span className={`text-sm font-mono ${isOver ? 'text-danger' : theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
-                          ¥{realSpent.toLocaleString()}
+                        <span className={`text-sm font-mono break-amount ${isOver ? 'text-danger' : theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
+                          {formatCurrency(realSpent, false, false)}
                         </span>
-                        <span className={`text-xs ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
-                          / ¥{budget.amount.toLocaleString()}
+                        <span className={`text-xs break-amount ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
+                          / {formatCurrency(budget.amount, false, false)}
                         </span>
                       </div>
                     </div>
@@ -298,8 +299,8 @@ export default function BudgetPage() {
                   </div>
                   
                   {isOver && (
-                    <div className="mt-2 text-xs text-danger">
-                      已超支 ¥{(realSpent - budget.amount).toLocaleString()}
+                    <div className="mt-2 text-xs text-danger break-amount">
+                      已超支 {formatCurrency(realSpent - budget.amount, false, false)}
                     </div>
                   )}
                 </Card>

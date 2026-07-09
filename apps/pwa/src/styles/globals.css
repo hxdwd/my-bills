@@ -66,6 +66,28 @@ select {
   font-weight: 700;
 }
 
+/* ===== 金额响应式流式字号（移动端优先） =====
+   使用 clamp() 让等宽数字字号随视口宽度在区间内无级缩放：
+   - 最小 12px（极窄屏也保证可读）
+   - 理想值 3.6vw（随屏幕宽度等比变化，小屏自动缩小）
+   - 最大 18px（大屏不再无限放大，保持设计比例）
+   仅作用于数字节点，不改变颜色/间距/布局；配合 overflow-wrap 兜底，
+   长数字在小屏下优先缩字号、必要时折行，绝不截断或省略。
+   用法：在金额容器/数字节点上同时加 `font-amount amount-fluid`。 */
+.amount-fluid {
+  font-size: clamp(12px, 3.6vw, 18px);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* 大字号金额块（如首页总资产、汇总卡）专用：
+   上限放宽到 28px，下限 14px，避免大数字在小屏撑破卡片。 */
+.amount-fluid-lg {
+  font-size: clamp(14px, 6.4vw, 28px);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 /* 标题字体 */
 .font-title {
   font-family: Georgia, "Source Han Serif SC", serif;

@@ -368,7 +368,7 @@ export default function ReportsPage() {
           <div className="grid grid-cols-3 gap-3">
             <Card className="!p-3 text-center">
               <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>收入</div>
-              <div className={`text-lg font-bold font-mono text-ok`}>
+              <div className={`text-lg font-bold font-mono amount-fluid text-ok`}>
                 {formatCurrency(monthSummary.income)}
               </div>
             </Card>
@@ -380,7 +380,7 @@ export default function ReportsPage() {
             </Card>
             <Card className="!p-3 text-center">
               <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>结余</div>
-              <div className={`text-lg font-bold font-mono ${(monthSummary.income - monthSummary.expense) >= 0 ? 'text-[#5b8dee]' : 'text-danger'}`}>
+              <div className={`text-lg font-bold font-mono amount-fluid ${(monthSummary.income - monthSummary.expense) >= 0 ? 'text-[#5b8dee]' : 'text-danger'}`}>
                 {formatCurrency(monthSummary.income - monthSummary.expense, false, true)}
               </div>
             </Card>
@@ -394,19 +394,19 @@ export default function ReportsPage() {
               <div className="grid grid-cols-3 gap-3">
                 <Card className="!p-3 text-center">
                   <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>年收入</div>
-                  <div className={`text-lg font-bold font-mono text-ok`}>
+                  <div className={`text-lg font-bold font-mono amount-fluid text-ok`}>
                     {formatCurrency(totalIncome, false, true)}
                   </div>
                 </Card>
                 <Card className="!p-3 text-center">
                   <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>年支出</div>
-                  <div className={`text-lg font-bold font-mono text-danger`}>
+                  <div className={`text-lg font-bold font-mono amount-fluid text-danger`}>
                     {formatCurrency(totalExpense2, false, true)}
                   </div>
                 </Card>
                 <Card className="!p-3 text-center">
                   <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>年结余</div>
-                  <div className={`text-lg font-bold font-mono ${totalBalance >= 0 ? 'text-[#5b8dee]' : 'text-danger'}`}>
+                  <div className={`text-lg font-bold font-mono amount-fluid ${totalBalance >= 0 ? 'text-[#5b8dee]' : 'text-danger'}`}>
                     {formatCurrency(totalBalance, false, true)}
                   </div>
                 </Card>
@@ -477,7 +477,7 @@ export default function ReportsPage() {
                           />
                         </div>
                         {/* 第三行：金额 */}
-                        <div className={`mt-2 text-[18px] font-semibold font-mono ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
+                        <div className={`mt-2 text-[18px] font-semibold font-mono amount-fluid ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
                           {formatCurrency(cat.total, false, false)}
                         </div>
                       </button>
@@ -542,7 +542,7 @@ export default function ReportsPage() {
                       </div>
                     </div>
                     <div className="text-danger font-mono font-medium">
-                      {formatCurrency(t.amount, true, false)}
+                      {formatCurrency(-Math.abs(t.amount), true, false)}
                     </div>
                   </div>
                 ))}
@@ -593,13 +593,13 @@ export default function ReportsPage() {
                 <tfoot>
                   <tr className={`border-t-2 ${theme === 'dark' ? 'border-ink/10' : 'border-ink/10'}`}>
                     <td className={`py-3 px-2 font-bold ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>合计</td>
-                    <td className="py-3 px-2 text-right font-mono font-bold text-ok">
+                    <td className="py-3 px-2 text-right font-mono font-bold amount-fluid break-amount text-ok">
                       {formatCurrency(yearMonthDetail.reduce((s, r) => s + r.income, 0))}
                     </td>
-                    <td className="py-3 px-2 text-right font-mono font-bold text-danger">
+                    <td className="py-3 px-2 text-right font-mono font-bold amount-fluid break-amount text-danger">
                       {formatCurrency(yearMonthDetail.reduce((s, r) => s + r.expense, 0))}
                     </td>
-                    <td className={`py-3 px-2 text-right font-mono font-bold ${yearMonthDetail.reduce((s, r) => s + r.balance, 0) >= 0 ? 'text-[#5b8dee]' : 'text-danger'}`}>
+                    <td className={`py-3 px-2 text-right font-mono font-bold amount-fluid break-amount ${yearMonthDetail.reduce((s, r) => s + r.balance, 0) >= 0 ? 'text-[#5b8dee]' : 'text-danger'}`}>
                       {formatCurrency(yearMonthDetail.reduce((s, r) => s + r.balance, 0))}
                     </td>
                   </tr>

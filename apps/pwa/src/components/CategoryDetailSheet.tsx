@@ -128,7 +128,7 @@ export default function CategoryDetailSheet({
           </h2>
           <div className={`text-xs mt-0.5 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
             共 {rows.length} 笔 · 合计
-            <span className="font-mono text-danger ml-1">
+            <span className="font-mono text-danger ml-1 break-amount">
               {formatCurrency(total, false, false)}
             </span>
           </div>
@@ -184,7 +184,7 @@ export default function CategoryDetailSheet({
                   </div>
                 </div>
                 <div className="text-right shrink-0">
-                  <div className="text-[15px] font-semibold font-mono text-danger">
+                  <div className="text-[15px] font-semibold font-mono text-danger amount-fluid break-amount">
                     {formatCurrency(r.amount, false, false)}
                   </div>
                 </div>

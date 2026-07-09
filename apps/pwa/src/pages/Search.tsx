@@ -6,7 +6,6 @@ import { useAuthStore } from '../stores/useAuthStore'
 import { recordTagUsage } from '../utils/tagUsage'
 import Card from '../components/ui/Card'
 import TransactionItem from '../components/ui/TransactionItem'
-import { Modal } from '../components/ui/Modal'
 import BottomSheet from '../components/ui/BottomSheet'
 import { Search, X, Filter, MessageCircle, Trash2, Pencil, Check } from 'lucide-react'
 import { formatCurrency } from '../utils/format'
@@ -28,6 +27,7 @@ interface FilterChip {
 
 // 筛选抽屉中的条件
 type TxnType = 'all' | 'expense' | 'income'
+// all=不限；today/week/month/year=快捷（内部会换算成起止日期）；custom=自定义时间段
 type DateRange = 'all' | 'today' | 'week' | 'month' | 'year' | 'custom'
 type SortBy = 'newest' | 'oldest' | 'amount_desc' | 'amount_asc'
 
@@ -35,6 +35,8 @@ interface FilterState {
   type: TxnType
   accountId: string // 'all' 或具体 id
   dateRange: DateRange
+  dateStart: string // YYYY-MM-DD，自定义时间段起始（含）；空串=未限定
+  dateEnd: string // YYYY-MM-DD，自定义时间段结束（含）；空串=未限定
   amountMin: string
   amountMax: string
   sort: SortBy
@@ -101,17 +103,35 @@ function formatDateDisplay(dateStr: string): string {
   return `${m}月${d}日`
 }
 
-function dateInRange(dateStr: string, range: DateRange): boolean {
-  if (range === 'all') return true
-  const d = new Date(dateStr)
+// 将快捷日期区间换算为 [起始, 结束] 的 YYYY-MM-DD 字符串（含边界）
+function resolveRange(dateRange: DateRange, start: string, end: string): [string, string] {
   const now = new Date()
-  switch (range) {
-    case 'today': return d >= startOfDay(now)
-    case 'week': return d >= startOfWeek(now)
-    case 'month': return d >= startOfMonth(now)
-    case 'year': return d >= startOfYear(now)
-    default: return true
+  switch (dateRange) {
+    case 'today':
+      return [toYMD(startOfDay(now)), toYMD(startOfDay(now))]
+    case 'week':
+      return [toYMD(startOfWeek(now)), '']
+    case 'month':
+      return [toYMD(startOfMonth(now)), '']
+    case 'year':
+      return [toYMD(startOfYear(now)), '']
+    case 'custom':
+      return [start || '', end || '']
+    default:
+      return ['', '']
   }
+}
+
+// 交易日期是否落在筛选区间内（统一走"起止日期"比较，避免两套逻辑）
+// 字段缺失/非法时不做剔除，防止数据问题导致结果全空
+function dateInRange(dateStr: string, range: DateRange, start: string, end: string): boolean {
+  if (range === 'all') return true
+  if (!dateStr) return true
+  const [s, e] = resolveRange(range, start, end)
+  // 字符串 YYYY-MM-DD 可直接字典序比较
+  if (s && dateStr < s) return false
+  if (e && dateStr > e) return false
+  return true
 }
 
 // ============================================================
@@ -131,6 +151,8 @@ export default function SearchPage() {
     type: 'all',
     accountId: 'all',
     dateRange: 'all',
+    dateStart: '',
+    dateEnd: '',
     amountMin: '',
     amountMax: '',
     sort: 'newest',
@@ -331,7 +353,7 @@ export default function SearchPage() {
     // 账户
     if (filters.accountId !== 'all' && t.accountId !== filters.accountId) return false
     // 日期
-    if (!dateInRange(t.transactionDate, filters.dateRange)) return false
+    if (!dateInRange(t.transactionDate, filters.dateRange, filters.dateStart, filters.dateEnd)) return false
     // 金额区间
     const min = filters.amountMin === '' ? null : Number(filters.amountMin)
     const max = filters.amountMax === '' ? null : Number(filters.amountMax)
@@ -451,17 +473,21 @@ export default function SearchPage() {
         result.push({ kind: 'note', id: 'note_' + t.id, label: t.note })
       }
     })
-    // 交易（分类名 / 金额匹配，最多 3 条用于建议展示）
-    let txCount = 0
-    transactions.forEach(t => {
-      if (txCount >= 3 || seenTx.has(t.id)) return
-      const catName = categoryMap.get(t.categoryId)?.name || ''
-      if (catName.toLowerCase().includes(q) || String(t.amount).includes(q)) {
-        seenTx.add(t.id)
-        result.push({ kind: 'transaction', id: t.id, label: catName, amount: t.amount, icon: categoryMap.get(t.categoryId)?.icon })
-        txCount++
-      }
-    })
+    // 交易建议：仅当关键词未匹配到任何分类/子分类/标签时才展示。
+    // 若已匹配到分类类目，结果区会列出该分类下全部交易，交易建议栏属重复，故不展示。
+    const hasCategoryMatch = seenCategory.size > 0 || seenSub.size > 0 || seenTag.size > 0
+    if (!hasCategoryMatch) {
+      let txCount = 0
+      transactions.forEach(t => {
+        if (txCount >= 3 || seenTx.has(t.id)) return
+        const catName = categoryMap.get(t.categoryId)?.name || ''
+        if (catName.toLowerCase().includes(q) || String(t.amount).includes(q)) {
+          seenTx.add(t.id)
+          result.push({ kind: 'transaction', id: t.id, label: catName, amount: t.amount, icon: categoryMap.get(t.categoryId)?.icon })
+          txCount++
+        }
+      })
+    }
 
     return result
   }, [query, categories, subCategories, tags, transactions, categoryMap])
@@ -505,6 +531,12 @@ export default function SearchPage() {
   // 交互：点击搜索建议 -> 转为筛选 Chip
   // ============================================================
   const addChipFromSuggestion = (s: Suggestion) => {
+    // 交易建议代表某一笔具体交易，点击直接打开该笔详情（而非生成无效筛选 chip）
+    if (s.kind === 'transaction') {
+      const t = transactions.find(x => x.id === s.id)
+      if (t) openDetail(t)
+      return
+    }
     const exists = chips.some(c => c.kind === s.kind && c.label === s.label)
     if (exists) return
     const chip: FilterChip = {
@@ -558,7 +590,7 @@ export default function SearchPage() {
       return tg ? { id, name: tg.name } : null
     }).filter(Boolean) as { id: string; name: string }[]
 
-  const showResults = query.trim().length > 0 || chips.length > 0 || filters.type !== 'all' || filters.accountId !== 'all' || filters.dateRange !== 'all' || filters.amountMin !== '' || filters.amountMax !== ''
+  const showResults = query.trim().length > 0 || chips.length > 0 || filters.type !== 'all' || filters.accountId !== 'all' || filters.dateRange !== 'all' || filters.dateStart !== '' || filters.dateEnd !== '' || filters.amountMin !== '' || filters.amountMax !== ''
 
   return (
     <div className={`min-h-screen bg-bg`}>
@@ -784,9 +816,9 @@ export default function SearchPage() {
         )}
       </main>
 
-      {/* ========== 筛选 Modal（居中） ========== */}
-      <Modal isOpen={showFilterModal} onClose={() => setShowFilterModal(false)} title="筛选">
-        <div className="space-y-5 max-h-[70vh] overflow-y-auto">
+      {/* ========== 筛选 BottomSheet ========== */}
+      <BottomSheet isOpen={showFilterModal} onClose={() => setShowFilterModal(false)} title="筛选">
+        <div className="p-4 space-y-5 max-h-[70vh] overflow-y-auto">
           {/* 类型 */}
           <div>
             <div className="text-sm font-medium text-ink mb-2">类型</div>
@@ -825,12 +857,12 @@ export default function SearchPage() {
           {/* 日期 */}
           <div>
             <div className="text-sm font-medium text-ink mb-2">日期</div>
-            <div className="grid grid-cols-3 gap-2">
-              {([['all', '全部'], ['today', '今天'], ['week', '本周'], ['month', '本月'], ['year', '今年']] as const).map(([val, label]) => (
+            <div className="flex flex-wrap gap-2">
+              {([['all', '全部'], ['today', '今天'], ['week', '本周'], ['month', '本月'], ['year', '今年'], ['custom', '自定义']] as const).map(([val, label]) => (
                 <button
                   key={val}
                   onClick={() => setDraftFilters(f => ({ ...f, dateRange: val }))}
-                  className={`py-2 rounded-full text-sm font-medium border transition-colors ${
+                  className={`px-4 py-2 rounded-full text-sm font-medium border transition-colors ${
                     draftFilters.dateRange === val
                       ? 'bg-brand text-ink border-brand-strong'
                       : 'bg-surface text-ink-2 border-[#e6e3da]'
@@ -840,7 +872,27 @@ export default function SearchPage() {
                 </button>
               ))}
             </div>
+            {/* 自定义时间段：起止日期输入 */}
+            {draftFilters.dateRange === 'custom' && (
+              <div className="flex items-center gap-2 mt-3">
+                <input
+                  type="date"
+                  value={draftFilters.dateStart}
+                  onChange={(e) => setDraftFilters(f => ({ ...f, dateStart: e.target.value }))}
+                  className="flex-1 px-3 py-2.5 rounded-xl bg-surface border border-[#e6e3da] text-sm text-ink outline-none"
+                />
+                <span className="text-sm text-ink-2">至</span>
+                <input
+                  type="date"
+                  value={draftFilters.dateEnd}
+                  min={draftFilters.dateStart || undefined}
+                  onChange={(e) => setDraftFilters(f => ({ ...f, dateEnd: e.target.value }))}
+                  className="flex-1 px-3 py-2.5 rounded-xl bg-surface border border-[#e6e3da] text-sm text-ink outline-none"
+                />
+              </div>
+            )}
           </div>
+
 
           {/* 金额 */}
           <div>
@@ -889,7 +941,7 @@ export default function SearchPage() {
           <div className="flex gap-3 pt-2">
             <button
               onClick={() => {
-                setDraftFilters({ type: 'all', accountId: 'all', dateRange: 'all', amountMin: '', amountMax: '', sort: 'newest' })
+                setDraftFilters({ type: 'all', accountId: 'all', dateRange: 'all', dateStart: '', dateEnd: '', amountMin: '', amountMax: '', sort: 'newest' })
                 setChips([])
               }}
               className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-surface text-ink-2 border border-[#e6e3da]"
@@ -904,7 +956,7 @@ export default function SearchPage() {
             </button>
           </div>
         </div>
-      </Modal>
+      </BottomSheet>
 
       {/* ========== 交易详情（查看 + 编辑） ========== */}
       <BottomSheet
@@ -917,7 +969,7 @@ export default function SearchPage() {
           const txTags = (editMode ? editTagIds : selectedTx.tags || [])
             .map((id: string) => tags.find(t => t.id === id))
             .filter(Boolean) as { id: string; name: string; color: string }[]
-          const amountColor = selectedTx.type === 'expense' ? 'text-danger' : selectedTx.type === 'income' ? 'text-ok' : 'text-[#5b8dee]'
+          const amountColor = selectedTx.type === 'income' ? 'text-danger' : selectedTx.type === 'expense' ? 'text-ink' : 'text-[#5b8dee]'
           const typeLabel = selectedTx.type === 'expense' ? '支出' : selectedTx.type === 'income' ? '收入' : '转账'
           return (
             <div className="p-4 space-y-4">
@@ -933,8 +985,14 @@ export default function SearchPage() {
                     className="w-44 text-center text-3xl font-bold font-mono bg-brand-tint border border-[#e6e3da] rounded-xl px-3 py-1.5 outline-none"
                   />
                 ) : (
-                  <div className={`text-3xl font-bold font-mono ${amountColor}`}>
-                    {formatCurrency(selectedTx.amount, true, false)}
+                  <div className={`font-bold font-mono amount-fluid-lg ${amountColor}`}>
+                    {formatCurrency(
+                      selectedTx.type === 'expense'
+                        ? -Math.abs(selectedTx.amount)
+                        : Math.abs(selectedTx.amount),
+                      selectedTx.type !== 'transfer',
+                      false
+                    )}
                   </div>
                 )}
                 <div className="text-sm text-ink-2 mt-1">{typeLabel}</div>

@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext'
 import { useAuthStore } from '../stores/useAuthStore'
 import Card from '../components/ui/Card'
 import TransactionItem from '../components/ui/TransactionItem'
+import { formatCurrency } from '../utils/format'
 import { TrendingUp, TrendingDown, PiggyBank, ChevronRight, Sparkles, PieChart, Search } from 'lucide-react'
 
 // 首页日历图标：中间动态显示"今天"日期
@@ -46,7 +47,7 @@ export default function HomePage({ onAddTransaction }: HomePageProps = {}) {
   const hour = new Date().getHours()
   const greeting = hour < 6 ? '凌晨好' : hour < 12 ? '早上好' : hour < 14 ? '中午好' : hour < 18 ? '下午好' : '晚上好'
 
-  const fmt = (n: number) => n.toLocaleString('zh-CN', { minimumFractionDigits: 2 })
+  const fmt = (n: number) => formatCurrency(n, false, false)
 
   const quickActions = [
     { icon: <PieChart size={22} color="#222" />, label: '报表', color: '#FFF7E6', path: '/reports' },
@@ -66,7 +67,7 @@ export default function HomePage({ onAddTransaction }: HomePageProps = {}) {
             <div>
               <p className="text-sm font-medium opacity-70">{greeting}，{user?.username ?? '晓东'} 👋</p>
               <p className="text-xs opacity-60 mt-0.5">总资产</p>
-              <p className="text-3xl font-bold font-amount mt-1">¥{fmt(totalAssets)}</p>
+              <p className="font-bold font-amount amount-fluid-lg mt-1">{fmt(totalAssets)}</p>
             </div>
             <button
               onClick={() => navigate('/assets')}
@@ -77,7 +78,7 @@ export default function HomePage({ onAddTransaction }: HomePageProps = {}) {
           </div>
 
           {/* 当月三统计：点击进入预算页 */}
-          <div className="grid grid-cols-3 gap-3 mt-5 pt-4 border-t border-black/5">
+          <div className="grid grid-cols-3 gap-3 mt-5 pt-4 border-t border-black/5 min-w-0">
             <button
               onClick={() => navigate('/budget')}
               className="text-left active:scale-95 transition-transform"
@@ -85,7 +86,7 @@ export default function HomePage({ onAddTransaction }: HomePageProps = {}) {
               <div className="flex items-center gap-1 text-xs opacity-60 mb-1">
                 <TrendingUp size={13} /> 收入
               </div>
-              <div className="text-base font-bold font-amount">¥{fmt(monthlyIncome)}</div>
+              <div className="text-base font-bold font-amount amount-fluid">{fmt(monthlyIncome)}</div>
             </button>
             <button
               onClick={() => navigate('/budget')}
@@ -94,7 +95,7 @@ export default function HomePage({ onAddTransaction }: HomePageProps = {}) {
               <div className="flex items-center gap-1 text-xs opacity-60 mb-1">
                 <TrendingDown size={13} /> 支出
               </div>
-              <div className="text-base font-bold font-amount">¥{fmt(monthlyExpense)}</div>
+              <div className="text-base font-bold font-amount amount-fluid">{fmt(monthlyExpense)}</div>
             </button>
             <button
               onClick={() => navigate('/budget')}
@@ -103,8 +104,8 @@ export default function HomePage({ onAddTransaction }: HomePageProps = {}) {
               <div className="flex items-center gap-1 text-xs opacity-60 mb-1">
                 <PiggyBank size={13} /> 结余
               </div>
-              <div className={`text-base font-bold font-amount ${balance >= 0 ? '' : 'text-danger'}`}>
-                {balance >= 0 ? '+' : ''}¥{fmt(balance)}
+              <div className={`text-base font-bold font-amount amount-fluid ${balance >= 0 ? '' : 'text-danger'}`}>
+                {fmt(balance)}
               </div>
             </button>
           </div>

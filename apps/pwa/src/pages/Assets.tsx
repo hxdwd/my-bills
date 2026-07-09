@@ -6,6 +6,7 @@ import { useState, useMemo, useCallback } from 'react'
 import { TrendingUp, TrendingDown, Plus, ChevronRight, Trash2, AlertCircle, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import { Pie } from 'react-chartjs-2'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
+import { formatCurrency } from '../utils/format'
 
 ChartJS.register(ArcElement, Tooltip, Legend)
 
@@ -270,8 +271,8 @@ export default function AssetsPage() {
             <p className={`text-sm mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
               总资产
             </p>
-            <div className={`text-3xl font-bold font-mono ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
-              ¥{totalAssets.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
+            <div className={`font-bold font-mono amount-fluid-lg ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
+              {formatCurrency(totalAssets, false, false)}
             </div>
           </div>
           
@@ -281,8 +282,8 @@ export default function AssetsPage() {
                 <TrendingUp size={14} className="text-ok" />
                 <span className={`text-xs ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>净资产</span>
               </div>
-              <div className={`text-lg font-bold font-mono ${netAssets >= 0 ? 'text-ok' : 'text-danger'}`}>
-                ¥{netAssets.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
+              <div className={`text-lg font-bold font-mono amount-fluid ${netAssets >= 0 ? 'text-ok' : 'text-danger'}`}>
+                {formatCurrency(netAssets, false, false)}
               </div>
             </div>
             <div className="text-center">
@@ -290,8 +291,8 @@ export default function AssetsPage() {
                 <TrendingDown size={14} className="text-danger" />
                 <span className={`text-xs ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>负债</span>
               </div>
-              <div className="text-lg font-bold font-mono text-danger">
-                -¥{totalLiabilities.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
+              <div className="text-lg font-bold font-mono amount-fluid text-danger">
+                {formatCurrency(totalLiabilities, false, false)}
               </div>
             </div>
           </div>
@@ -318,8 +319,8 @@ export default function AssetsPage() {
                       {acc.name}
                     </span>
                   </div>
-                  <span className={`text-sm font-mono ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
-                    ¥{acc.balance.toLocaleString('zh-CN', { minimumFractionDigits: 0 })}
+                  <span className={`text-sm font-mono amount-fluid break-amount ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
+                    {formatCurrency(acc.balance, false, false)}
                   </span>
                 </div>
               ))}
@@ -381,9 +382,9 @@ export default function AssetsPage() {
                     </div>
                   </div>
                 </div>
-                <div className="text-right shrink-0">
-                  <div className={`font-mono font-medium ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
-                    ¥{acc.balance.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
+                <div className="text-right shrink-0 min-w-0">
+                  <div className={`font-mono font-medium amount-fluid break-amount ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
+                    {formatCurrency(acc.balance, false, false)}
                   </div>
                 </div>
                 <ChevronRight size={18} className={theme === 'dark' ? 'text-ink-2' : 'text-ink-2'} />
@@ -420,9 +421,9 @@ export default function AssetsPage() {
                       {accountTypeLabels[acc.type]}
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="font-mono font-medium text-danger">
-                      -¥{Math.abs(acc.balance).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
+                  <div className="text-right min-w-0">
+                    <div className="font-mono font-medium text-danger amount-fluid break-amount">
+                      {formatCurrency(acc.balance, false, false)}
                     </div>
                   </div>
                   <ChevronRight size={18} className={theme === 'dark' ? 'text-ink-2' : 'text-ink-2'} />

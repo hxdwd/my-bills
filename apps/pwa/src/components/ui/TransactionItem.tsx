@@ -1,4 +1,5 @@
 import { ReactNode } from 'react'
+import { formatCurrency, calcAmountFontSize } from '../../utils/format'
 
 interface TagInfo {
   id: string
@@ -31,11 +32,12 @@ export default function TransactionItem({
   tags,
   onClick
 }: TransactionItemProps) {
-  const amountColor = type === 'expense' ? 'text-danger' : type === 'income' ? 'text-ok' : 'text-ink-2'
-  const amountPrefix = type === 'expense' ? '-' : type === 'income' ? '+' : ''
-  const amountFormat = type === 'transfer'
-    ? `¥${amount.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}`
-    : `${amountPrefix}¥${amount.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}`
+  // 配色：收入红色、支出黑色（默认）、转账灰色
+  const amountColor = type === 'income' ? 'text-danger' : type === 'expense' ? 'text-ink' : 'text-ink-2'
+  // 数据层 amount 恒为非负，收支靠 type 区分；此处按 type 还原符号：
+  // 支出显示 '-'、收入显示 '+'，转账无符号。统一走 formatCurrency 两位小数。
+  const signedAmount = type === 'expense' ? -Math.abs(amount) : type === 'income' ? Math.abs(amount) : Math.abs(amount)
+  const amountFormat = formatCurrency(signedAmount, type !== 'transfer', false)
 
   return (
     <div
@@ -85,8 +87,11 @@ export default function TransactionItem({
       </div>
 
       {/* Amount & Account */}
-      <div className="text-right shrink-0 max-w-[45%]">
-        <div className={`font-bold font-amount text-[15px] break-amount ${amountColor}`}>
+      <div className="text-right shrink-0 max-w-[45%] min-w-0">
+        <div
+          className={`font-bold font-amount break-amount amount-fluid ${amountColor}`}
+          style={{ fontSize: calcAmountFontSize(amount) }}
+        >
           {amountFormat}
         </div>
         {account && (

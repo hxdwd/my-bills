@@ -70,7 +70,7 @@ export function DonutChart({ data, centerText, size = 200, onClick }: DonutChart
       </div>
       {centerText && (
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-          <span className="text-2xl font-bold text-[var(--text-primary)]">
+          <span className="font-bold amount-fluid-lg break-amount px-2 text-center text-[var(--text-primary)]">
             {centerText.main}
           </span>
           {centerText.sub && (
