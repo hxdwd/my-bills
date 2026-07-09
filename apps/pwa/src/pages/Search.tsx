@@ -9,6 +9,7 @@ import TransactionItem from '../components/ui/TransactionItem'
 import { Modal } from '../components/ui/Modal'
 import BottomSheet from '../components/ui/BottomSheet'
 import { Search, X, Filter, MessageCircle, Trash2, Pencil, Check } from 'lucide-react'
+import { formatCurrency } from '../utils/format'
 
 // ============================================================
 // 类型定义
@@ -22,6 +23,7 @@ interface FilterChip {
   kind: 'category' | 'subcategory' | 'tag' | 'account' | 'note'
   id: string
   label: string
+  icon?: string
 }
 
 // 筛选抽屉中的条件
@@ -42,6 +44,7 @@ interface FilterState {
 interface RecentSearch {
   term: string
   type: SuggestionKind
+  icon?: string
 }
 
 // 搜索建议项
@@ -49,6 +52,8 @@ interface Suggestion {
   kind: SuggestionKind
   id: string
   label: string
+  // 分类/子分类/标签对应的主题色，用于在建议列表中呈现颜色（默认白底时可据此着色）
+  color?: string
   // 交易建议额外展示
   amount?: number
   icon?: string
@@ -86,6 +91,16 @@ function startOfMonth(d: Date): Date {
 function startOfYear(d: Date): Date {
   return new Date(d.getFullYear(), 0, 1)
 }
+// YYYY-MM-DD -> "X月X日"（与 AppContext 中 date 显示格式保持一致）
+function formatDateDisplay(dateStr: string): string {
+  const parts = dateStr.split('-')
+  if (parts.length !== 3) return dateStr
+  const m = parseInt(parts[1], 10)
+  const d = parseInt(parts[2], 10)
+  if (isNaN(m) || isNaN(d)) return dateStr
+  return `${m}月${d}日`
+}
+
 function dateInRange(dateStr: string, range: DateRange): boolean {
   if (range === 'all') return true
   const d = new Date(dateStr)
@@ -131,8 +146,7 @@ export default function SearchPage() {
   useEffect(() => { setVisibleCount(PAGE_SIZE) }, [debouncedQuery, chips, filters])
   const sentinelRef = useRef<HTMLDivElement | null>(null)
 
-  // 备注建议分组折叠（关键词变化时重置展开）
-  const NOTE_COLLAPSE_LIMIT = 5
+  // 备注建议分组默认收起（关键词变化时重置展开）
   const [expandedNotes, setExpandedNotes] = useState(false)
   useEffect(() => { setExpandedNotes(false) }, [query])
 
@@ -148,8 +162,10 @@ export default function SearchPage() {
   // 详情内编辑状态
   const [editMode, setEditMode] = useState(false)
   const [editAmount, setEditAmount] = useState('')
+  const [editAmountError, setEditAmountError] = useState('')
   const [editNote, setEditNote] = useState('')
   const [editCategoryId, setEditCategoryId] = useState('')
+  const [editType, setEditType] = useState<'expense' | 'income' | 'transfer'>('expense')
   const [editSubcategoryId, setEditSubcategoryId] = useState<string | undefined>(undefined)
   const [editAccountId, setEditAccountId] = useState('')
   const [editDate, setEditDate] = useState('')
@@ -163,10 +179,11 @@ export default function SearchPage() {
   const enterEdit = (t: any) => {
     setEditAmount(String(t.amount))
     setEditNote(t.note || '')
+    setEditType(t.type)
     setEditCategoryId(t.categoryId)
     setEditSubcategoryId(t.subcategoryId || undefined)
     setEditAccountId(t.accountId)
-    setEditDate(t.date)
+    setEditDate(t.transactionDate)
     setEditTime(t.time)
     setEditTagIds(t.tags || [])
     setEditMode(true)
@@ -179,15 +196,22 @@ export default function SearchPage() {
   const saveEdit = async () => {
     if (!selectedTx) return
     const newAmount = parseFloat(editAmount)
-    if (isNaN(newAmount) || newAmount <= 0) return
-    const newCat = categories.expense.concat(categories.income).find(c => c.id === editCategoryId)
+    if (isNaN(newAmount) || newAmount <= 0) {
+      setEditAmountError('请输入大于 0 的金额')
+      return
+    }
+    const isTransfer = editType === 'transfer'
+    // 转账：分类/子分类无意义，更新时置空，避免 updateTransaction 内部强制清空造成数据错乱
+    const newCat = !isTransfer ? categories.expense.concat(categories.income).find(c => c.id === editCategoryId) : undefined
     try {
       await updateTransaction(selectedTx.id, {
+        type: editType,
         amount: newAmount,
         note: editNote || undefined,
-        categoryId: editCategoryId,
-        subcategoryId: editSubcategoryId,
+        categoryId: isTransfer ? '' : editCategoryId,
+        subcategoryId: isTransfer ? undefined : editSubcategoryId,
         accountId: editAccountId,
+        toAccountId: isTransfer ? editAccountId : undefined,
         date: editDate,
         time: editTime,
         tags: editTagIds,
@@ -195,17 +219,19 @@ export default function SearchPage() {
       // 同步刷新列表中的该条数据
       setSelectedTx(prev => prev ? {
         ...prev,
+        type: editType,
         amount: newAmount,
         note: editNote || '',
-        categoryId: editCategoryId,
-        categoryName: newCat?.name || prev.categoryName,
-        categoryIcon: newCat?.icon || prev.categoryIcon,
-        categoryColor: newCat?.color || prev.categoryColor,
-        subcategoryId: editSubcategoryId,
-        subcategoryName: editSubcategoryId ? (subCategories.find(s => s.id === editSubcategoryId)?.name || '') : '',
+        categoryId: isTransfer ? '' : editCategoryId,
+        categoryName: isTransfer ? '转账' : (newCat?.name || prev.categoryName),
+        categoryIcon: isTransfer ? '🔄' : (newCat?.icon || prev.categoryIcon),
+        categoryColor: isTransfer ? '#5b8dee' : (newCat?.color || prev.categoryColor),
+        subcategoryId: isTransfer ? undefined : editSubcategoryId,
+        subcategoryName: isTransfer ? undefined : (editSubcategoryId ? (subCategories.find(s => s.id === editSubcategoryId)?.name || '') : ''),
         accountId: editAccountId,
         accountName: accounts.find(a => a.id === editAccountId)?.name || prev.accountName,
-        date: editDate,
+        date: formatDateDisplay(editDate),
+        transactionDate: editDate,
         time: editTime,
         tags: editTagIds,
       } : prev)
@@ -355,6 +381,18 @@ export default function SearchPage() {
     return sortTransactions(list)
   }, [transactions, debouncedQuery, filters, chips, categoryMap, subCategoryMap, tagMap])
 
+  // 结果区合计（收入为正、支出为负，转账不计净额）
+  const resultTotals = useMemo(() => {
+    let income = 0
+    let expense = 0
+    for (const t of filteredTransactions) {
+      const amt = Number(t.amount) || 0
+      if (t.type === 'income') income += amt
+      else if (t.type === 'expense') expense += amt
+    }
+    return { income, expense, net: income - expense }
+  }, [filteredTransactions])
+
   // 无限滚动：哨兵进入视口加载下一页（依赖 filteredTransactions，须在其声明之后）
   useEffect(() => {
     const el = sentinelRef.current
@@ -385,21 +423,21 @@ export default function SearchPage() {
     ;[...categories.expense, ...categories.income].forEach(c => {
       if (!seenCategory.has(c.name) && c.name.toLowerCase().includes(q)) {
         seenCategory.add(c.name)
-        result.push({ kind: 'category', id: c.id, label: c.name, icon: c.icon })
+        result.push({ kind: 'category', id: c.id, label: c.name, icon: c.icon, color: c.color })
       }
     })
     // 子分类（按名称去重）
     subCategories.forEach(s => {
       if (!seenSub.has(s.name) && s.name.toLowerCase().includes(q)) {
         seenSub.add(s.name)
-        result.push({ kind: 'subcategory', id: s.id, label: s.name })
+        result.push({ kind: 'subcategory', id: s.id, label: s.name, icon: categoryMap.get(s.categoryId)?.icon, color: categoryMap.get(s.categoryId)?.color })
       }
     })
     // 标签（按名称去重，远端唯一标签在本地重复时只显示一条）
     tags.forEach(t => {
       if (!seenTag.has(t.name) && t.name.toLowerCase().includes(q)) {
         seenTag.add(t.name)
-        result.push({ kind: 'tag', id: t.id, label: t.name })
+        result.push({ kind: 'tag', id: t.id, label: t.name, color: t.color })
       }
     })
     // 备注（取不重复、含关键词的备注，最多 30 条，超出由 UI 折叠）
@@ -442,10 +480,10 @@ export default function SearchPage() {
   // ============================================================
   // 最近搜索持久化
   // ============================================================
-  const saveRecent = (term: string, type: SuggestionKind) => {
+  const saveRecent = (term: string, type: SuggestionKind, icon?: string) => {
     if (!term.trim()) return
     setRecent(prev => {
-      const next = [{ term, type }, ...prev.filter(r => r.term !== term)].slice(0, 10)
+      const next = [{ term, type, icon }, ...prev.filter(r => r.term !== term)].slice(0, 10)
       try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)) } catch { /* ignore */ }
       return next
     })
@@ -473,20 +511,17 @@ export default function SearchPage() {
       kind: s.kind === 'note' ? 'note' : s.kind,
       id: s.kind === 'note' ? s.label : s.id,
       label: s.label,
+      icon: s.icon,
     }
     setChips(prev => [...prev, chip])
     // 点击建议后清空输入框，仅保留筛选条件
     setQuery('')
-    saveRecent(s.label, s.kind)
+    saveRecent(s.label, s.kind, s.icon)
   }
 
-  // 点击最近搜索：若是"今天"等日期类型则恢复筛选，否则填入搜索框
+  // 点击最近搜索：填入搜索框
   const onRecentClick = (r: RecentSearch) => {
-    if (r.type === 'note') {
-      setQuery(r.term)
-    } else {
-      setQuery(r.term)
-    }
+    setQuery(r.term)
   }
 
   // 删除某个 chip
@@ -567,7 +602,7 @@ export default function SearchPage() {
                 onClick={() => removeChip(chip)}
                 className="flex items-center gap-1 px-3 py-1.5 rounded-full text-sm bg-brand-tint text-ink border border-brand-soft"
               >
-                <span>{KIND_EMOJI[chip.kind as SuggestionKind]}</span>
+                <span>{chip.icon || KIND_EMOJI[chip.kind as SuggestionKind]}</span>
                 <span>{chip.label}</span>
                 <X size={14} className="opacity-60" />
               </button>
@@ -576,36 +611,57 @@ export default function SearchPage() {
         )}
       </header>
 
-      <main className="px-5 pb-6 animate-page-fade">
+      <main className="px-5 tabbar-safe animate-page-fade">
         {/* ========== 有输入：搜索建议 ========== */}
         {query.trim().length > 0 && groupedSuggestions.length > 0 && (
           <div className="mt-3 space-y-4">
             {groupedSuggestions.map(group => (
               <div key={group.kind}>
-                <div className="text-xs text-ink-2 mb-2 px-1">
-                  {group.kind === 'category' ? '分类' : group.kind === 'subcategory' ? '子分类' : group.kind === 'tag' ? '标签' : group.kind === 'note' ? '备注' : '交易'}
-                </div>
-                <div className="space-y-1">
-                  {(group.kind === 'note' && !expandedNotes ? group.items.slice(0, NOTE_COLLAPSE_LIMIT) : group.items).map(s => (
+                <div className="flex items-center justify-between mb-2 px-1">
+                  <span className="text-xs text-ink-2">
+                    {group.kind === 'category' ? '分类' : group.kind === 'subcategory' ? '子分类' : group.kind === 'tag' ? '标签' : group.kind === 'note' ? '备注' : '交易'}
+                  </span>
+                  {group.kind === 'note' && expandedNotes && (
                     <button
-                      key={s.id}
-                      onClick={() => addChipFromSuggestion(s)}
-                      className="w-full flex items-center gap-3 p-2.5 rounded-xl bg-surface shadow-soft hover:bg-brand-tint transition-colors text-left"
+                      onClick={() => setExpandedNotes(false)}
+                      className="text-xs text-ink-2 hover:text-ink"
                     >
-                      <span className="text-lg">{s.kind === 'transaction' ? (s.icon || '🍜') : KIND_EMOJI[s.kind]}</span>
-                      <span className="flex-1 text-sm text-ink truncate">{highlightMatch(s.label, query)}</span>
-                      {s.amount !== undefined && (
-                        <span className="text-sm font-mono font-medium text-ink">¥{s.amount.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}</span>
-                      )}
+                      收起
                     </button>
-                  ))}
+                  )}
                 </div>
-                {group.kind === 'note' && group.items.length > NOTE_COLLAPSE_LIMIT && (
+                {group.kind === 'note' && !expandedNotes ? (
                   <button
-                    onClick={() => setExpandedNotes(v => !v)}
-                    className="mt-2 text-xs text-ink-2 hover:text-ink px-1"
+                    onClick={() => setExpandedNotes(true)}
+                    className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-surface shadow-soft hover:bg-brand-tint transition-colors text-left"
                   >
-                    {expandedNotes ? '收起' : `展开全部 ${group.items.length} 条备注`}
+                    <span className="text-sm text-ink-2">备注 {group.items.length} 条</span>
+                    <span className="text-xs text-ink-2">点击展开</span>
+                  </button>
+                ) : (
+                  <div className="space-y-1">
+                    {group.items.map(s => (
+                      <button
+                        key={s.id}
+                        onClick={() => addChipFromSuggestion(s)}
+                        style={s.color ? { boxShadow: `inset 3px 0 0 ${s.color}` } : undefined}
+                        className="w-full flex items-center gap-3 p-2.5 pl-3 rounded-xl bg-surface shadow-soft hover:bg-brand-tint transition-colors text-left"
+                      >
+                        <span className="text-lg">{s.icon || KIND_EMOJI[s.kind]}</span>
+                        <span className="flex-1 text-sm text-ink truncate">{s.kind === 'note' ? highlightMatch(s.label, query) : s.label}</span>
+                        {s.amount !== undefined && (
+                          <span className="text-sm font-mono font-medium text-ink">{formatCurrency(s.amount, false, false)}</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {group.kind === 'note' && expandedNotes && (
+                  <button
+                    onClick={() => setExpandedNotes(false)}
+                    className="mt-2 w-full flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs text-ink-2 hover:text-ink bg-surface/60 hover:bg-brand-tint transition-colors border border-[#ece9e0]"
+                  >
+                    收起
                   </button>
                 )}
               </div>
@@ -618,8 +674,13 @@ export default function SearchPage() {
         {/* ========== 结果区 ========== */}
         {showResults ? (
           <div className="mt-3">
-            <div className="text-sm text-ink-2 mb-3">
-              找到 {filteredTransactions.length} 条结果
+            <div className="flex items-center justify-between text-sm text-ink-2 mb-3">
+              <span>找到 {filteredTransactions.length} 条结果</span>
+              {filteredTransactions.length > 0 && (
+                <span className="font-mono font-medium text-ink">
+                  合计 {formatCurrency(resultTotals.net, true)}
+                </span>
+              )}
             </div>
 
             {filteredTransactions.length > 0 ? (
@@ -632,13 +693,13 @@ export default function SearchPage() {
                         key={t.id}
                         icon={cat.icon}
                         iconBg={`${cat.color}15`}
-                        title={highlightMatch(t.categoryName, query)}
+                        title={t.categoryName}
                         subtitle={`${t.date} ${t.time} · ${t.accountName}${t.subcategoryName ? ' · ' + t.subcategoryName : ''}`}
                         amount={t.amount}
                         type={t.type}
                         account={undefined}
                         subcategory={undefined}
-                        tags={query.trim() ? tagInfoFor(t).map(tg => ({ id: tg.id, name: highlightMatch(tg.name, query), color: '' })) : tagInfoFor(t).map(tg => ({ id: tg.id, name: tg.name, color: '' }))}
+                        tags={tagInfoFor(t).map(tg => ({ id: tg.id, name: tg.name, color: '' }))}
                         onClick={() => openDetail(t)}
                       />
                     )
@@ -683,7 +744,7 @@ export default function SearchPage() {
                         onClick={() => onRecentClick(r)}
                         className="flex items-center gap-1.5"
                       >
-                        <span>{r.type === 'note' ? <MessageCircle size={13} /> : <span>{KIND_EMOJI[r.type]}</span>}</span>
+                        <span>{r.type === 'note' ? <MessageCircle size={13} /> : <span>{r.icon || KIND_EMOJI[r.type]}</span>}</span>
                         {r.term}
                       </button>
                       <button
@@ -857,7 +918,6 @@ export default function SearchPage() {
             .map((id: string) => tags.find(t => t.id === id))
             .filter(Boolean) as { id: string; name: string; color: string }[]
           const amountColor = selectedTx.type === 'expense' ? 'text-danger' : selectedTx.type === 'income' ? 'text-ok' : 'text-[#5b8dee]'
-          const amountPrefix = selectedTx.type === 'expense' ? '-' : selectedTx.type === 'income' ? '+' : ''
           const typeLabel = selectedTx.type === 'expense' ? '支出' : selectedTx.type === 'income' ? '收入' : '转账'
           return (
             <div className="p-4 space-y-4">
@@ -869,20 +929,44 @@ export default function SearchPage() {
                     type="number"
                     inputMode="decimal"
                     value={editAmount}
-                    onChange={e => setEditAmount(e.target.value)}
+                    onChange={e => { setEditAmount(e.target.value); if (editAmountError) setEditAmountError('') }}
                     className="w-44 text-center text-3xl font-bold font-mono bg-brand-tint border border-[#e6e3da] rounded-xl px-3 py-1.5 outline-none"
                   />
                 ) : (
                   <div className={`text-3xl font-bold font-mono ${amountColor}`}>
-                    {amountPrefix}¥{selectedTx.amount.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
+                    {formatCurrency(selectedTx.amount, true, false)}
                   </div>
                 )}
                 <div className="text-sm text-ink-2 mt-1">{typeLabel}</div>
+                {editAmountError && (
+                  <div className="text-xs text-danger mt-1">{editAmountError}</div>
+                )}
               </div>
+
+              {/* 类型：编辑模式可切换（支出 / 收入 / 转账） */}
+              {editMode && (
+                <div className="flex gap-2 px-4 pb-1">
+                  {([['expense', '支出'], ['income', '收入'], ['transfer', '转账']] as const).map(([val, label]) => (
+                    <button
+                      key={val}
+                      onClick={() => setEditType(val)}
+                      className={`flex-1 py-2 rounded-full text-sm font-medium border transition-colors ${
+                        editType === val
+                          ? 'bg-brand text-ink border-brand-strong'
+                          : 'bg-surface text-ink-2 border-[#e6e3da]'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
 
               {/* 字段 */}
               <div className="rounded-2xl bg-surface shadow-soft divide-y divide-[#f0eee6] overflow-hidden">
-                {/* 分类：编辑模式点击打开选择 */}
+                {/* 分类：编辑模式点击打开选择（转账不显示） */}
+                {editType !== 'transfer' && (
                 <div className="flex items-center justify-between gap-3 px-4 py-3">
                   <span className="text-sm text-ink-2 shrink-0">分类</span>
                   {editMode ? (
@@ -890,16 +974,17 @@ export default function SearchPage() {
                       onClick={() => setEditPicker('category')}
                       className="flex items-center gap-1 text-sm text-ink"
                     >
-                      {categories.expense.concat(categories.income).find(c => c.id === editCategoryId)?.icon} {selectedTx.categoryName}
+                      {categories.expense.concat(categories.income).find(c => c.id === editCategoryId)?.icon} {categories.expense.concat(categories.income).find(c => c.id === editCategoryId)?.name}
                       <span className="text-ink-2">›</span>
                     </button>
                   ) : (
                     <span className="text-sm text-ink">{cat.icon} {selectedTx.categoryName}</span>
                   )}
                 </div>
+                )}
 
                 {/* 子分类：编辑模式点击打开选择（非转账） */}
-                {(selectedTx.type !== 'transfer') && (
+                {(editType !== 'transfer') && (
                   <div className="flex items-center justify-between gap-3 px-4 py-3">
                     <span className="text-sm text-ink-2 shrink-0">子分类</span>
                     {editMode ? (

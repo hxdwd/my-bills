@@ -3,6 +3,7 @@ import { useTheme } from '../context/ThemeContext'
 import { useApp } from '../context/AppContext'
 import Card from '../components/ui/Card'
 import CategoryDistributionSheet from '../components/CategoryDistributionSheet'
+import CategoryDetailSheet from '../components/CategoryDetailSheet'
 import { DonutChart } from '../components/charts/DonutChart'
 import { ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { Bar, Line } from 'react-chartjs-2'
@@ -18,6 +19,7 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js'
+import { formatCurrency } from '../utils/format'
 
 ChartJS.register(
   CategoryScale,
@@ -69,6 +71,13 @@ export default function ReportsPage() {
 
   const [drillCategoryId, setDrillCategoryId] = useState<string | null>(null)
   const [distExpanded, setDistExpanded] = useState(false)
+
+  // 明细抽屉：点击子类行时携带的分类+子类信息
+  const [detailSheet, setDetailSheet] = useState<{
+    categoryId: string
+    subcategoryId: string
+    name: string
+  } | null>(null)
 
   // 当前报表时间范围（与报表统计口径一致）
   const { startStr: rangeStartStr, endStr: rangeEndStr } = (() => {
@@ -299,7 +308,7 @@ export default function ReportsPage() {
         </h1>
       </header>
 
-      <main className="px-5 pb-24 space-y-4 animate-page-fade">
+      <main className="px-5 tabbar-safe space-y-4 animate-page-fade">
         {/* Time Range Tabs */}
         <div className={`flex p-1 rounded-xl ${theme === 'dark' ? 'bg-surface' : 'bg-brand-tint'}`}>
           {(['month', 'year'] as TimeRange[]).map((range) => (
@@ -360,19 +369,19 @@ export default function ReportsPage() {
             <Card className="!p-3 text-center">
               <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>收入</div>
               <div className={`text-lg font-bold font-mono text-ok`}>
-                ¥{monthSummary.income.toLocaleString()}
+                {formatCurrency(monthSummary.income)}
               </div>
             </Card>
             <Card className="!p-3 text-center">
               <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>支出</div>
               <div className={`text-lg font-bold font-mono text-danger`}>
-                ¥{monthSummary.expense.toLocaleString()}
+                {formatCurrency(monthSummary.expense)}
               </div>
             </Card>
             <Card className="!p-3 text-center">
               <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>结余</div>
               <div className={`text-lg font-bold font-mono ${(monthSummary.income - monthSummary.expense) >= 0 ? 'text-[#5b8dee]' : 'text-danger'}`}>
-                ¥{((monthSummary.income - monthSummary.expense) / 1000).toFixed(1)}k
+                {formatCurrency(monthSummary.income - monthSummary.expense, false, true)}
               </div>
             </Card>
           </div>
@@ -386,19 +395,19 @@ export default function ReportsPage() {
                 <Card className="!p-3 text-center">
                   <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>年收入</div>
                   <div className={`text-lg font-bold font-mono text-ok`}>
-                    ¥{(totalIncome / 10000).toFixed(1)}万
+                    {formatCurrency(totalIncome, false, true)}
                   </div>
                 </Card>
                 <Card className="!p-3 text-center">
                   <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>年支出</div>
                   <div className={`text-lg font-bold font-mono text-danger`}>
-                    ¥{(totalExpense2 / 10000).toFixed(1)}万
+                    {formatCurrency(totalExpense2, false, true)}
                   </div>
                 </Card>
                 <Card className="!p-3 text-center">
                   <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>年结余</div>
                   <div className={`text-lg font-bold font-mono ${totalBalance >= 0 ? 'text-[#5b8dee]' : 'text-danger'}`}>
-                    ¥{(totalBalance / 10000).toFixed(1)}万
+                    {formatCurrency(totalBalance, false, true)}
                   </div>
                 </Card>
               </div>
@@ -424,7 +433,7 @@ export default function ReportsPage() {
                     }}
                     size={176}
                     centerText={{
-                      main: `¥${totalExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                      main: formatCurrency(totalExpense, false, false),
                       sub: '总支出',
                     }}
                     onClick={(_e: any, elements: any[]) => {
@@ -442,12 +451,11 @@ export default function ReportsPage() {
                   .slice(0, distExpanded ? expenseByCategory.length : 5)
                   .map((cat) => {
                     const percent = totalExpense > 0 ? ((cat.total / totalExpense) * 100).toFixed(1) : '0'
-                    const hasSubs = subCategoryByCategory.has(cat.id)
                     return (
                       <button
                         key={cat.id}
-                        onClick={() => hasSubs ? setDrillCategoryId(cat.id) : null}
-                        className={`w-full text-left block py-4 ${hasSubs ? 'cursor-pointer' : 'cursor-default'} first:pt-0`}
+                        onClick={() => setDetailSheet({ categoryId: cat.id, subcategoryId: null, name: cat.name })}
+                        className="w-full text-left block py-4 cursor-pointer first:pt-0"
                       >
                         {/* 第一行：图标+名称 | 百分比 */}
                         <div className="flex items-center justify-between mb-2">
@@ -470,7 +478,7 @@ export default function ReportsPage() {
                         </div>
                         {/* 第三行：金额 */}
                         <div className={`mt-2 text-[18px] font-semibold font-mono ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
-                          ¥{cat.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {formatCurrency(cat.total, false, false)}
                         </div>
                       </button>
                     )
@@ -514,7 +522,7 @@ export default function ReportsPage() {
         {timeRange === 'month' && (
           <Card className="!p-4">
             <h3 className={`font-semibold mb-3 ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
-              大额支出 (≥¥{bigExpenseThreshold.toLocaleString()})
+              大额支出 (≥{formatCurrency(bigExpenseThreshold)})
             </h3>
             {topExpenses.length > 0 ? (
               <div className="space-y-3">
@@ -534,7 +542,7 @@ export default function ReportsPage() {
                       </div>
                     </div>
                     <div className="text-danger font-mono font-medium">
-                      -¥{t.amount.toLocaleString()}
+                      {formatCurrency(t.amount, true, false)}
                     </div>
                   </div>
                 ))}
@@ -571,13 +579,13 @@ export default function ReportsPage() {
                     >
                       <td className={`py-2.5 px-2 font-medium ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>{row.month}</td>
                       <td className="py-2.5 px-2 text-right font-mono text-ok">
-                        ¥{row.income.toLocaleString()}
+                        {formatCurrency(row.income)}
                       </td>
                       <td className="py-2.5 px-2 text-right font-mono text-danger">
-                        ¥{row.expense.toLocaleString()}
+                        {formatCurrency(row.expense)}
                       </td>
                       <td className={`py-2.5 px-2 text-right font-mono font-medium ${row.balance >= 0 ? 'text-[#5b8dee]' : 'text-danger'}`}>
-                        ¥{row.balance.toLocaleString()}
+                        {formatCurrency(row.balance)}
                       </td>
                     </tr>
                   ))}
@@ -586,13 +594,13 @@ export default function ReportsPage() {
                   <tr className={`border-t-2 ${theme === 'dark' ? 'border-ink/10' : 'border-ink/10'}`}>
                     <td className={`py-3 px-2 font-bold ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>合计</td>
                     <td className="py-3 px-2 text-right font-mono font-bold text-ok">
-                      ¥{yearMonthDetail.reduce((s, r) => s + r.income, 0).toLocaleString()}
+                      {formatCurrency(yearMonthDetail.reduce((s, r) => s + r.income, 0))}
                     </td>
                     <td className="py-3 px-2 text-right font-mono font-bold text-danger">
-                      ¥{yearMonthDetail.reduce((s, r) => s + r.expense, 0).toLocaleString()}
+                      {formatCurrency(yearMonthDetail.reduce((s, r) => s + r.expense, 0))}
                     </td>
                     <td className={`py-3 px-2 text-right font-mono font-bold ${yearMonthDetail.reduce((s, r) => s + r.balance, 0) >= 0 ? 'text-[#5b8dee]' : 'text-danger'}`}>
-                      ¥{yearMonthDetail.reduce((s, r) => s + r.balance, 0).toLocaleString()}
+                      {formatCurrency(yearMonthDetail.reduce((s, r) => s + r.balance, 0))}
                     </td>
                   </tr>
                 </tfoot>
@@ -673,6 +681,23 @@ export default function ReportsPage() {
           endDate={rangeEndStr}
           type="expense"
           onClose={() => setDrillCategoryId(null)}
+          onSubcategoryClick={(sub) =>
+            setDetailSheet({ categoryId: drillCategoryId, subcategoryId: sub.id, name: sub.name })
+          }
+        />
+      )}
+
+      {/* 子类账单明细抽屉 */}
+      {detailSheet && (
+        <CategoryDetailSheet
+          visible={true}
+          title={`【${detailSheet.name}】· 账单明细`}
+          categoryId={detailSheet.categoryId}
+          subcategoryId={detailSheet.subcategoryId}
+          subcategories={subCategoryByCategory.get(detailSheet.categoryId)?.map(s => ({ id: s.id, name: s.name }))}
+          startDate={rangeStartStr}
+          endDate={rangeEndStr}
+          onClose={() => setDetailSheet(null)}
         />
       )}
     </div>

@@ -234,7 +234,7 @@ export default function TransactionListPage() {
       </div>
 
       {/* 交易列表 */}
-      <main className="px-5 pb-24 animate-page-fade">
+      <main className="px-5 tabbar-safe animate-page-fade">
         {filteredTransactions.length === 0 ? (
           <div className={`text-center py-16 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
             <div className="text-4xl mb-3">📋</div>

@@ -197,7 +197,7 @@ export default function CategoriesPage() {
         </div>
       </header>
 
-      <main className="px-5 pb-6 animate-page-fade">
+      <main className="px-5 tabbar-safe animate-page-fade">
         {/* Tabs */}
         <div className={`flex p-1 rounded-xl mb-4 ${isDark ? 'bg-surface' : 'bg-brand-tint'}`}>
           <button

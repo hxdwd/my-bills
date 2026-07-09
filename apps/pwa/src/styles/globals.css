@@ -85,6 +85,13 @@ select {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
+/* 主内容区底部安全留白：避免固定 TabBar（约58px + 12px bottom + 安全区）
+   及首页悬浮"记一笔"按钮（82px 之上）遮挡最后一条内容。
+   组合 = 安全区 + 140px（足够覆盖 bar+按钮+余量）。 */
+.tabbar-safe {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 140px);
+}
+
 /* 滚动条（极简） */
 ::-webkit-scrollbar {
   width: 0;

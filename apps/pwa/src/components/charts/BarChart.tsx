@@ -9,6 +9,7 @@ import {
   Legend,
 } from 'chart.js';
 import { Bar } from 'react-chartjs-2';
+import { formatCompact } from '../../utils/format';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
@@ -79,10 +80,7 @@ export function BarChart({ labels, datasets, height = 200, horizontal = false }:
             size: 11,
           },
           callback: (value: any) => {
-            if (value >= 1000) {
-              return `¥${(value / 1000).toFixed(0)}k`;
-            }
-            return `¥${value}`;
+            return formatCompact(value);
           },
         },
       },

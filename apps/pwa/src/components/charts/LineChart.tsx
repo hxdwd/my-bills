@@ -11,6 +11,7 @@ import {
   Filler,
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
+import { formatCompact } from '../../utils/format';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler);
 
@@ -86,10 +87,7 @@ export function LineChart({ labels, datasets, height = 200 }: LineChartProps) {
             size: 11,
           },
           callback: (value: any) => {
-            if (value >= 1000) {
-              return `¥${(value / 1000).toFixed(0)}k`;
-            }
-            return `¥${value}`;
+            return formatCompact(value);
           },
         },
       },

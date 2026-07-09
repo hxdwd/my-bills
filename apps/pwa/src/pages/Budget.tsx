@@ -112,7 +112,7 @@ export default function BudgetPage() {
         </h1>
       </header>
 
-      <main className="px-5 pb-6 space-y-4 animate-page-fade">
+      <main className="px-5 tabbar-safe space-y-4 animate-page-fade">
         {/* Month Selector */}
         <div className={`px-4 py-3 rounded-2xl bg-surface`}>
           <span className={`font-medium ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>

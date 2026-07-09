@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../context/ThemeContext'
 import { useApp } from '../context/AppContext'
 import { useAuthStore } from '../stores/useAuthStore'
-import { syncEngine } from '../db/sync-engine'
 import Card from '../components/ui/Card'
 import BottomSheet from '../components/ui/BottomSheet'
+import Toast from '../components/ui/Toast'
 import { 
   ChevronRight, 
   Moon, 
@@ -63,7 +63,7 @@ function SettingItem({ icon, title, subtitle, onClick, rightElement }: SettingIt
 export default function SettingsPage() {
   const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
-  const { bigExpenseThreshold, setBigExpenseThreshold, refreshData } = useApp()
+  const { bigExpenseThreshold, setBigExpenseThreshold, resetAndReload } = useApp()
   const { logout } = useAuthStore()
   const [showExport, setShowExport] = useState(false)
   const [showThresholdEdit, setShowThresholdEdit] = useState(false)
@@ -71,18 +71,28 @@ export default function SettingsPage() {
   const [showClearCache, setShowClearCache] = useState(false)
   const [showLogout, setShowLogout] = useState(false)
   const [clearing, setClearing] = useState(false)
+  const [toast, setToast] = useState<{ visible: boolean; message: string; type: 'success' | 'error' | 'info' }>({
+    visible: false,
+    message: '',
+    type: 'success',
+  })
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToast({ visible: true, message, type })
+    setTimeout(() => setToast(t => ({ ...t, visible: false })), 3000)
+  }
 
   const handleClearCache = async () => {
     setClearing(true)
     try {
-      await syncEngine.clearAllData()
-      localStorage.removeItem('mybills_user')
-      // 清完本地后立即全量重新拉取云端数据并刷新 UI（clearAllData 已清 syncMeta，
-      // 此处走首次全量同步分支，可把远程老标签等数据完整恢复）。
-      await refreshData()
+      // 方案B: 走可靠路径 —— 先清空内存 state 再清 IndexedDB 并重载，
+      // 任何一步失败都会进入 catch 并明确提示，不再"静默无效"。
+      await resetAndReload()
       setShowClearCache(false)
+      showToast('缓存已清除，正在从云端恢复数据', 'success')
     } catch (err) {
       console.error('清除缓存失败:', err)
+      showToast('清除缓存失败，请检查网络后重试', 'error')
     } finally {
       setClearing(false)
     }
@@ -167,7 +177,7 @@ export default function SettingsPage() {
         </h1>
       </header>
 
-      <main className="px-5 pb-6 space-y-4 animate-page-fade">
+      <main className="px-5 tabbar-safe space-y-4 animate-page-fade">
         {settingGroups.map((group, i) => (
           <div key={i}>
             <h3 className={`text-sm font-medium mb-2 px-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
@@ -324,6 +334,13 @@ export default function SettingsPage() {
           </div>
         </div>
       </BottomSheet>
+
+      <Toast
+        message={toast.message}
+        type={toast.type}
+        visible={toast.visible}
+        onClose={() => setToast(t => ({ ...t, visible: false }))}
+      />
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode, useCallback, useMemo } from 'react'
+import { createContext, useContext, useState, useEffect, ReactNode, useCallback, useMemo, useRef } from 'react'
 import { supabase, setSupabaseUserId } from '../services/supabase'
 import { useAuthStore } from '../stores/useAuthStore'
 import type { AccountRecord, CategoryRecord, TransactionRecord, BudgetRecord, SubCategoryRecord, TagRecord } from '../db/database'
@@ -128,6 +128,7 @@ interface AppContextType {
   bigExpenseThreshold: number
   setBigExpenseThreshold: (threshold: number) => Promise<void>
   refreshData: () => Promise<void>
+  resetAndReload: () => Promise<void>
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined)
@@ -290,9 +291,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [bigExpenseThreshold, setBigExpenseThresholdState] = useState<number>(3000)
 
+  // 持有最新 transactions 的引用，供 recomputeTransactions 在不显式传入 base 时使用，
+  // 避免把 transactions 放进其依赖数组而导致 effect 无限循环。
+  const transactionsRef = useRef<Transaction[]>([])
+  transactionsRef.current = transactions
+
   // ============================================================
   // 从 IndexedDB 加载所有数据
   // ============================================================
+
+  // 账户余额动态计算需放在 loadData / buildDerivationMaps 之前初始化，
+  // 否则它们闭包引用 accountsWithBalance 会触发暂时性死区(TDZ)崩溃。
+  const accountsWithBalance = useMemo(() => {
+    return calculateAccountBalances(accounts, transactions)
+  }, [accounts, transactions])
 
   const loadData = useCallback(async () => {
     if (!userId) {
@@ -361,6 +373,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setBudgets(rawBudgets)
       setSubCategories(rawSubCategories)
       setTags(rawTags)
+      // 注：交易的派生显示字段（分类名/账户名等）由下方字典变更 effect 统一重算，
+      // 保证 accounts/categories/subCategories 一变化即实时刷新，无需此处手动处理。
 
       // 8. 后台同步 (先推送本地变更，再拉取远程数据，完成后刷新 UI)
       syncEngine.syncOnStartup(userId).then(async () => {
@@ -420,17 +434,114 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [userId])
 
+  // ============================================================
+  // 派生字段重算 (方案A治本)
+  // 交易的 categoryName/Icon/Color、accountName、subcategoryName 等
+  // 显示字段，统一从字典实时重算，避免加载快照与"提交数据库但缓存未更新"不同步。
+  // ============================================================
+
+  // 构建 account/category/subCategory 的查找 Map
+  // 注意：账户名只用 accounts state（名称不随余额变化），不要用 accountsWithBalance，
+  // 否则 transactions 变化 → accountsWithBalance 引用变 → 本回调引用变 →
+  // recomputeTransactions 引用变 → 自动重算 effect 自我触发陷入无限循环。
+  const buildDerivationMaps = useCallback(() => {
+    const accountNameMap = new Map<string, string>()
+    accounts.forEach(a => accountNameMap.set(a.id, a.name))
+
+    const categoryMap = new Map<string, { name: string; icon: string; color: string }>()
+    categories.expense.forEach(c => categoryMap.set(c.id, { name: c.name, icon: c.icon, color: c.color }))
+    categories.income.forEach(c => categoryMap.set(c.id, { name: c.name, icon: c.icon, color: c.color }))
+
+    const subCategoryMap = new Map<string, string>()
+    subCategories.forEach(s => subCategoryMap.set(s.id, s.name))
+
+    return { accountNameMap, categoryMap, subCategoryMap }
+  }, [accounts, categories, subCategories])
+
+  // 根据字典重算所有交易的显示字段；不传 base 时基于最新 transactions state (通过 ref，避免依赖循环)
+  const recomputeTransactions = useCallback((base?: Transaction[]): Transaction[] => {
+    const { accountNameMap, categoryMap, subCategoryMap } = buildDerivationMaps()
+    const source = base ?? transactionsRef.current
+    return source.map(t => {
+      const next: Transaction = { ...t }
+      if (t.type === 'transfer') {
+        next.categoryName = '转账'
+        next.categoryIcon = '🔄'
+        next.categoryColor = '#5b8dee'
+        next.accountName = accountNameMap.get(t.accountId) || '未知账户'
+        next.toAccountName = t.toAccountId ? (accountNameMap.get(t.toAccountId) || '未知账户') : undefined
+        next.subcategoryName = undefined
+        return next
+      }
+      const cat = t.categoryId ? categoryMap.get(t.categoryId) : undefined
+      next.categoryName = cat?.name || '未分类'
+      next.categoryIcon = cat?.icon || '📌'
+      next.categoryColor = cat?.color || '#94a3b8'
+      next.accountName = accountNameMap.get(t.accountId) || '未知账户'
+      next.subcategoryName = t.subcategoryId ? (subCategoryMap.get(t.subcategoryId) || '') : undefined
+      return next
+    })
+  }, [buildDerivationMaps])
+
   const refreshData = useCallback(async () => {
     setLoading(true)
     await loadData()
   }, [loadData])
 
+  // 方案B: 清除缓存可靠路径
+  // 1) 显式置空所有 React state（clearAllData 只清 IndexedDB，不会重置内存快照，
+  //    旧数据残留会导致重拉后 UI 仍显示缓存前的旧值）
+  // 2) 清空 IndexedDB（含 syncMeta，确保走首次全量同步）
+  // 3) 重新 loadData（秒开空态 → 后台全量拉取远程 → 刷新 UI）
+  const resetAndReload = useCallback(async () => {
+    // 1. 先清空内存 state，避免旧快照干扰
+    setAccounts([])
+    setCategories({ expense: [], income: [] })
+    setTransactions([])
+    setBudgets([])
+    setSubCategories([])
+    setTags([])
+    setLoading(true)
+
+    // 2. 清空本地缓存（IndexedDB + syncMeta）
+    await syncEngine.clearAllData()
+
+    // 3. 重新加载（clearAllData 已清 syncMeta，loadData 内 syncOnStartup 走全量分支）
+    await loadData()
+  }, [loadData])
+
   // ============================================================
-  // 动态计算账户余额
+  // 字典变更自动重算交易派生字段 (方案A)
+  // 账户/分类/子分类任一变化 → 立即重算所有交易的显示字段，
+  // 彻底解决"提交数据库但本地缓存(UI)未更新"的派生字段不同步问题。
+  // 仅当已有交易时才重算，避免无谓写入与初始空态波动。
   // ============================================================
-  const accountsWithBalance = useMemo(() => {
-    return calculateAccountBalances(accounts, transactions)
-  }, [accounts, transactions])
+  useEffect(() => {
+    if (transactions.length === 0) return
+    setTransactions(prev => {
+      const recomputed = recomputeTransactions(prev)
+      // 逐条比较派生字段值；全部相等则原样返回，避免无意义更新引发额外渲染
+      let changed = recomputed.length !== prev.length
+      if (!changed) {
+        for (let i = 0; i < recomputed.length; i++) {
+          const a = prev[i]
+          const b = recomputed[i]
+          if (
+            a.categoryName !== b.categoryName ||
+            a.categoryIcon !== b.categoryIcon ||
+            a.categoryColor !== b.categoryColor ||
+            a.accountName !== b.accountName ||
+            a.toAccountName !== b.toAccountName ||
+            a.subcategoryName !== b.subcategoryName
+          ) {
+            changed = true
+            break
+          }
+        }
+      }
+      return changed ? recomputed : prev
+    })
+  }, [accounts, categories, subCategories, recomputeTransactions])
 
   // ============================================================
   // 大额支出阈值
@@ -551,17 +662,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // 2. 更新 IndexedDB
     await localTransactions.update(id, dbUpdates)
 
-    // 3. 更新本地 state
-    setTransactions(prev => prev.map(t => {
-      if (t.id !== id) return t
-      return { ...t, ...data }
-    }))
+    // 3. 更新本地 state：先合入 data，再用最新字典重算全部派生显示字段
+    setTransactions(prev => {
+      const merged = prev.map(t => t.id === id ? { ...t, ...data } : t)
+      return recomputeTransactions(merged)
+    })
 
     // 4. 后台同步
     syncEngine.syncAfterWrite('transactions', userId).catch(err => {
       console.error('后台同步更新交易失败:', err)
     })
-  }, [userId])
+  }, [userId, recomputeTransactions])
 
   // ============================================================
   // CRUD: 账户
@@ -1200,6 +1311,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       bigExpenseThreshold,
       setBigExpenseThreshold,
       refreshData,
+      resetAndReload,
     }}>
       {children}
     </AppContext.Provider>

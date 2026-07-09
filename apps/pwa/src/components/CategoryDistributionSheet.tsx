@@ -3,6 +3,7 @@ import { useTheme } from '../context/ThemeContext'
 import { useApp } from '../context/AppContext'
 import { DonutChart } from './charts/DonutChart'
 import { X } from 'lucide-react'
+import { formatCurrency } from '../utils/format'
 
 export interface CategoryDistributionSheetProps {
   visible: boolean
@@ -171,7 +172,7 @@ export default function CategoryDistributionSheet({
               <div className={`text-xs mt-0.5 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>总支出</div>
               {/* Donut 中心与顶部总金额一致：保留两位小数 */}
               <div className="text-2xl font-bold font-mono text-danger mt-1">
-                ¥{result.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {formatCurrency(result.total, false, false)}
               </div>
             </div>
 
@@ -203,7 +204,7 @@ export default function CategoryDistributionSheet({
                       </div>
                       <div className="text-right shrink-0 ml-2">
                         <div className={`text-sm font-mono ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
-                          ¥{it.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {formatCurrency(it.amount, false, false)}
                         </div>
                         <div className={`text-xs ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                           {it.percent}%

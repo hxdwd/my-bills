@@ -89,8 +89,7 @@ async function pullTable(tableName: TableName, userId: string): Promise<void> {
   const resp = await fetch(url, { headers })
   if (!resp.ok) {
     const errBody = await resp.text()
-    console.error(`[Sync] 拉取 ${tableName} 失败:`, resp.status, errBody)
-    return
+    throw new Error(`[Sync] 拉取 ${tableName} 失败: ${resp.status} ${errBody}`)
   }
 
   const data = await resp.json() as any[]

@@ -4,6 +4,7 @@ import { useApp } from '../context/AppContext'
 import Card from '../components/ui/Card'
 import TransactionItem from '../components/ui/TransactionItem'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { formatCurrency } from '../utils/format'
 
 export default function CalendarPage() {
   const { theme } = useTheme()
@@ -108,7 +109,7 @@ export default function CalendarPage() {
         </h1>
       </header>
 
-      <main className="px-5 pb-6 space-y-4 animate-page-fade">
+      <main className="px-5 tabbar-safe space-y-4 animate-page-fade">
         {/* Month Navigation */}
         <div className="flex items-center justify-between">
           <button onClick={prevMonth} className="p-1.5">
@@ -238,19 +239,19 @@ export default function CalendarPage() {
             <div className="text-center">
               <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>收入</div>
               <div className="text-ok font-mono font-bold">
-                ¥{(monthlyStats.income / 1000).toFixed(1)}k
+                {formatCurrency(monthlyStats.income, false, true)}
               </div>
             </div>
             <div className="text-center">
               <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>支出</div>
               <div className="text-danger font-mono font-bold">
-                ¥{(monthlyStats.expense / 1000).toFixed(1)}k
+                {formatCurrency(monthlyStats.expense, false, true)}
               </div>
             </div>
             <div className="text-center">
               <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>结余</div>
               <div className={`font-mono font-bold ${monthlyStats.income - monthlyStats.expense >= 0 ? 'text-[#5b8dee]' : 'text-danger'}`}>
-                ¥{((monthlyStats.income - monthlyStats.expense) / 1000).toFixed(1)}k
+                {formatCurrency(monthlyStats.income - monthlyStats.expense, false, true)}
               </div>
             </div>
           </div>

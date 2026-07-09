@@ -263,7 +263,7 @@ export default function AssetsPage() {
         </h1>
       </header>
 
-      <main className="px-5 pb-6 space-y-4 animate-page-fade">
+      <main className="px-5 tabbar-safe space-y-4 animate-page-fade">
         {/* Total Assets Card */}
         <Card className="!p-5">
           <div className="text-center mb-4">

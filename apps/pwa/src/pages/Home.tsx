@@ -43,7 +43,6 @@ export default function HomePage({ onAddTransaction }: HomePageProps = {}) {
   const balance = monthlyIncome - monthlyExpense
   const budget = getBudgetProgress()
 
-  const currentMonth = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long' })
   const hour = new Date().getHours()
   const greeting = hour < 6 ? '凌晨好' : hour < 12 ? '早上好' : hour < 14 ? '中午好' : hour < 18 ? '下午好' : '晚上好'
 
@@ -60,17 +59,7 @@ export default function HomePage({ onAddTransaction }: HomePageProps = {}) {
 
   return (
     <div className="min-h-screen bg-bg">
-      {/* Header */}
-      <header className="sticky top-0 z-40 bg-bg/80 backdrop-blur-md safe-area-top">
-        <div className="flex items-center justify-between h-14 px-5">
-          <div>
-            <h1 className="text-xl font-serif font-semibold text-ink">钱盒子</h1>
-            <p className="text-xs text-ink-2 mt-0.5">{currentMonth}</p>
-          </div>
-        </div>
-      </header>
-
-      <main className="px-5 pb-[150px] space-y-4 overflow-x-hidden animate-page-fade">
+      <main className="px-5 tabbar-safe space-y-4 overflow-x-hidden animate-page-fade pt-4">
         {/* 顶部大卡：欢迎 + 总资产 + 当月统计 */}
         <Card className="bg-gradient-to-br from-brand to-brand-soft text-ink shadow-soft-brand stagger">
           <div className="flex items-start justify-between">
