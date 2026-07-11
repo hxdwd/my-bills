@@ -125,6 +125,7 @@ interface AppContextType {
   getYearMonthExpense: (year: number) => { labels: string[]; income: number[]; expense: number[] }
   getYearMonthDetail: (year: number) => { month: string; income: number; expense: number; balance: number }[]
   getMonthExpenseByCategory: (year: number, month: number) => (Category & { total: number })[]
+  loading: boolean
   bigExpenseThreshold: number
   setBigExpenseThreshold: (threshold: number) => Promise<void>
   refreshData: () => Promise<void>
@@ -1312,6 +1313,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setBigExpenseThreshold,
       refreshData,
       resetAndReload,
+      loading,
     }}>
       {children}
     </AppContext.Provider>

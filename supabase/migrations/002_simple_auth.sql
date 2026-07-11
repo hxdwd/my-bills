@@ -202,10 +202,34 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- 创建获取当前用户的函数
+-- 鉴权来源优先级：
+--   1) REST 请求头 x-user-id（PostgREST 放入 request.headers GUC，同步引擎 push/pull 都带此头）
+--   2) 会话变量 app.current_user_id（set_current_user_id RPC 设置，兼容旧路径）
+-- 注意：本项目为自定义登录，auth.uid() 恒为 NULL，不可用于 RLS。
 CREATE OR REPLACE FUNCTION public.get_current_user_id()
 RETURNS UUID AS $$
+DECLARE
+  h text;
+  s text;
 BEGIN
-  RETURN NULLIF(current_setting('app.current_user_id', true), '')::UUID;
+  BEGIN
+    h := current_setting('request.headers', true);
+  EXCEPTION WHEN OTHERS THEN
+    h := NULL;
+  END;
+  IF h IS NOT NULL AND h <> '' THEN
+    BEGIN
+      RETURN NULLIF((h::json->>'x-user-id')::text, '')::UUID;
+    EXCEPTION WHEN OTHERS THEN
+      -- header 解析失败则继续回退
+    END;
+  END IF;
+  BEGIN
+    s := current_setting('app.current_user_id', true);
+  EXCEPTION WHEN OTHERS THEN
+    s := NULL;
+  END;
+  RETURN NULLIF(s, '')::UUID;
 END;
 $$ LANGUAGE plpgsql STABLE;
 

@@ -126,7 +126,7 @@ export default function SettingsPage() {
             </div>
           )
         },
-        { icon: <Globe size={20} className="text-ok" />, title: '多币种', subtitle: '人民币', onClick: () => {} },
+        { icon: <Globe size={20} className="text-ok" />, title: '多币种资产', subtitle: '美股/港股按原币种展示，可在财富页切换本位币', onClick: () => navigate('/wealth') },
         { 
           icon: <DollarSign size={20} className="text-danger" />, 
           title: '大额支出阈值', 

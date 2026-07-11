@@ -7,9 +7,15 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
+    "typecheck:functions": "tsc -p tsconfig.functions.json",
     "preview": "vite preview",
     "db:migrate": "supabase migration up",
-    "db:seed": "supabase db seed"
+    "db:seed": "supabase db seed",
+    "e2e": "node scripts/e2e-env.mjs",
+    "e2e:fresh": "node scripts/e2e-env.mjs --fresh",
+    "e2e:skip-env": "node scripts/e2e-env.mjs --skip-env",
+    "e2e:run": "node scripts/e2e-smoke.mjs",
+    "e2e:clean": "node scripts/clean-tmp.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.109.0",
@@ -24,6 +30,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260710.1",
     "@eslint/js": "^9.9.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
@@ -33,6 +40,7 @@
     "eslint-plugin-react-hooks": "^5.1.0-rc.0",
     "eslint-plugin-react-refresh": "^0.4.9",
     "globals": "^15.9.0",
+    "playwright": "^1.61.1",
     "postcss": "^8.4.45",
     "supabase": "^1.200.0",
     "tailwindcss": "^3.4.10",

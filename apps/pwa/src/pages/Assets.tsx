@@ -39,7 +39,7 @@ const accountTypeLabels: Record<string, string> = {
 
 export default function AssetsPage() {
   const { theme } = useTheme()
-  const { accounts, getTotalAssets, getTotalLiabilities, getNetAssets, addAccount, updateAccount, setDefaultAccount, deleteAccount, getAssetTrend } = useApp()
+  const { accounts, loading, getTotalAssets, getTotalLiabilities, getNetAssets, addAccount, updateAccount, setDefaultAccount, deleteAccount, getAssetTrend } = useApp()
   const [showAddAccount, setShowAddAccount] = useState(false)
   const [editingAccount, setEditingAccount] = useState<Account | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -265,6 +265,54 @@ export default function AssetsPage() {
       </header>
 
       <main className="px-5 tabbar-safe space-y-4 animate-page-fade">
+        {loading ? (
+          <>
+            {/* 骨架屏：首屏本地数据(IndexedDB)尚未就绪时显示，避免「0 闪烁」 */}
+            <Card className="!p-5">
+              <div className="text-center mb-4">
+                <div className="h-4 w-16 bg-brand-tint/60 rounded mx-auto mb-2 animate-pulse" />
+                <div className="h-9 w-40 bg-brand-tint/60 rounded mx-auto animate-pulse" />
+              </div>
+              <div className="grid grid-cols-2 gap-4 pt-4 border-t border-brand-tint dark:border-brand-tint">
+                <div className="text-center space-y-2">
+                  <div className="h-3 w-12 bg-brand-tint/60 rounded mx-auto animate-pulse" />
+                  <div className="h-6 w-20 bg-brand-tint/60 rounded mx-auto animate-pulse" />
+                </div>
+                <div className="text-center space-y-2">
+                  <div className="h-3 w-12 bg-brand-tint/60 rounded mx-auto animate-pulse" />
+                  <div className="h-6 w-20 bg-brand-tint/60 rounded mx-auto animate-pulse" />
+                </div>
+              </div>
+            </Card>
+            <Card className="!p-4">
+              <div className="h-5 w-20 bg-brand-tint/60 rounded mb-3 animate-pulse" />
+              <div className="flex items-center gap-4">
+                <div className="w-32 h-32 rounded-full bg-brand-tint/60 animate-pulse" />
+                <div className="flex-1 space-y-3">
+                  {[0, 1, 2].map(i => (
+                    <div key={i} className="flex items-center justify-between">
+                      <div className="h-4 w-24 bg-brand-tint/60 rounded animate-pulse" />
+                      <div className="h-4 w-16 bg-brand-tint/60 rounded animate-pulse" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </Card>
+            <Card className="!p-0 divide-y divide-[#f0eee6] dark:divide-[#3d3d3a]">
+              {[0, 1, 2, 3].map(i => (
+                <div key={i} className="flex items-center gap-3 p-4">
+                  <div className="w-10 h-10 rounded-xl bg-brand-tint/60 animate-pulse" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-4 w-28 bg-brand-tint/60 rounded animate-pulse" />
+                    <div className="h-3 w-16 bg-brand-tint/60 rounded animate-pulse" />
+                  </div>
+                  <div className="h-5 w-20 bg-brand-tint/60 rounded animate-pulse" />
+                </div>
+              ))}
+            </Card>
+          </>
+        ) : (
+          <>
         {/* Total Assets Card */}
         <Card className="!p-5">
           <div className="text-center mb-4">
@@ -479,6 +527,8 @@ export default function AssetsPage() {
             )}
           </div>
         </Card>
+          </>
+        )}
       </main>
 
       {/* Add Account Sheet */}

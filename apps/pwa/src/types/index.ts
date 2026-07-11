@@ -95,7 +95,7 @@ export interface AppState {
 export type ThemeMode = 'light' | 'dark';
 
 // Tab 类型
-export type TabType = 'home' | 'add' | 'assets' | 'reports' | 'calendar' | 'budget' | 'ai' | 'search' | 'transactions' | 'settings';
+export type TabType = 'home' | 'add' | 'assets' | 'reports' | 'calendar' | 'budget' | 'ai' | 'search' | 'transactions' | 'settings' | 'wealth';
 
 // 记一笔表单数据
 export interface TransactionFormData {
@@ -127,3 +127,8 @@ export interface Tag {
   name: string;
   color: string;
 }
+
+// ============================================================
+// 投资持仓（流水账模型）
+// ============================================================
+

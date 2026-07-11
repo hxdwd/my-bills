@@ -40,3 +40,8 @@ supabase/.branches/
 
 # 本地历史账单数据（含个人隐私，不入库）
 history-bills/
+
+# 临时验证脚本与 e2e 产物（含登录态 state.json，勿入库）
+scripts/.tmp/
+scripts/e2e-state.json
+_*

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter, useLocation } from 'react-router-dom';
+import { BrowserRouter, useLocation, matchPath, Routes, Route } from 'react-router-dom';
 import { ThemeProvider } from './context/ThemeContext';
 import { AppProvider } from './context/AppContext';
 import { TabBar } from './components/layout';
@@ -17,11 +17,17 @@ import {
   SettingsPage as Settings,
   TransactionListPage as TransactionList,
   CategoriesPage as Categories,
+  WealthHome,
+  WealthCategory,
+  WealthDetail,
+  WealthAdd,
+  WealthImport,
 } from './pages';
 import { TabType } from './types';
 import { UpdatePrompt } from './pwa/UpdatePrompt';
 
 // URL 路径到 Tab 的映射
+// 注：calendar 不再是底部 Tab（已在 TabBar 移除），但保留映射以便首页快捷入口进入时同步 activeTab
 const pathToTab: Record<string, TabType> = {
   '/': 'home',
   '/home': 'home',
@@ -33,15 +39,28 @@ const pathToTab: Record<string, TabType> = {
   '/search': 'search',
   '/transactions': 'transactions',
   '/settings': 'settings',
+  '/wealth': 'wealth',
 };
 
 // 子页面路由映射 (不映射到 TabBar，直接渲染页面)
-const subPageRoutes: Record<string, () => JSX.Element> = {};
+// 使用带参数的 path 模板，配合 matchPath 做匹配（精确字符串匹配无法命中 :param 路由）
+interface SubRoute { path: string; element: () => JSX.Element }
+const subPageRoutes: SubRoute[] = [];
 let subPageRoutesInited = false;
 function ensureSubPageRoutes() {
   if (subPageRoutesInited) return;
-  subPageRoutes['/categories'] = () => <Categories />;
+  subPageRoutes.push({ path: '/categories', element: () => <Categories /> });
+  // 注意：具体路由必须排在 /wealth/:type 之前，否则 /wealth/add 会被 :type 抢先匹配
+  subPageRoutes.push({ path: '/wealth/detail/:market/:symbol', element: () => <WealthDetail /> });
+  subPageRoutes.push({ path: '/wealth/add', element: () => <WealthAdd /> });
+  subPageRoutes.push({ path: '/wealth/import', element: () => <WealthImport /> });
+  subPageRoutes.push({ path: '/wealth/:type', element: () => <WealthCategory /> });
   subPageRoutesInited = true;
+}
+
+// 根据当前 pathname 找到匹配的子页面路由（支持 :param）
+function matchSubPage(pathname: string): SubRoute | undefined {
+  return subPageRoutes.find(r => matchPath(r.path, pathname));
 }
 
 function AppContent() {
@@ -86,10 +105,17 @@ function AppContent() {
   ensureSubPageRoutes();
 
   const renderPage = () => {
-    // 优先检查子页面路由（如 /categories）
-    const subPage = subPageRoutes[location.pathname];
+    // 优先检查子页面路由（如 /categories、/wealth/detail/:market/:symbol）
+    const subPage = matchSubPage(location.pathname);
     if (subPage) {
-      return subPage();
+      // 用 <Routes> 包裹，使 <Route> 上下文正确注入 :param（useParams 才能取到值）
+      return (
+        <Routes>
+          {subPageRoutes.map((r) => (
+            <Route key={r.path} path={r.path} element={<r.element />} />
+          ))}
+        </Routes>
+      );
     }
 
     switch (activeTab) {
@@ -111,13 +137,16 @@ function AppContent() {
         return <TransactionList />;
       case 'settings':
         return <Settings />;
+      case 'wealth':
+        return <WealthHome />;
       default:
         return <Home onAddTransaction={() => setShowAddTransaction(true)} />;
     }
   };
 
-  // 子页面不显示底部 TabBar
-  const isSubPage = subPageRoutes[location.pathname] !== undefined;
+  // 子页面不显示底部 TabBar（含财富明细页）
+  const isSubPage =
+    matchSubPage(location.pathname) !== undefined;
 
   return (
     <div className="min-h-screen bg-bg">

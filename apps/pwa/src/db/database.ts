@@ -107,6 +107,24 @@ export interface TagRecord {
   _updated_at_local: string
 }
 
+// 财富持仓流水（买入/卖出记录，当前持仓由聚合得出）
+export interface HoldingTransactionRecord {
+  id: string // UUID，对齐远程表与同步引擎的 on_conflict=id
+  user_id: string
+  symbol: string
+  market: 'CN' | 'HK' | 'US' | 'FUND' | 'GOLD'
+  name: string
+  direction: 'buy' | 'sell'
+  quantity: number
+  price: number
+  date: string // YYYY-MM-DD
+  note?: string | null
+  created_at: string
+  updated_at: string
+  _sync_status: SyncStatus
+  _updated_at_local: string
+}
+
 // 用户设置
 export interface ProfileRecord {
   id: string
@@ -236,10 +254,79 @@ class BillsDatabase extends Dexie {
         return Promise.all(updates)
       })
     })
+    // v6: 沿用 v5 表结构（持仓交易流水表已移除）
+    this.version(6).stores({
+      accounts: 'id, user_id, _sync_status, type, is_active, is_default',
+      categories: 'id, user_id, _sync_status, type',
+      transactions: 'id, user_id, _sync_status, transaction_date, account_id, type, category_id, subcategory_id, tags',
+      budgets: 'id, user_id, _sync_status, month, category_id',
+      subCategories: 'id, user_id, _sync_status, category_id, sort_order',
+      tags: 'id, user_id, _sync_status',
+      profiles: 'id, _sync_status',
+      syncMeta: 'key',
+    })
+    // v7: 首次引入财富持仓流水表 holdings_transactions
+    this.version(7).stores({
+      accounts: 'id, user_id, _sync_status, type, is_active, is_default',
+      categories: 'id, user_id, _sync_status, type',
+      transactions: 'id, user_id, _sync_status, transaction_date, account_id, type, category_id, subcategory_id, tags',
+      budgets: 'id, user_id, _sync_status, month, category_id',
+      subCategories: 'id, user_id, _sync_status, category_id, sort_order',
+      tags: 'id, user_id, _sync_status',
+      profiles: 'id, _sync_status',
+      syncMeta: 'key',
+      holdings_transactions: '++id, user_id, symbol, market, direction, date',
+    })
+
+    // v8: 移除 holdings_transactions（Dexie 会自动删旧 ++id 表，旧数据清空——财富可重建）
+    this.version(8).stores({
+      accounts: 'id, user_id, _sync_status, type, is_active, is_default',
+      categories: 'id, user_id, _sync_status, type',
+      transactions: 'id, user_id, _sync_status, transaction_date, account_id, type, category_id, subcategory_id, tags',
+      budgets: 'id, user_id, _sync_status, month, category_id',
+      subCategories: 'id, user_id, _sync_status, category_id, sort_order',
+      tags: 'id, user_id, _sync_status',
+      profiles: 'id, _sync_status',
+      syncMeta: 'key',
+    })
+
+    // v9: 以 UUID 'id' 主键重建 holdings_transactions（对齐远程表与同步引擎 on_conflict=id）
+    this.version(9).stores({
+      accounts: 'id, user_id, _sync_status, type, is_active, is_default',
+      categories: 'id, user_id, _sync_status, type',
+      transactions: 'id, user_id, _sync_status, transaction_date, account_id, type, category_id, subcategory_id, tags',
+      budgets: 'id, user_id, _sync_status, month, category_id',
+      subCategories: 'id, user_id, _sync_status, category_id, sort_order',
+      tags: 'id, user_id, _sync_status',
+      profiles: 'id, _sync_status',
+      syncMeta: 'key',
+      holdings_transactions: 'id, user_id, _sync_status, symbol, market, direction, date',
+    })
   }
+
+  // 财富持仓流水记录（主键为 UUID 字符串，对齐远程表与同步引擎）
+  holdings_transactions!: Table<HoldingTransactionRecord, string>
 }
 
 export const db = new BillsDatabase()
+
+// 自修复：若因历史 schema 冲突（如持仓表主键变更）导致升级失败，
+// 直接清空本地库并以最新 schema 重建（数据可由远程同步引擎拉回）。
+db.open().catch(async (err: any) => {
+  const msg = String(err?.message || '')
+  if (/primary key|changing primary|UpgradeError|DatabaseClosed/i.test(msg)) {
+    console.warn('[DB] 检测到 schema 升级冲突，重置本地库以恢复：', msg)
+    try {
+      await Dexie.delete('MyBillsDB')
+      location.reload()
+    } catch (e) {
+      console.error('[DB] 重置失败', e)
+    }
+  } else {
+    console.error('[DB] 打开失败', err)
+  }
+})
+
 
 // 辅助函数：生成新记录的基础字段
 export function newRecordBase(userId: string) {

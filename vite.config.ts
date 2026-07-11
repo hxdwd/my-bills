@@ -9,6 +9,12 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'prompt',
+      // 开发环境下禁用 SW 注册：否则 dev-sw.js 会被反复轮询，
+      // 导致 workbox-*.js 不停 304 请求、needRefresh 频繁触发更新弹窗（页面卡死/崩溃）。
+      // 生产构建 (build + preview) 不受影响，仍正常注册 SW 与更新提示。
+      devOptions: {
+        enabled: false,
+      },
       includeAssets: ['favicon.ico', 'favicon.svg', 'pwa-512x512.svg'],
       manifest: {
         name: '钱盒子 - 个人记账',

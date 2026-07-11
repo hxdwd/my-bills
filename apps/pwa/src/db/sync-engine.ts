@@ -22,6 +22,7 @@ const TABLE_NAMES = [
   'subCategories',
   'tags',
   'profiles',
+  'holdings_transactions',
 ] as const
 
 type TableName = (typeof TABLE_NAMES)[number]
@@ -36,6 +37,7 @@ const REMOTE_TABLE_MAP: Record<TableName, string> = {
   subCategories: 'sub_categories',
   tags: 'tags',
   profiles: 'profiles',
+  holdings_transactions: 'holdings_transactions',
 }
 
 function remoteTable(tableName: TableName): string {
@@ -338,6 +340,7 @@ async function clearAllData(): Promise<void> {
   await db.subCategories.clear()
   await db.tags.clear()
   await db.profiles.clear()
+  await db.holdings_transactions.clear()
   // 必须同时清除同步基准，否则 lastSync 残留会让后续同步走"增量"分支，
   // 早于 lastSync 创建的远程数据（如老标签）永远拉不回来。
   await db.syncMeta.clear()
