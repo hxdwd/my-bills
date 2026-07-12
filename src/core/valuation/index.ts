@@ -17,7 +17,7 @@ import {
   setHistoryCache,
   FxCache,
 } from './cache'
-import { fetchQuote, fetchHistory, resetPerf, takePerf } from './adapter'
+import { fetchQuote, fetchHistory } from './adapter'
 
 const SUPPORTED_CURRENCIES: Currency[] = ['CNY', 'USD', 'HKD']
 
@@ -67,15 +67,11 @@ function pickFields(result: ValuationResult, fields?: string[]): ValuationResult
 // 主引擎：接收请求体 + KV 环境，返回批量估值结果
 export async function runValuation(
   req: BatchRequest,
-  kv: KVNamespace,
-  debug = false
+  kv: KVNamespace
 ): Promise<BatchResponseData> {
   // 注意：各资产市值/盈亏均以其自身币种返回（见上方组装逻辑），
   // 不再接受 target_currency 折算请求；保留字段以避免破坏请求契约。
   const items = req.items ?? []
-
-  // 性能收集：每次请求重置，结束后取明细（仅 debug 时返回）
-  if (debug) resetPerf()
 
   // 汇率
   const _fxT0 = Date.now()
@@ -102,7 +98,6 @@ export async function runValuation(
 
   // 2. 找出未命中缓存的 symbol（去重），并行拉取
   const missingKeys = uniqueKeys.filter((k) => !cachedMap[k])
-  console.log(`[perf] batch kv: total=${uniqueKeys.length} hit=${uniqueKeys.length - missingKeys.length} miss=${missingKeys.length} fx=${fxMs}ms`)
   const fetched: Record<string, QuoteCacheValue | null> = {}
 
   await Promise.allSettled(
@@ -192,23 +187,13 @@ export async function runValuation(
   // 5. 按需字段裁剪
   const trimmed = req.fields ? results.map((r) => pickFields(r, req.fields)) : results
 
-  const out: BatchResponseData = {
+  return {
     results: trimmed,
     total_market_value: 0,
     total_profit_loss: 0,
     total_currency: 'CNY',
     exchange_rates: fx.rates,
   }
-  if (debug) {
-    out.__perf = {
-      fxMs,
-      kvTotal: uniqueKeys.length,
-      kvHit: uniqueKeys.length - missingKeys.length,
-      kvMiss: missingKeys.length,
-      fetches: takePerf(),
-    }
-  }
-  return out
 }
 
 // 单资产行情详情
@@ -224,7 +209,6 @@ export async function runQuoteDetail(
     const key = quoteCacheKey(m, symbol)
     const c = await getQuoteCache(kv, key)
     if (c) {
-      console.log(`[perf] detail kv: hit key=${key}`)
       return {
         quote: {
           symbol,
@@ -242,7 +226,6 @@ export async function runQuoteDetail(
   const q = await fetchQuote(symbol, m)
   if (kv) {
     const key = quoteCacheKey(m, symbol)
-    console.log(`[perf] detail kv: miss key=${key}`)
     setQuoteCache(kv, key, {
       price: q.price,
       timestamp: Date.now(),
@@ -277,14 +260,12 @@ export async function runHistory(
   const key = historyCacheKey(p.market, symbol, period)
   const cached = await getHistoryCache(kv, key)
   if (cached) {
-    console.log(`[perf] history kv: hit key=${key}`)
     try {
       return JSON.parse(cached)
     } catch {
       // 忽略损坏缓存
     }
   }
-  console.log(`[perf] history kv: miss key=${key}`)
   try {
     const data = await fetchHistory(symbol, p.market, period)
     if (data.length > 0) {

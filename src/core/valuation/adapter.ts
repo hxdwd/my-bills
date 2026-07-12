@@ -1,23 +1,6 @@
 import type { Market, NormalizedQuote, Currency } from '../../types/api'
 import { parseSymbol } from './parser'
 
-// ============ 性能收集（debug 响应通道用，不影响业务） ============
-export interface PerfEntry {
-  url: string
-  status: number // 0 表示请求失败（未拿到响应）
-  ok: boolean
-  ms: number
-  err?: string
-}
-// 模块级收集器：每次 runValuation 前 reset，结束后取出
-let _perf: PerfEntry[] = []
-export function resetPerf(): void {
-  _perf = []
-}
-export function takePerf(): PerfEntry[] {
-  return _perf
-}
-
 // 统一超时 fetch：超过 timeoutMs 视为失败抛 AbortError
 async function fetchWithTimeout(
   url: string,
@@ -25,16 +8,11 @@ async function fetchWithTimeout(
   timeoutMs = 3000
 ): Promise<Response> {
   const controller = new AbortController()
-  const _t0 = Date.now()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
     const res = await fetch(url, { ...init, signal: controller.signal })
-    console.log(`[perf] fetch ${res.status} ${Date.now() - _t0}ms ${url.slice(0, 80)}`)
-    _perf.push({ url: url.slice(0, 100), status: res.status, ok: res.ok, ms: Date.now() - _t0 })
     return res
   } catch (e: any) {
-    console.log(`[perf] fetch ERR ${Date.now() - _t0}ms ${url.slice(0, 80)} ${e?.message ?? e}`)
-    _perf.push({ url: url.slice(0, 100), status: 0, ok: false, ms: Date.now() - _t0, err: String(e?.message ?? e) })
     throw e
   } finally {
     clearTimeout(timer)

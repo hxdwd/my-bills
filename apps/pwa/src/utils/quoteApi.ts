@@ -46,14 +46,6 @@ export interface BatchResponseData {
   total_profit_loss: number
   total_currency: 'CNY' | 'USD' | 'HKD'
   exchange_rates: Record<string, number>
-  // 仅 ?debug=1 时返回，含 fxMs / KV 命中 / 各 fetch 耗时明细
-  __perf?: {
-    fxMs: number
-    kvTotal: number
-    kvHit: number
-    kvMiss: number
-    fetches: Array<{ url: string; status: number; ok: boolean; ms: number; err?: string }>
-  }
 }
 
 export interface QuoteDetail {
@@ -72,6 +64,7 @@ const QUOTE_NETWORK_ERROR = '行情服务连接失败，请检查网络或服务
 // 统一请求包装：拦截网络层异常（fetch reject → "Failed to fetch" 等），
 // 转成中文提示；业务层错误（code !== 0）保持原 message。
 async function requestJSON<T>(init: RequestInit & { path: string }): Promise<T> {
+  const _t0 = performance.now()
   let resp: Response
   try {
     resp = await fetch(`${FUNCTIONS_URL}${init.path}`, {
@@ -81,8 +74,10 @@ async function requestJSON<T>(init: RequestInit & { path: string }): Promise<T> 
     })
   } catch {
     // fetch 本身 reject：网络不通 / 服务未启动（浏览器原生 "Failed to fetch"）
+    console.log(`[perf] ${init.method || 'GET'} ${init.path} failed ${(performance.now() - _t0).toFixed(0)}ms`)
     throw new Error(QUOTE_NETWORK_ERROR)
   }
+  console.log(`[perf] ${init.method || 'GET'} ${init.path} ${(performance.now() - _t0).toFixed(0)}ms status=${resp.status}`)
   let json: any
   try {
     json = await resp.json()

@@ -21,13 +21,9 @@ export const onRequestPost = async (context: any) => {
     return json({ code: 400, message: `items 最多 ${MAX_ITEMS} 条，当前 ${items.length}` }, 400)
   }
 
-  // debug=1 时把耗时明细随响应返回（?debug=1 或 body.debug），便于浏览器查看生产耗时
-  const debug =
-    new URL(request.url).searchParams.get('debug') === '1' || body?.debug === true
-
   try {
-    const data: BatchResponseData = await runValuation(body, env.QUOTE_CACHE, debug)
-    console.log(`[perf] POST /api/valuation/batch total=${Date.now() - _t0}ms items=${items.length} debug=${debug}`)
+    const data: BatchResponseData = await runValuation(body, env.QUOTE_CACHE)
+    console.log(`[perf] POST /api/valuation/batch total=${Date.now() - _t0}ms items=${items.length}`)
     return json({ code: 0, message: 'ok', data }, 200)
   } catch (e: any) {
     console.error('[batch] error', e)
