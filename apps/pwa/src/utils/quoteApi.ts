@@ -1,7 +1,9 @@
 // 行情 / 估值 Functions 接口封装
-// base URL 取自 VITE_FUNCTIONS_URL（本地 wrangler: http://localhost:8799）
+// 生产环境用同源相对路径（'' → fetch('/api/...') 自动打到 Pages Functions）。
+// 本地开发(wrangler dev)时，在 apps/pwa/.env 设 VITE_FUNCTIONS_URL=http://localhost:8799 指向本地函数。
+// 注意：VITE_ 变量是构建时注入，改完需重新构建再部署，仅 push 源码不会生效。
 
-const FUNCTIONS_URL = (import.meta.env.VITE_FUNCTIONS_URL || 'http://localhost:8799').replace(/\/$/, '')
+const FUNCTIONS_URL = (import.meta.env.VITE_FUNCTIONS_URL || '').replace(/\/$/, '')
 
 export type Market = 'CN' | 'HK' | 'US' | 'FUND' | 'GOLD'
 
