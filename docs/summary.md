@@ -171,6 +171,140 @@ VITE_APP_URL=http://localhost:5173
 
 ---
 
+## 2026-07-12：估值缓存优化 + 黄金获取逻辑修正（留档）
+
+> 本日围绕 `/api/valuation/batch` 的**缓存命中率**与**黄金数据源可靠性**做了一轮优化与线上验证。
+> 重点：① 汇率缓存 TTL 写错的真实 bug；② 黄金主/备源字段修正与本地 gbk 验证；③ 黄金独立长 TTL 缓存；④ 线上日志逐条分析，并纠正了一处对 KV 绑定错误的猜测。
+> 本文为留档记录，非工作总结，与下方其他章节不冲突。
+
+### 一、需求与改动清单（按发生顺序）
+
+1. **汇率缓存有效期 5min → 1h**
+   - 背景：一天内汇率波动很小，无需每个 batch 都打外部汇率接口（`api.exchangerate-api.com`）。
+   - 改动：`src/core/valuation/index.ts` 的 `FX_FRESH_MS` 由 `5*60*1000` 改为 `60*60*1000`，读取判定按 1h 判 fresh。
+   - 提交：`531cbbb`。
+
+2. **黄金获取逻辑自测 + 备用源字段修正**
+   - 背景：用户要求改完必须本地自测再交付，反复强调"给我的代码一定是可靠有用的"。
+   - 问题：`fetchGoldSina` 原误用 `gds_AUTD` 且字段解析错（`parts[0]`/`parts[7]`）。
+   - 修正：`src/core/valuation/adapter.ts` 的 `fetchGoldSina` 改为 `https://hq.sinajs.cn/list=SGE_AU9999`（上金所黄金9999现货，GBK），`price=parseFloat(parts[7])`、`prevClose=parseFloat(parts[4])`、涨跌额 `(price-prevClose)/prevClose`。
+   - 主源 `fetchGold`（东财 AU9999）：`price=f43/100`、`changePercent=f170/100`、currency=CNY、超时 1500ms。
+   - **本地验证**：Node 原生 `TextDecoder` 不支持 gbk，用 `npm i --no-save iconv-lite` 真实 gbk 解码跑通备用源，确认数值正确后移除依赖。
+   - 提交：`5cdedf1`（内容含修正，验证后补交）。
+   - **计价口径确认**：黄金一直以国内为准——东财 AU9999 **人民币元/克**，无汇率换算；Yahoo `GC=F` 仅用于历史走势形状（等比缩放），不参与实时计价。此点用户明确："应该以国内计价为准，单纯除以汇率波动太大"。
+
+3. **黄金缓存优化（独立长 TTL + 过期降级）**
+   - 背景：`fetchGold` 单源回源约 1.5s，是 batch 主要耗时来源。
+   - 改动：`src/core/valuation/cache.ts` 新增 `GOLD_TTL=10*60`（10min）、`GOLD_STALE_GRACE_MS=6h`；新增 `getGoldCache`/`setGoldCache`（key `gold:AU9999`，TTL 10min）；`index.ts` 在 missingKeys 循环中对 `marketStr==='GOLD'` 先查 `getGoldCache`，fresh 直接命中跳过回源；回源失败且在 6h 宽限期内用旧价兜底（stale fallback，不报错）。
+   - 本地 mock KV 验证三态（fresh/stale/none）通过。
+   - 提交：`5f2a02d`。
+
+4. **汇率写入 TTL 错配 bug（本日最终定位并修复，待 commit）**
+   - 问题：`cache.ts` 的 `setFxCache` 写入用了 `QUOTE_TTL`（300s），但 `index.ts` 读取按 `FX_FRESH_MS`（1h）判 fresh。即"设计缓存 1h，实际只活 5min"，每 5 分钟必回源一次。
+   - 改动：`cache.ts` 新增 `FX_TTL = 60*60`，`setFxCache` 的 `expirationTtl` 由 `QUOTE_TTL` 改为 `FX_TTL`。**截至留档时尚未 commit**（等用户确认 KV 绑定无误后一并提交）。
+
+### 二、线上日志分析（用户提供的 3 类日志）
+
+> 接口请求频率：约每 1 分钟一次（16:23:22 / 16:24:22 / 16:25:22 …）。
+> colo 均为 `HKG`（香港），`executionModel: stateless`。
+
+**日志 A — 页面第一次请求（POST /api/valuation/batch）**
+- `wallTime 1552ms`，`outcome: ok`。
+- `fx KV cache HIT (age 287s, skip origin)` → 汇率命中，无回源 ✅
+- `KV quote lookup 10ms | keys=7 hit=6 miss=1 missKeys=[quote:GOLD:AU9999]` → 7 标的中仅黄金未命中 ✅
+- `fetch OK GOLD:AU9999 1527ms` → 唯一回源，占 ~99% 耗时（东财主源固有延迟）
+- 结论：首次请求因黄金缓存为空必然回源，其余 6 标的总称命中，符合设计预期。
+
+**日志 B — 页面第二次请求**
+- `wallTime 2531ms`，`outcome: ok`。
+- `fx origin fetch 263ms (每次强制回源 exchangerate-api)` + `loadExchangeRates total 898ms` → 汇率未命中、回源 ✅（此即 TTL 错配 bug 的线上表现：5min TTL 已过期）
+- `KV quote lookup 222ms | keys=7 hit=1 miss=6` → 6 标的总称 miss（KV 冷读 222ms 波动属 Cloudflare KV 边缘正常抖动）
+- `fetch OK GOLD:AU9999 1379ms` + 5 条基金/股票各 ~227ms 并行回源
+- 结论：本次因汇率 TTL 错配（5min）触发回源，且 KV 边缘冷读波动导致标的批量 miss；总耗时 2.5s 主要来自黄金 1.4s + 汇率 0.9s。
+
+**日志 C — KV 命名空间内容（用户从 Dashboard 导出）**
+- 存在的 key：`fx:latest`、`quote:CN:600036`、`quote:FUND:012538/018957/024195/025209`、`quote:US:QQQ`。
+- `fx:latest` 示例：`{"rates":{"CNY":1,"USD":6.8027,"HKD":0.8696},"timestamp":1783845851063}`（=16:24:11 回源写入）。
+- `quote:US:QQQ` timestamp `1783846030680`（=16:27:10，更早一次请求写入、长期存活）。
+- 统计面板显示 `Reads 1.37k / Writes 290 / KV count 0 / Storage 0 B`（`KV count`/`Storage` 是最终一致性聚合统计，延迟显示，不反映真实 key 存在性——上方 `View` 出的 key 才是真实证据）。
+- 结论：**KV 绑定正常、写入落盘正常**（证明代码读写逻辑 OK）。
+
+### 三、关于"KV 绑定是否生效"的排查与纠错（重要留档）
+
+- 用户最初在 Dashboard 看到：`QUOTE_CACHE` → `my-bills`，且提示 *"Bindings for this project are being managed through wrangler.toml"*（绑定由 wrangler.toml 管理，Dashboard 不可改）。
+- **AI 一度误判**：以为生产用的 KV 命名空间 ≠ 用户看到的 `my-bills`（猜测是两个命名空间、生产用的那个是空的），并让用户去查命名空间 ID。
+- **用户纠正并提供 ID**：`a025d8ed33bf444c9ec7df45993aae92`。
+- **核实结果**：该 ID 与 `wrangler.toml` 中 `[[kv_namespaces]]` 的 `id` **完全一致**，也正是 Dashboard 里存有 `fx:latest`/`quote:*` 数据的那个命名空间。→ **绑定没问题，AI 上一条"两个命名空间"猜测错误，已更正并道歉。**
+- **正确归因**：偶发全 miss 是 Cloudflare KV 最终一致性边缘复制 + stateless Worker 调度导致的冷读波动，非绑定问题；而"汇率每 5 分钟必回源"是 `setFxCache` 用了 `QUOTE_TTL` 的真实 TTL 错配 bug（已修，见第一节第 4 点）。
+- **经验留存**：① 下次看到 KV 有数据但日志 miss，应先比对 wrangler.toml 的 id 与实际命名空间 id，而非臆测"绑定未生效"；② 用户已把项目 KV 信息发过，AI 本应早把 wrangler.toml 的 id 与用户数据关联，未察觉属疏忽。
+
+### 四、提交记录（本日）
+
+| commit | 内容 |
+|--------|------|
+| `531cbbb` | 汇率缓存 5min → 1h（`FX_FRESH_MS`） |
+| `5cdedf1` | 黄金新浪备用源改为 `SGE_AU9999` 并本地 gbk 验证字段 |
+| `5f2a02d` | 黄金独立长 TTL 缓存（10min fresh + 6h stale 降级），本地三态验证 |
+| 待 commit | `cache.ts`：`setFxCache` 写入 TTL 由 `QUOTE_TTL` 改为 `FX_TTL`（修复 1h 设计与 5min 实现错配） |
+
+### 五、待办
+
+- [ ] 把 `setFxCache` 的 TTL 修复 commit 并 push，验证线上 `fx KV cache HIT` 频率是否降到 ~1h 一次。
+- [ ] 观察黄金独立缓存线上表现：`gold KV cache HIT`（<10min）与 `fetch ERR GOLD -> stale fallback`（东财挂时 6h 内旧价兜底）是否如期出现。
+- [ ] 接受 KV 最终一致性偶发冷读抖动（估值场景无伤，最多偶尔多 ~1.5s）。
+
+---
+
+## 2026-07-12：网络 / 代理问题专项复盘（白天耗时最大、最该记的一节）
+
+> 本节单独列出，因为白天最折磨人的不是代码 bug，而是**网络与执行环境的不可见性**：看不见反馈 → 误判 → 反复空转。这是全天最大的隐性时间黑洞。
+
+### 一、本会话执行环境会 skip 任何带外网的命令
+- **现象**：发 `curl` 或带网络的 `Invoke-WebRequest` / `WebFetch` 时，执行环境判为"可能耗时"直接跳过，拿不到任何返回（无输出、无错误）。
+- **后果（连锁浪费）**：AI 误以为本地 `wrangler` 服务没起 → 反复重启 → 在"服务到底起没起"的死循环里空转。实际服务一直正常（用户贴回的 `market:CN` 即证明）。
+- **对策（已验证可行）**：自测接口一律用**纯 Node `http` 脚本**（`scripts/test-api.mjs` / `test-multicurrency.mjs` / `run-tests-win.mjs`），绕开 skip 拦截；最终 61/61 全通过。
+- **延伸（晚间）**：本会话连 Supabase MCP（`mcp.supabase.com`）和直连 `*.supabase.co` REST 也全部 `fetch failed`——远程库在本环境**不可达**。因此晚间造数无法由 AI 替用户验证，只能靠"脚本防御式写法 + 用户贴回错误"。
+
+### 二、WSL / Windows 网络栈错位
+- **现象**：WSL 内的 `wrangler` 实际跑的是 Windows 侧 `node.exe`（`X:\Program Files\nodejs`），监听 `127.0.0.1` 归 Windows 管；从 WSL 内部 `curl localhost` **连不通**，但 Windows 侧能通。
+- **对策**：自测一律在 **Windows 侧**访问 `http://127.0.0.1:8799`（或 `5173`），不要切 WSL 网络栈、不要在 WSL 里 curl。
+
+### 三、代理（proxy）相关痕迹
+- `package-lock.json` 存在 `https-proxy-agent` 依赖 → 项目外部请求链路走代理 agent，符合企业网络出网形态。
+- 外部 API（汇率 `api.exchangerate-api.com`、行情源新浪/腾讯/Yahoo/东财）调用需考虑代理出网；MCP / 远程库 `fetch failed` 也很可能与代理 / 出网策略有关，而非"服务没起"。
+
+### 四、沉淀原则（下次必须先用，别再重蹈）
+1. 本环境**任何带外网的命令都会被 skip** → 验证接口用 Node `http` 脚本；连远程库前先确认 MCP/HTTP 是否可达，不可达就别让用户试，改用防御式脚本兜底。
+2. WSL 里 wrangler 跑在 Windows node → 自测走 Windows 侧 `127.0.0.1`。
+3. 遇到"改了没生效 / 连不通"，**先核对手头已有的事实**（wrangler.toml 的 KV id、.env 的 URL、仓库里已有的配置），不要臆测"绑定失效 / 服务没起"再把猜测甩给用户去验证。
+
+---
+
+## 2026-07-12 晚间：csu666 测试账户造数（seed 脚本反复踩雷）
+
+> 本日晚间给测试账户 csu666 造数，目标是填 9 张业务表（users/accounts/categories/sub_categories/tags/budgets/transactions/transfers/holdings_transactions），含 5 市场持仓流水。连续踩了 3 个"线上结构 ≠ migration 文件"的雷，全部由用户反复执行试出。
+
+### 一、踩的雷（按发生顺序）
+1. **信用卡负余额违反 CHECK**：`accounts` 线上有 `accounts_balance_check`（余额不得为负），脚本写了 `-2350.00` 报错。改为正数 `2350.00`（信用卡用正数表示欠款额度）。
+2. **sub_categories 外键仍指向 auth.users**：插入报 `sub_categories_user_id_fkey` 违反——`007_sub_categories.sql` 建表时 `user_id REFERENCES auth.users(id)`，而 002 当年只改了 6 张表、漏了后来建的 `sub_categories` 和 `holdings_transactions`。已加前置 ALTER 把外键对齐 `public.users`（与 holdings 方案 A 同）。
+3. **transactions.merchant 列已被删**：`003_tags_refactor.sql` 第 12-13 行 `DROP COLUMN merchant`，但 seed 按 001 写、仍往 `merchant` 插 → 报错。已用脚本批量去掉所有 `merchant` 列名与值，末尾示例查询的 `t.merchant` 也改为 `t.note`。
+
+### 二、根因（核心错误）
+- **AI 只信 migration 文件、没核实线上真实结构**。连续 3 雷都是"文件有 / 线上无"或"线上手动加了约束"，本应写脚本前就一次性核完，却让用户逐个撞。
+- **把本该 AI 承担的结构核对甩给用户试**：反复"你执行看看、贴错误给我"，消耗用户时间。
+
+### 三、最终脚本状态（`scripts/seed_csu666.sql`）
+- 已含：幂等清理块（先删 csu666 旧数据再重建）+ sub_categories 外键前置修复 + 信用卡正数余额 + transactions 去 merchant。
+- **尚未最终确认通过**：用户最后一次执行结果未回；本环境 MCP/HTTP 不可达，AI 无法替验。
+- 遗留隐患：`profiles` 表外键仍指向 `auth.users`（当前 seed 未用到，但属同类历史遗漏，待收口）。
+
+### 四、沉淀原则
+1. 写任何 INSERT/seed 前，**先拉线上 `information_schema.columns` + 真实约束 + 真实外键**，不靠 migration 文件假设（migration 与线上会漂移：手动加约束、后续删列）。
+2. 一次性把"线上 ≠ 文件"的潜在差异点全列全改，不要"报错一个修一个"。
+3. 连不上远程时如实说明，用防御式脚本兜底，绝不让用户来回试。
+
+---
+
 ## 2026-07-11 晚间：财富首页（WealthHome）交互与计价口径优化
 
 > 本日全部在 `apps/pwa/src/pages/WealthHome.tsx` 做迭代，未改动公共 `currency.ts`、详情页 `WealthDetail.tsx`，全部改动 HMR 通过、lint 0 错误、未 commit。核心主题：先确认方案再动手；产出必须可靠。

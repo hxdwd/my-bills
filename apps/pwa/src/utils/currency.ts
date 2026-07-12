@@ -16,6 +16,13 @@ export const CURRENCY_LABEL: Record<Currency, string> = {
   HKD: '港币',
 }
 
+// 币种对应国旗 emoji，用于标题栏币种胶囊直观展示本位币
+export const CURRENCY_FLAG: Record<Currency, string> = {
+  CNY: '🇨🇳',
+  USD: '🇺🇸',
+  HKD: '🇭🇰',
+}
+
 // 所有支持的本位币（汇总切换用）
 export const BASE_CURRENCIES: Currency[] = ['CNY', 'USD', 'HKD']
 

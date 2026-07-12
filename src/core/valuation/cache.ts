@@ -5,8 +5,11 @@ export interface KVBindings {
   QUOTE_CACHE: KVNamespace
 }
 
-export const QUOTE_TTL = 300 // 5 分钟
+export const QUOTE_TTL = 300 // 5 分钟（股票/基金等行情刷新频率）
 export const HISTORY_TTL = 86400 // 1 天
+// 汇率一天内波动很小，1 小时回源一次足够，避免每个 batch 都打外部汇率接口。
+// 注意：写入 KV 必须用该 TTL，否则会被 5 分钟短 TTL 提前清掉导致频繁回源。
+export const FX_TTL = 60 * 60 // 1 小时
 // 黄金价格变化慢，且单源回源约 1.5s 是 batch 的主要耗时来源，
 // 故黄金行情缓存用更长的 TTL，显著减少回源次数。
 export const GOLD_TTL = 10 * 60 // 10 分钟
@@ -88,7 +91,7 @@ export async function getFxCache(kv: KVNamespace): Promise<FxCache | null> {
 
 export async function setFxCache(kv: KVNamespace, fx: FxCache): Promise<void> {
   try {
-    await kv.put(FX_CACHE_KEY, JSON.stringify(fx), { expirationTtl: QUOTE_TTL })
+    await kv.put(FX_CACHE_KEY, JSON.stringify(fx), { expirationTtl: FX_TTL })
   } catch (e) {
     console.error('[cache] setFxCache failed', e)
   }

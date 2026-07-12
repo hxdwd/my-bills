@@ -42,8 +42,7 @@ supabase/.branches/
 history-bills/
 
 # 临时验证脚本与 e2e 产物（含登录态 state.json，勿入库）
-scripts/.tmp/
-scripts/e2e-state.json
+scripts/
 _*
 
 # Wrangler 本地调试产物（wrangler pages dev 输出，勿入库）

@@ -1,15 +1,24 @@
 import { useMemo, useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { DonutChart } from '../components/charts/DonutChart'
 import { useWealthValuation, todayProfit, toBaseCurrency, ValuationWithHolding } from '../hooks/useWealthValuation'
 import { marketToCategory, marketLabel, AssetCategory } from '../db/wealthStore'
 import type { Market } from '../utils/quoteApi'
-import { fmtWithSymbol, fmtMoney as fmtMoneyUtil, CURRENCY_SYMBOL, BASE_CURRENCIES, Currency } from '../utils/currency'
+import { fmtWithSymbol, fmtMoney as fmtMoneyUtil, CURRENCY_SYMBOL, CURRENCY_LABEL, BASE_CURRENCIES, Currency } from '../utils/currency'
+import CashIcon from '../components/ui/CashIcon'
 
 const CAT_META: Record<AssetCategory, { label: string; color: string }> = {
   stock: { label: '股票', color: '#c96442' },
   fund: { label: '基金', color: '#3b82f6' },
   gold: { label: '黄金', color: '#e0a82e' },
+}
+
+// 把类别主色转成极淡背景色（12% 透明度），用于持仓行底色，区分资产类别但不刺眼
+function catTint(color: string): string {
+  const hex = color.replace('#', '')
+  const r = parseInt(hex.slice(0, 2), 16)
+  const g = parseInt(hex.slice(2, 4), 16)
+  const b = parseInt(hex.slice(4, 6), 16)
+  return `rgba(${r}, ${g}, ${b}, 0.1)`
 }
 
 function fmtMoney(n: number | null | undefined): string {
@@ -31,7 +40,7 @@ function Card({ title, value, sub, color }: { title: string; value: string; sub?
   return (
     <div className="flex-1 bg-surface rounded-2xl p-3 border border-brand-tint">
       <div className="text-xs text-ink-2 mb-1">{title}</div>
-      <div className="text-lg font-bold amount-fluid-sm" style={{ color }}>{value}</div>
+      <div className="text-lg font-bold font-amount amount-fluid-sm whitespace-nowrap" style={{ color }}>{value}</div>
       {sub && <div className="text-[10px] text-ink-3 mt-0.5">{sub}</div>}
     </div>
   )
@@ -48,6 +57,39 @@ export function WealthHome() {
   const [sortKey, setSortKey] = useState<SortKey>('market_value')
   const [showSortMenu, setShowSortMenu] = useState(false)
   const [showDist, setShowDist] = useState(true)
+  const [showCurrencyPop, setShowCurrencyPop] = useState(false)
+  // 入场动画状态：点击后先挂载再下一帧加 open 类，触发 transition
+  const [popOpen, setPopOpen] = useState(false)
+  const popTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  function toggleCurrencyPop() {
+    if (showCurrencyPop) {
+      setPopOpen(false)
+      popTimer.current = setTimeout(() => setShowCurrencyPop(false), 200)
+    } else {
+      setShowCurrencyPop(true)
+      // 下一帧开启动画
+      requestAnimationFrame(() => requestAnimationFrame(() => setPopOpen(true)))
+      showCurToast('点击右侧图标切换计价币种', 'below')
+    }
+  }
+  function selectCurrency(c: Currency) {
+    setBaseCurrency(c)
+    setPopOpen(false)
+    popTimer.current = setTimeout(() => setShowCurrencyPop(false), 200)
+    showCurToast(`已切换${CURRENCY_LABEL[c]}计价`, 'right')
+  }
+  useEffect(() => () => { if (popTimer.current) clearTimeout(popTimer.current) }, [])
+  // 币种提示气泡：1.6s 自动消失。pos='below' 胶囊下方（展开时提示），pos='right' 胶囊右方（切换后提示）
+  const [curToast, setCurToast] = useState('')
+  const [curToastPos, setCurToastPos] = useState<'below' | 'right'>('below')
+  const curToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const showCurToast = (msg: string, pos: 'below' | 'right' = 'below') => {
+    if (curToastTimer.current) clearTimeout(curToastTimer.current)
+    setCurToastPos(pos)
+    setCurToast(msg)
+    curToastTimer.current = setTimeout(() => setCurToast(''), 1600)
+  }
+  useEffect(() => () => { if (curToastTimer.current) clearTimeout(curToastTimer.current) }, [])
   const [sortToastLabel, setSortToastLabel] = useState('')
   const sortToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const sortRef = useRef<HTMLDivElement>(null)
@@ -91,15 +133,6 @@ export function WealthHome() {
     })
     return acc
   }, [results, baseCurrency, rates])
-
-  const donutData = useMemo(() => {
-    const keys: AssetCategory[] = ['stock', 'fund', 'gold']
-    return {
-      labels: keys.map(k => CAT_META[k].label),
-      values: keys.map(k => byCat[k]),
-      colors: keys.map(k => CAT_META[k].color),
-    }
-  }, [byCat])
 
   // 按分类/市场过滤后，按所选排序键排序
   const list = useMemo(() => {
@@ -180,11 +213,63 @@ export function WealthHome() {
   return (
     <div className="min-h-screen bg-bg px-4 pt-6 pb-28">
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold text-ink">财富</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-bold text-ink">财富</h1>
+          {/* 币种切换：Trigger 图标 + 右侧悬浮 Popover（同一组件，不占 Header 高度） */}
+          <div className="relative flex items-center">
+            <button
+              onClick={toggleCurrencyPop}
+              data-testid="currency-pill"
+              aria-label={`当前币种 ${baseCurrency}，点击切换`}
+              aria-expanded={showCurrencyPop}
+              className="flex items-center justify-center rounded-full p-0.5 transition-transform active:scale-95"
+            >
+              <CashIcon currency={baseCurrency} size={26} />
+            </button>
+            {showCurrencyPop && (
+              <div
+                data-testid="currency-pop"
+                className={`pointer-events-none absolute left-[calc(100%+7px)] top-1/2 z-30 flex -translate-y-1/2 items-center gap-1 rounded-2xl border border-black/5 bg-white p-1.5 pl-3 pr-3 shadow-[0_8px_30px_rgba(0,0,0,0.12)] transition-all duration-200 ease-out ${popOpen ? 'translate-x-0 scale-100 opacity-100' : 'translate-x-1.5 scale-95 opacity-0'}`}
+                style={{ transformOrigin: 'left center' }}
+              >
+                <div className="flex items-center gap-1">
+                  {BASE_CURRENCIES.map(c => {
+                    const active = baseCurrency === c
+                    return (
+                      <button
+                        key={c}
+                        data-testid={`currency-option-${c}`}
+                        onClick={() => selectCurrency(c)}
+                        aria-label={c}
+                        aria-pressed={active}
+                        className={`pointer-events-auto flex h-8 w-8 items-center justify-center rounded-xl transition-colors active:scale-90 ${active ? 'bg-[#fbf3d9]' : 'bg-transparent hover:bg-black/[0.04]'}`}
+                      >
+                        <CashIcon currency={c} size={22} className={active ? '' : 'opacity-60'} />
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+            {/* 币种提示气泡：展开提示在胶囊下方，切换后提示在胶囊右方，1.6s 自动消失 */}
+            {curToast && (
+              <div
+                data-testid="currency-toast"
+                className={`absolute z-40 whitespace-nowrap rounded-lg bg-ink px-2.5 py-1 text-[11px] font-medium text-bg shadow-lg ${curToastPos === 'below' ? 'left-0 top-full mt-2' : 'left-[calc(100%+7px)] top-1/2 -translate-y-1/2'}`}
+              >
+                {curToast}
+              </div>
+            )}
+          </div>
+        </div>
         <button onClick={onPullRefresh} data-testid="pull-refresh" className="text-xs text-ink-2 px-2 py-1 rounded-lg bg-surface border border-brand-tint">
           {refreshing ? '刷新中…' : '下拉刷新'}
         </button>
       </div>
+
+      {showCurrencyPop && (
+        <div className="fixed inset-0 z-20" onClick={toggleCurrencyPop} aria-hidden />
+      )}
 
       {/* 三卡片（按本位币折算合计） */}
       <div className="flex gap-2 mb-4">
@@ -193,29 +278,6 @@ export function WealthHome() {
         <Card title="累计收益" value={`${sign(basePL)}${fmtWithSymbol(basePL, baseCurrency, 0)}`} color={colorOf(basePL)} />
       </div>
 
-      {/* 本位币切换 */}
-      <div className="flex items-center gap-2 mb-3">
-        <span className="text-[11px] text-ink-3">本位币</span>
-        <div className="flex gap-1.5">
-          {BASE_CURRENCIES.map(c => {
-            const active = baseCurrency === c
-            return (
-              <button
-                key={c}
-                onClick={() => setBaseCurrency(c)}
-                className="text-[11px] px-2.5 py-1 rounded-full border transition-colors"
-                style={{
-                  color: active ? '#c96442' : '#9ca3af',
-                  borderColor: active ? '#c96442' : 'transparent',
-                  backgroundColor: active ? '#c964421a' : 'transparent',
-                }}
-              >
-                {CURRENCY_SYMBOL[c]}
-              </button>
-            )
-          })}
-        </div>
-      </div>
 
       {error && <div className="text-xs text-red-500 mb-3">{error}</div>}
 
@@ -230,27 +292,35 @@ export function WealthHome() {
           <span className="text-ink-3 text-xs">{showDist ? '收起 ▴' : '展开 ▾'}</span>
         </button>
         {showDist && (
-          <div className="flex items-center gap-4 mt-3">
-            <DonutChart data={donutData} size={150} centerText={{ main: fmtWithSymbol(baseMV, baseCurrency, 0), sub: '总市值' }} />
-            <div className="flex-1 space-y-2">
-              {(['stock', 'fund', 'gold'] as AssetCategory[]).map(cat => {
-                const v = byCat[cat]
-                const pct = baseMV > 0 ? (v / baseMV) * 100 : 0
-                return (
-                  <button
-                    key={cat}
-                    onClick={() => setFilter(cat)}
-                    className="w-full flex items-center justify-between text-left"
-                  >
+          <div className="mt-3 space-y-3">
+            {((['stock', 'fund', 'gold'] as AssetCategory[]).sort((a, b) => byCat[b] - byCat[a])).map(cat => {
+              const v = byCat[cat]
+              const pct = baseMV > 0 ? (v / baseMV) * 100 : 0
+              const color = CAT_META[cat].color
+              return (
+                <button
+                  key={cat}
+                  onClick={() => setFilter(cat)}
+                  data-testid={`dist-${cat}`}
+                  className="w-full text-left block"
+                >
+                  <div className="flex items-center justify-between">
                     <span className="flex items-center gap-2 text-sm text-ink">
-                      <span className="w-3 h-3 rounded-full" style={{ background: CAT_META[cat].color }} />
+                      <span className="w-2.5 h-2.5 rounded-full" style={{ background: color }} />
                       {CAT_META[cat].label}
+                      <span className="text-sm text-ink-2">{fmtWithSymbol(v, baseCurrency, 0)}</span>
                     </span>
-                    <span className="text-sm text-ink-2">{fmtWithSymbol(v, baseCurrency, 0)} · {pct.toFixed(1)}%</span>
-                  </button>
-                )
-              })}
-            </div>
+                    <span className="text-sm text-ink-2 tabular-nums">{pct.toFixed(0)}%</span>
+                  </div>
+                  <div className="mt-1.5 h-1.5 w-full rounded-full bg-black/[0.06] overflow-hidden">
+                    <div
+                      className="h-full rounded-full"
+                      style={{ width: `${pct}%`, background: color }}
+                    />
+                  </div>
+                </button>
+              )
+            })}
           </div>
         )}
       </div>
@@ -352,16 +422,17 @@ export function WealthHome() {
                 key={`${r.market}:${r.symbol}`}
                 data-testid="holding-row"
                 onClick={() => navigate(`/wealth/detail/${r.market}/${r.symbol}`)}
-                className="w-full bg-surface rounded-2xl p-3 border border-brand-tint flex items-center justify-between text-left active:scale-[0.99]"
+                className="w-full rounded-2xl p-3 border flex items-center justify-between text-left active:scale-[0.99]"
+                style={{ backgroundColor: catTint(CAT_META[marketToCategory(r.market)].color), borderColor: CAT_META[marketToCategory(r.market)].color + '33' }}
               >
                 <div className="min-w-0">
                   <div className="font-medium text-ink truncate">{r.name || r.symbol}</div>
                   <div className="text-xs text-ink-3 mt-0.5">{r.symbol} · {r.market}</div>
                 </div>
-                <div className="text-right shrink-0 ml-3">
-                  <div className="font-medium text-ink">{fmtWithSymbol(mv, baseCurrency, 0)}</div>
-                  <div className="text-xs mt-0.5" style={{ color: colorOf(pl) }}>
-                    {sign(pl)}{fmtWithSymbol(pl, baseCurrency, 0)} · {pr != null ? `${sign(pr * 100)}${(pr * 100).toFixed(2)}%` : '—'}
+                <div className="text-right ml-3 min-w-0">
+                  <div className="font-medium text-ink font-amount amount-fluid whitespace-nowrap">{fmtWithSymbol(mv, baseCurrency, 0)}</div>
+                  <div className="text-xs mt-0.5 font-amount whitespace-nowrap" style={{ color: colorOf(pl) }}>
+                    {sign(pl)}{fmtWithSymbol(pl, baseCurrency, 0)} / {pr != null ? `${sign(pr * 100)}${(pr * 100).toFixed(2)}%` : '—'}
                   </div>
                 </div>
               </button>
