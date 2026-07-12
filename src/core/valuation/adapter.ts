@@ -244,11 +244,12 @@ async function fetchGold(_symbol: string): Promise<NormalizedQuote> {
   }
 }
 
-// 黄金备用源：新浪 AU9999（上金所黄金9999现货，元/克，人民币计价）
+// 黄金备用源：新浪 SGE_AU9999（上金所黄金9999现货，元/克，人民币计价）
 // 接口：https://hq.sinajs.cn/list=SGE_AU9999  返回 GBK
-// 返回形如 var hq_str_SGE_AU9999="Au99.99,时间,昨收,今开,最高,最低,现价,...";
+// 返回形如 var hq_str_SGE_AU9999="AU9999,沪金99,Au99.99,今开,昨收,最高,最低,现价,...";
+// 实际字段：0=AU9999 1=沪金99 2=Au99.99(名称) 3=今开 4=昨收 7=现价
 async function fetchGoldSina(_symbol: string): Promise<NormalizedQuote> {
-  const url = 'https://hq.sinajs.cn/list=gds_AUTD'
+  const url = 'https://hq.sinajs.cn/list=SGE_AU9999'
   const res = await fetchWithTimeout(
     url,
     { headers: { Referer: 'https://finance.sina.com.cn', 'User-Agent': 'Mozilla/5.0' } },
@@ -260,10 +261,10 @@ async function fetchGoldSina(_symbol: string): Promise<NormalizedQuote> {
   const m = text.match(/="(.+)";/)
   if (!m) throw new Error('goldSina parse empty')
   const parts = m[1].split(',')
-  // gds_AUTD(黄金T+D)：0=现价, ... 8=昨收(约定)，字段随行情类型而异，稳妥用现价+昨收算涨跌
-  const price = parseFloat(parts[0])
+  // 现价 fields[7]，昨收 fields[4]
+  const price = parseFloat(parts[7])
   if (!isFinite(price) || price <= 0) throw new Error('goldSina price NaN')
-  const prevClose = parseFloat(parts[7])
+  const prevClose = parseFloat(parts[4])
   const changePercent = isFinite(prevClose) && prevClose > 0 ? (price - prevClose) / prevClose : 0
   return {
     price,
