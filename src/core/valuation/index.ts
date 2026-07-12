@@ -23,8 +23,9 @@ const SUPPORTED_CURRENCIES: Currency[] = ['CNY', 'USD', 'HKD']
 
 // 拉取实时汇率：rates[x] 表示「1 x = ? CNY」（如 USD=6.8 即 1 USD=6.8 CNY）
 // 失败则用缓存；再失败返回默认 1:1（即不转换）
-// 汇率缓存有效期：TTL 内直接用 KV，不回源（汇率对估值无需秒级实时）
-const FX_FRESH_MS = 5 * 60 * 1000
+// 汇率缓存有效期：TTL 内直接用 KV，不回源。
+// 一天内汇率波动很小，1 小时回源一次足够，避免每个 batch 都打外部汇率接口。
+const FX_FRESH_MS = 60 * 60 * 1000
 
 async function loadExchangeRates(kv: KVNamespace): Promise<FxCache> {
   const cached = await getFxCache(kv)
