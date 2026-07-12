@@ -15,6 +15,8 @@ import {
   setFxCache,
   getHistoryCache,
   setHistoryCache,
+  getGoldCache,
+  setGoldCache,
   FxCache,
 } from './cache'
 import { fetchQuote, fetchHistory } from './adapter'
@@ -126,6 +128,16 @@ export async function runValuation(
       // key 形如 quote:{market}:{symbol}
       const [, marketStr, sym] = k.split(':')
       const _one0 = Date.now()
+      // 黄金：先查专用长 TTL 缓存（fresh 直接命中，省去 ~1.5s 回源）
+      if (marketStr === 'GOLD') {
+        const gc = await getGoldCache(kv)
+        if (gc.state === 'fresh' && gc.value) {
+          fetched[k] = gc.value
+          cachedMap[k] = gc.value
+          console.log(`[perf]   gold KV cache HIT (age ${Math.round((Date.now() - gc.value.timestamp) / 1000)}s, skip origin)`)
+          return
+        }
+      }
       try {
         const q = await fetchQuote(sym, marketStr as Market)
         const val = {
@@ -138,12 +150,23 @@ export async function runValuation(
         fetched[k] = val
         // 异步写回 KV（不阻塞）
         setQuoteCache(kv, k, val)
+        if (marketStr === 'GOLD') setGoldCache(kv, val)
         // 把最新价格也合并进 cachedMap，供本轮使用
         cachedMap[k] = val
         console.log(`[perf]   fetch OK  ${marketStr}:${sym} ${Date.now() - _one0}ms`)
       } catch (e: any) {
         fetched[k] = null
         cachedMap[k] = null
+        // 黄金回源失败：若有过期缓存（6h 宽限内）则降级用旧价，避免报错
+        if (marketStr === 'GOLD') {
+          const gc = await getGoldCache(kv)
+          if (gc.state === 'stale' && gc.value) {
+            fetched[k] = gc.value
+            cachedMap[k] = gc.value
+            console.log(`[perf]   fetch ERR GOLD -> stale fallback age ${Math.round((Date.now() - gc.value.timestamp) / 1000)}s ${e?.message || e}`)
+            return
+          }
+        }
         console.log(`[perf]   fetch ERR ${marketStr}:${sym} ${Date.now() - _one0}ms ${e?.message || e}`)
       }
     })
