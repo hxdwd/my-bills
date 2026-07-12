@@ -18,6 +18,8 @@ export interface BatchRequest {
   items: ValuationItem[]
   target_currency?: Currency
   fields?: string[]
+  // 仅调试用：为 true 时在响应里返回 __perf 耗时明细
+  debug?: boolean
 }
 
 export interface ValuationResult {
@@ -37,12 +39,28 @@ export interface ValuationResult {
   error?: string
 }
 
+export interface BatchPerfInfo {
+  fxMs: number
+  kvTotal: number
+  kvHit: number
+  kvMiss: number
+  fetches: Array<{
+    url: string
+    status: number // 0 表示请求失败（未拿到响应）
+    ok: boolean
+    ms: number
+    err?: string
+  }>
+}
+
 export interface BatchResponseData {
   results: ValuationResult[]
   total_market_value: number
   total_profit_loss: number
   total_currency: Currency
   exchange_rates: Record<string, number>
+  // 仅当请求带 debug=1 时返回，用于查看生产环境耗时明细（不影响业务）
+  __perf?: BatchPerfInfo
 }
 
 // ============ 接口二：单资产行情 ============

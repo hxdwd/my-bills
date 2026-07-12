@@ -46,6 +46,14 @@ export interface BatchResponseData {
   total_profit_loss: number
   total_currency: 'CNY' | 'USD' | 'HKD'
   exchange_rates: Record<string, number>
+  // 仅 ?debug=1 时返回，含 fxMs / KV 命中 / 各 fetch 耗时明细
+  __perf?: {
+    fxMs: number
+    kvTotal: number
+    kvHit: number
+    kvMiss: number
+    fetches: Array<{ url: string; status: number; ok: boolean; ms: number; err?: string }>
+  }
 }
 
 export interface QuoteDetail {

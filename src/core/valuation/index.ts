@@ -17,7 +17,7 @@ import {
   setHistoryCache,
   FxCache,
 } from './cache'
-import { fetchQuote, fetchHistory } from './adapter'
+import { fetchQuote, fetchHistory, resetPerf, takePerf } from './adapter'
 
 const SUPPORTED_CURRENCIES: Currency[] = ['CNY', 'USD', 'HKD']
 
@@ -67,11 +67,15 @@ function pickFields(result: ValuationResult, fields?: string[]): ValuationResult
 // 主引擎：接收请求体 + KV 环境，返回批量估值结果
 export async function runValuation(
   req: BatchRequest,
-  kv: KVNamespace
+  kv: KVNamespace,
+  debug = false
 ): Promise<BatchResponseData> {
   // 注意：各资产市值/盈亏均以其自身币种返回（见上方组装逻辑），
   // 不再接受 target_currency 折算请求；保留字段以避免破坏请求契约。
   const items = req.items ?? []
+
+  // 性能收集：每次请求重置，结束后取明细（仅 debug 时返回）
+  if (debug) resetPerf()
 
   // 汇率
   const _fxT0 = Date.now()
@@ -188,13 +192,23 @@ export async function runValuation(
   // 5. 按需字段裁剪
   const trimmed = req.fields ? results.map((r) => pickFields(r, req.fields)) : results
 
-  return {
+  const out: BatchResponseData = {
     results: trimmed,
     total_market_value: 0,
     total_profit_loss: 0,
     total_currency: 'CNY',
     exchange_rates: fx.rates,
   }
+  if (debug) {
+    out.__perf = {
+      fxMs,
+      kvTotal: uniqueKeys.length,
+      kvHit: uniqueKeys.length - missingKeys.length,
+      kvMiss: missingKeys.length,
+      fetches: takePerf(),
+    }
+  }
+  return out
 }
 
 // 单资产行情详情
