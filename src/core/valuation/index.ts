@@ -26,6 +26,7 @@ const SUPPORTED_CURRENCIES: Currency[] = ['CNY', 'USD', 'HKD']
 async function loadExchangeRates(kv: KVNamespace): Promise<FxCache> {
   const cached = await getFxCache(kv)
   try {
+    const _t0 = Date.now()
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), 3000)
     let json: any
@@ -38,6 +39,7 @@ async function loadExchangeRates(kv: KVNamespace): Promise<FxCache> {
     } finally {
       clearTimeout(timer)
     }
+    console.log(`[perf] fx origin fetch ${Date.now() - _t0}ms (每次强制回源 exchangerate-api)`)
     const ratesRaw: Record<string, number> = json?.rates ?? {}
     const rates: Record<string, number> = { CNY: 1 }
     for (const c of SUPPORTED_CURRENCIES) {
@@ -50,6 +52,7 @@ async function loadExchangeRates(kv: KVNamespace): Promise<FxCache> {
     return fx
   } catch {
     // 失败用缓存，再失败默认 1:1
+    console.log('[perf] fx origin FAILED -> ' + (cached ? 'fallback KV cache' : 'fallback 1:1'))
     if (cached) return cached
     return { rates: { CNY: 1, USD: 1, HKD: 1 }, timestamp: Date.now() }
   }
@@ -72,11 +75,13 @@ export async function runValuation(
   // 注意：各资产市值/盈亏均以其自身币种返回（见上方组装逻辑），
   // 不再接受 target_currency 折算请求；保留字段以避免破坏请求契约。
   const items = req.items ?? []
+  const _total0 = Date.now()
 
   // 汇率
   const _fxT0 = Date.now()
   const fx = await loadExchangeRates(kv)
   const fxMs = Date.now() - _fxT0
+  console.log(`[perf] loadExchangeRates total ${fxMs}ms`)
 
   // 1. 先批量查 KV 缓存（按归一化 key）
   const cacheKeys: string[] = []
@@ -90,20 +95,28 @@ export async function runValuation(
 
   const uniqueKeys = Array.from(new Set(cacheKeys))
   const cachedMap: Record<string, QuoteCacheValue | null> = {}
+  const _kvT0 = Date.now()
   await Promise.all(
     uniqueKeys.map(async (k) => {
       cachedMap[k] = await getQuoteCache(kv, k)
     })
   )
+  const _kvMs = Date.now() - _kvT0
 
   // 2. 找出未命中缓存的 symbol（去重），并行拉取
   const missingKeys = uniqueKeys.filter((k) => !cachedMap[k])
   const fetched: Record<string, QuoteCacheValue | null> = {}
+  console.log(
+    `[perf] KV quote lookup ${_kvMs}ms | keys=${uniqueKeys.length} hit=${uniqueKeys.length - missingKeys.length} miss=${missingKeys.length}` +
+      (missingKeys.length ? ` missKeys=[${missingKeys.join(', ')}]` : '')
+  )
 
+  const _fetchT0 = Date.now()
   await Promise.allSettled(
     missingKeys.map(async (k) => {
       // key 形如 quote:{market}:{symbol}
       const [, marketStr, sym] = k.split(':')
+      const _one0 = Date.now()
       try {
         const q = await fetchQuote(sym, marketStr as Market)
         const val = {
@@ -118,12 +131,17 @@ export async function runValuation(
         setQuoteCache(kv, k, val)
         // 把最新价格也合并进 cachedMap，供本轮使用
         cachedMap[k] = val
-      } catch {
+        console.log(`[perf]   fetch OK  ${marketStr}:${sym} ${Date.now() - _one0}ms`)
+      } catch (e: any) {
         fetched[k] = null
         cachedMap[k] = null
+        console.log(`[perf]   fetch ERR ${marketStr}:${sym} ${Date.now() - _one0}ms ${e?.message || e}`)
       }
     })
   )
+  if (missingKeys.length) {
+    console.log(`[perf] origin fetch total ${Date.now() - _fetchT0}ms (${missingKeys.length} symbols)`)
+  }
 
   // 3. 组装每只资产结果
   const results: ValuationResult[] = items.map((it: ValuationItem) => {
@@ -186,6 +204,10 @@ export async function runValuation(
 
   // 5. 按需字段裁剪
   const trimmed = req.fields ? results.map((r) => pickFields(r, req.fields)) : results
+
+  console.log(
+    `[perf] runValuation TOTAL ${Date.now() - _total0}ms | items=${items.length} fx=${fxMs}ms kv=${_kvMs}ms miss=${missingKeys.length}`
+  )
 
   return {
     results: trimmed,
