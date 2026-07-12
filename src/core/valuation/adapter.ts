@@ -226,7 +226,8 @@ async function fetchGold(_symbol: string): Promise<NormalizedQuote> {
   // symbol 约定固定为 'AU9999'（前端黄金资产统一用此 symbol）
   const secid = '118.AU9999'
   const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${secid}&fields=f43,f169,f170,f57,f58`
-  const res = await fetchWithTimeout(url, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+  // 黄金价格变化慢，收紧超时避免东方财富 502/慢响应拖垮整批（原默认 3000ms 曾耗 2.5s）
+  const res = await fetchWithTimeout(url, { headers: { 'User-Agent': 'Mozilla/5.0' } }, 1500)
   if (!res.ok) throw new Error(`gold http ${res.status}`)
   const json = (await res.json()) as any
   const d = json?.data
@@ -238,6 +239,36 @@ async function fetchGold(_symbol: string): Promise<NormalizedQuote> {
     price,
     name: d.f58 || '黄金',
     changePercent: isFinite(changePercent) ? changePercent : 0,
+    currency: 'CNY',
+    quoteTime: new Date().toISOString(),
+  }
+}
+
+// 黄金备用源：新浪 AU9999（上金所黄金9999现货，元/克，人民币计价）
+// 接口：https://hq.sinajs.cn/list=SGE_AU9999  返回 GBK
+// 返回形如 var hq_str_SGE_AU9999="Au99.99,时间,昨收,今开,最高,最低,现价,...";
+async function fetchGoldSina(_symbol: string): Promise<NormalizedQuote> {
+  const url = 'https://hq.sinajs.cn/list=gds_AUTD'
+  const res = await fetchWithTimeout(
+    url,
+    { headers: { Referer: 'https://finance.sina.com.cn', 'User-Agent': 'Mozilla/5.0' } },
+    1500,
+  )
+  if (!res.ok) throw new Error(`goldSina http ${res.status}`)
+  const buf = await res.arrayBuffer()
+  const text = new TextDecoder('gbk').decode(buf)
+  const m = text.match(/="(.+)";/)
+  if (!m) throw new Error('goldSina parse empty')
+  const parts = m[1].split(',')
+  // gds_AUTD(黄金T+D)：0=现价, ... 8=昨收(约定)，字段随行情类型而异，稳妥用现价+昨收算涨跌
+  const price = parseFloat(parts[0])
+  if (!isFinite(price) || price <= 0) throw new Error('goldSina price NaN')
+  const prevClose = parseFloat(parts[7])
+  const changePercent = isFinite(prevClose) && prevClose > 0 ? (price - prevClose) / prevClose : 0
+  return {
+    price,
+    name: '黄金',
+    changePercent,
     currency: 'CNY',
     quoteTime: new Date().toISOString(),
   }
@@ -255,7 +286,7 @@ export function getAdapters(market: Market): Array<(symbol: string) => Promise<N
     case 'FUND':
       return [fetchSinaFund]
     case 'GOLD':
-      return [fetchGold]
+      return [fetchGold, fetchGoldSina]
   }
 }
 
