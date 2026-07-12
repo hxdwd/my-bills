@@ -8,9 +8,15 @@ async function fetchWithTimeout(
   timeoutMs = 3000
 ): Promise<Response> {
   const controller = new AbortController()
+  const _t0 = Date.now()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    return await fetch(url, { ...init, signal: controller.signal })
+    const res = await fetch(url, { ...init, signal: controller.signal })
+    console.log(`[perf] fetch ${res.status} ${Date.now() - _t0}ms ${url.slice(0, 80)}`)
+    return res
+  } catch (e: any) {
+    console.log(`[perf] fetch ERR ${Date.now() - _t0}ms ${url.slice(0, 80)} ${e?.message ?? e}`)
+    throw e
   } finally {
     clearTimeout(timer)
   }

@@ -31,6 +31,7 @@ function normalizeSymbol(market: Market, code: string): string {
 
 export const onRequestGet = async (context: any) => {
   const { request } = context
+  const _t0 = Date.now()
   const url = new URL(request.url)
   const q = (url.searchParams.get('q') || '').trim()
 
@@ -42,6 +43,7 @@ export const onRequestGet = async (context: any) => {
     const text = await fetchWithRetry(q, 1)
     const m = text.match(/v_hint="([^"]*)"/)
     if (!m || !m[1]) {
+      console.log(`[perf] GET /api/quote/search total=${Date.now() - _t0}ms q=${q} results=0`)
       return json({ code: 0, message: 'ok', data: { results: [] } }, 200)
     }
     const candidates = m[1].split('^').filter(Boolean)
@@ -64,6 +66,7 @@ export const onRequestGet = async (context: any) => {
       seen.add(key)
       return true
     })
+    console.log(`[perf] GET /api/quote/search total=${Date.now() - _t0}ms q=${q} results=${deduped.length}`)
     return json({ code: 0, message: 'ok', data: { results: deduped } }, 200)
   } catch (e: any) {
     console.error('[search] error', e)

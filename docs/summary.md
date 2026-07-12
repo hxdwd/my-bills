@@ -4,6 +4,173 @@
 
 ---
 
+## 2026-07-12：Cloudflare Pages 部署相关信息汇总（详细）
+
+> 本文系统梳理本项目在 Cloudflare Pages 上的完整部署链路：架构定位、配置文件、构建产物、Functions 后端、KV 绑定、环境变量、本地开发、已知坑与最终推荐配置。可作为后续部署/运维的唯一参考底稿。
+
+### 一、整体架构与部署定位
+
+- **前端**：React 18 + TypeScript + Vite 5 构建出的静态产物，部署到 **Cloudflare Pages**（域名 `*.pages.dev`，**不是 Workers**）。生产访问地址形如 `https://<commit>.<project>.pages.dev`（见 `wrangler-dev.out` 中 `CF_PAGES_URL`）。
+- **后端接口**：通过 **Cloudflare Pages Functions**（`functions/` 目录）提供 4 个资产估值/行情接口，随 Pages 一起部署，无独立服务器。
+- **远程数据库**：**Supabase (PostgreSQL)**，与 Cloudflare 是**两套独立服务**——Supabase 负责数据持久化与认证，Cloudflare 仅承载前端静态站 + Functions 边缘计算。前端通过 `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` 在**构建时**注入 Supabase 地址。
+- **缓存层**：估值/行情结果缓存在 **Cloudflare KV**（`QUOTE_CACHE` 命名空间），由 Functions 读写。
+
+> 关键认知：**Cloudflare Pages ≠ Supabase**。两者通过环境变量桥接，部署 Cloudflare 时必须在 Pages 控制台单独配置 Supabase 的环境变量，Supabase 侧的迁移/数据需另行维护。
+
+### 二、核心配置文件 `wrangler.toml`（仓库根）
+
+完整内容（含注释）见仓库根 `wrangler.toml`，要点：
+
+| 配置项 | 值 | 说明 |
+|--------|-----|------|
+| `name` | `"my-bills"` | Pages 项目名 |
+| `pages_build_output_dir` | `"apps/pwa/dist"` | **静态产物输出目录**（即 Vite 构建出口） |
+| `compatibility_date` | `"2024-01-01"` | 启用现代兼容日期 |
+| `compatibility_flags` | `["nodejs_compat"]` | 启用 Node 风格 `fetch` / `TextDecoder` 等（Pages Functions 默认支持，显式声明保险） |
+| `[[kv_namespaces]]` | `binding="QUOTE_CACHE"`, `id="a025d8ed33bf444c9ec7df45993aae92"` | 本地开发 KV 绑定，binding 名必须与代码中 `env.QUOTE_CACHE` 一致 |
+| `[vars]` | 注释态 `ALLOWED_ORIGINS` | 生产 CORS 白名单预留位（默认中间件放行 `*`） |
+
+**注意**：`wrangler.toml` 里的 KV `id` 仅用于**本地 `wrangler dev`**；**生产环境**的 KV 绑定需到 Pages 控制台 `站设 → 函数 → KV 命名空间绑定` 手动添加同名变量 `QUOTE_CACHE`（见注释与 `cloudflare-deploy-troubleshooting.md` 第 1 节）。
+
+### 三、前端构建配置 `vite.config.ts`
+
+- `root: 'apps/pwa'`，构建产物落到 `apps/pwa/dist`（即 `pages_build_output_dir`）。
+- `VitePWA`：注册策略 `registerType: 'prompt'`（先检测 + 提示用户手动刷新，避免自动弹窗卡死）；`devOptions.enabled: false` 关闭开发态 SW；`includeAssets` 含 favicon/pwa 图标；`runtimeCaching` 对 Google Fonts 走 `CacheFirst`（1 年）。
+- 别名 `@` → `apps/pwa/src`。
+- PWA 清单：`钱盒子 - 个人记账`，主题色 `#F4D77C`，`display: standalone`，图标用 SVG。
+
+**构建脚本链路**（见 `package.json`）：
+- `dev`：`vite`（本地前端 5173）
+- `build`：`vite build`（**直接出品 dist，已剥离 `tsc -b` 类型检查**——详见「已知坑」第 1 节）
+- `lint`：`eslint .`
+- `typecheck:functions`：`tsc -p tsconfig.functions.json`（单独对 Functions + src 做类型检查，**部署前建议手动跑**）
+- `db:migrate` / `db:seed`：Supabase CLI（`supabase migration up` / `db seed`）
+
+### 四、Pages Functions 后端（`functions/` 目录）
+
+目录结构：
+```
+functions/
+├── _middleware.ts            # 统一 CORS（* 放行）、OPTIONS 预检 204
+└── api/
+    ├── quote/
+    │   ├── search.ts         # GET  /api/quote/search
+    │   ├── detail.ts         # GET  /api/quote/detail
+    │   └── history.ts        # GET  /api/quote/history
+    └── valuation/
+        └── batch.ts          # POST /api/valuation/batch
+```
+
+**统一契约**：响应外壳 `{ code, message, data }`；`corsHeaders` 注入 `Access-Control-Allow-Origin: *` + `GET, POST, OPTIONS` + `Content-Type, Authorization` + `Max-Age: 86400`。CORS 当前默认 `*`（`_middleware.ts` 第 4 行 `ALLOWED_ORIGIN = '*'`），生产可改读 `env.ALLOWED_ORIGINS` 白名单。
+
+**接口清单**（详细字段/真实样本见 `docs/api-test-report.md`）：
+
+| # | 路由 | 方法 | 用途 | 依赖 env |
+|---|------|------|------|----------|
+| 1 | `/api/valuation/batch` | POST | 批量估值（市值/盈亏/汇率），`items` 1–50 条 | `QUOTE_CACHE` |
+| 2 | `/api/quote/detail` | GET | 单资产实时行情（价/涨跌幅/币种/时间） | `QUOTE_CACHE` |
+| 3 | `/api/quote/history` | GET | 历史走势 `period=1m\|3m\|1y` | `QUOTE_CACHE` |
+| 4 | `/api/quote/search` | GET | 资产搜索（名/代码/拼音），腾讯 smartbox | — |
+
+**业务逻辑复用**：Functions 不是独立代码，而是直接 import 前端核心模块：
+- `batch.ts` → `src/core/valuation/index.ts` 的 `runValuation`
+- `detail.ts` / `history.ts` → 同模块 `runQuoteDetail` / `runHistory`
+- 类型来自 `src/types/api.ts`（`Market = 'CN'|'HK'|'US'|'FUND'` 等）
+- 数据源：A股新浪 `hq.sinajs.cn`（GBK 解码）、港股腾讯/新浪、美股 Yahoo、基金新浪 `fu_` + 东财 `lsjz`；搜索腾讯 `smartbox.gtimg.cn`；汇率 `api.exchangerate-api.com`。
+- **KV 缓存策略**：行情/历史均先查 `QUOTE_CACHE`，未命中才拉上游并异步写回；汇率同样缓存。缓存 miss 时单条 `current_price` 返回 `null`、`error` 标记，不整体失败。
+
+**`tsconfig.functions.json`**：`target ES2022`、`types: ["@cloudflare/workers-types"]`、`include: ["src/**/*.ts", "functions/**/*.ts"]`，`noEmit`——仅做类型检查，不产出；确保 Functions 能引用 `src/` 类型与 `@cloudflare/workers-types` 的 `KVNamespace`。
+
+### 五、环境变量
+
+**本地（`/workspace 根 .env`）**，仅 `VITE_` 前缀 + 应用常量：
+```
+VITE_SUPABASE_URL=https://ibgasxhnxclfumdfsqar.supabase.co
+VITE_SUPABASE_ANON_KEY=<anon key>
+VITE_APP_NAME=钱盒子
+VITE_APP_URL=http://localhost:5173
+```
+- `VITE_` 前缀变量在**构建时**被 Vite 注入 `import.meta.env`，因此**改完必须重新部署**才生效（`cloudflare-deploy-troubleshooting.md` 第 5 节）。
+- Functions 运行时变量（`env.QUOTE_CACHE`、可选 `ALLOWED_ORIGINS`）来自 `wrangler.toml`（本地）或 Pages 控制台绑定（生产），**不在 `.env`**。
+
+**生产（Pages 控制台 `Settings → Environment variables`）**：需配 `VITE_SUPABASE_URL`、`VITE_SUPABASE_ANON_KEY`（值同本地 `.env`），且配完要 **push 新提交触发重新部署** 才能打进产物。Pages **没有** "Retry" 按钮（那是 Workers 的）。
+
+**CF_PAGES 注入变量**（`wrangler-dev.out` 已验证本地 dev 会注入）：`CF_PAGES="1"`、`CF_PAGES_BRANCH="main"`、`CF_PAGES_COMMIT_SHA`、`CF_PAGES_URL`——代码通常无需读取它们。
+
+### 六、本地开发 / 调试流程
+
+1. **启本地 Functions 服务**：
+   ```
+   npx wrangler pages dev . --port 8799          # 监听 127.0.0.1:8799
+   # 或 wrangler pages dev apps/pwa/dist
+   ```
+   启动后 `wrangler` 会读取 `wrangler.toml` 的 KV 绑定（`QUOTE_CACHE`）、`nodejs_compat`、`VITE_*` 环境变量（从 `.env`）。
+2. **前端联调**：`npm run dev`（Vite 5173），`apps/pwa/src/utils/quoteApi.ts` 的 `VITE_FUNCTIONS_URL` 默认指向本地 Functions 地址。
+3. **自动化接口测试**（避开环境对 curl / 网络 PowerShell 的 skip）：用纯 Node `http` 脚本（`scripts/test-api.mjs`）起服务 + 发请求，已验证 61/61 通过（见 `docs/api-test-report.md`）。也可 `DUMP=1 node scripts/test-api.mjs` 抓真实样本。
+
+> 网络栈提醒（来自 07-11 凌晨记录）：WSL 内 `wrangler` 实际跑 Windows 侧 `node.exe`，监听 `127.0.0.1` 归 Windows 管，从 WSL 内部 `curl localhost` 连不通，但 Windows 侧能通。无需切 WSL 网络栈，直接 Windows 侧访问即可。
+
+### 七、部署方式（两种方式）
+
+**A. Pages 控制台 Git 集成（主用，推荐）**
+- `Workers & Pages → 创建 → Pages` 连接 GitHub 仓库。
+- 构建配置（**最终推荐值**，见 `cloudflare-deploy-troubleshooting.md` 第 7 节）：
+
+| 配置项 | 值 |
+|--------|-----|
+| 项目类型 | Cloudflare **Pages**（非 Workers） |
+| Root directory | 留空（仓库根） |
+| Build command | `npm run build` |
+| Build output directory | `apps/pwa/dist` |
+| Deploy command | **留空**（不要填 `npx wrangler deploy`，否则 Vite 版本校验报错） |
+| Version command | 留空 |
+| Environment variables | `VITE_SUPABASE_URL`、`VITE_SUPABASE_ANON_KEY`（同本地 `.env`） |
+
+- push 代码即触发构建部署；改了环境变量/构建配置需 **push 新提交** 重新部署。
+
+**B. CLI 手动部署（一次性/迁移用）**
+- 根据 `wrangler.toml` 顶部注释：`wrangler pages deploy apps/pwa/dist`（仓库根执行）。
+- **注意**：此命令部署的是**已构建的静态产物**；Functions 也会随之打包上传。但不走 Git 集成，KV 绑定仍依赖控制台配置。
+
+### 八、已踩过的坑与对策（部署运维必读）
+
+1. **构建失败：TS 类型检查报错**（`never` / TS2339 / TS2345）。根因：`database.types.ts` 缺 `login_user`/`register_user` RPC 类型 + `noUnusedLocals` 报错。对策：build 脚本改为纯 `vite build` 跳过 `tsc`；但 Functions 类型需手动 `npm run typecheck:functions` 兜底。
+2. **Deploy 阶段报需 Vite ≥ 6**。**根因**：Deploy command 误填 `npx wrangler deploy`。对策：Deploy/Version command **留空**。
+3. **Deploy command 表单死结**（留空 Required / 填占位 Invalid / 偶发内部错误）。对策：已存在项目进 Settings 清空保存；卡向导则先建空项目再手动填构建配置。
+4. **页面显示 Hello world 占位**：误建为 Workers 而非 Pages，或 Build output directory 不对。对策：用 Pages，`apps/pwa/dist`。
+5. **线上报"请配置 VITE_SUPABASE_URL"**：变量没在 Pages 控制台配 / 配错位置（配到 Supabase 集成里无效）/ 配完没重新部署。对策：配到 Pages `Environment variables` 并重新部署。
+6. **登录"用户名或密码错误"**：`VITE_SUPABASE_URL` 指向了错误的 Supabase project，目标 `users` 表无账号。对策：对齐本地 `.env` 的 project，确认账号存在（默认 `admin/123456`）。
+7. **「改了 Functions 没生效」终极元凶：`_worker.bundle`**。`wrangler pages dev` 会优先加载仓库根旧的 `_worker.bundle` 打包产物，覆盖 `functions/` 源码。对策：改动 Functions 后若"没生效"，先删 `_worker.bundle` + `.wrangler/` + 清 wrangler 进程，再重启。（当前仓库根搜索已无 `_worker.bundle`，历史遗留已清。）
+8. **旧构建产物幽灵覆盖** + **编辑工具"假成功"**：见 `summary.md` 07-10 / 07-11 记录，改 `functions/`、`src/` 需 node 直写 + 读回校验。
+
+### 九、数据源现状与已知缺口（影响线上表现）
+
+| 市场 | 实时价 | 历史 | 搜索 | 状态 |
+|------|--------|------|------|------|
+| A股 CN | 新浪 | 新浪 K线 | 腾讯 smartbox | ✅ 全通 |
+| 港股 HK | 腾讯/新浪 | **暂缺**（返回空） | 腾讯 smartbox | ⚠️ 仅实时+搜索 |
+| 美股 US | Yahoo | Yahoo | 腾讯 smartbox | ✅ 全通 |
+| 基金 FUND | 新浪 `fu_` | 东财 `lsjz` | 腾讯 smartbox | ✅ 全通 |
+
+前端需兜底：港股历史空数组显示"暂无数据"；`detail.name` 可能空（用本地冗余名）；基金净值为盘中估算值（标注"估算"）；`current_price` 可为 `null`（判空防 NaN）。
+
+### 十、相关文档索引（避免重复造轮子）
+
+| 文件 | 内容 |
+|------|------|
+| `docs/cloudflare-deploy-troubleshooting.md` | 6 类部署报错 + 最终推荐配置表（最权威排错手册） |
+| `docs/api-test-report.md` | 4 接口字段/真实样本/61 项测试全通过 |
+| `docs/wealth-handoff.md` | 财富模块需求 + Functions 接口如何被前端调用 |
+| `docs/arch/ARCHITECTURE.md` | 整体架构（React/Supabase/IndexedDB/Sync） |
+| `docs/SPEC.md` | 产品设计规格（配色/字体/间距） |
+| `wrangler.toml` / `vite.config.ts` / `tsconfig.functions.json` | 部署/构建/类型检查核心配置 |
+
+### 十一、一句话速查
+
+> 仓库根 `npm run build` → `apps/pwa/dist`；用 **Cloudflare Pages**（非 Workers）部署，Build command `npm run build`、output `apps/pwa/dist`、Deploy/Version 留空；Functions（`functions/`）随站部署，KV 绑定 `QUOTE_CACHE` 在控制台配；`VITE_SUPABASE_*` 在 Pages 环境变量配且改后必须重部署；本地用 `wrangler pages dev . --port 8799` 调试，改动 Functions 后记得清 `_worker.bundle`/`.wrangler`。
+
+---
+
 ## 2026-07-11 晚间：财富首页（WealthHome）交互与计价口径优化
 
 > 本日全部在 `apps/pwa/src/pages/WealthHome.tsx` 做迭代，未改动公共 `currency.ts`、详情页 `WealthDetail.tsx`，全部改动 HMR 通过、lint 0 错误、未 commit。核心主题：先确认方案再动手；产出必须可靠。

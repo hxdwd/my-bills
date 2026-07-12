@@ -45,3 +45,10 @@ history-bills/
 scripts/.tmp/
 scripts/e2e-state.json
 _*
+
+# Wrangler 本地调试产物（wrangler pages dev 输出，勿入库）
+.wrangler/
+apps/pwa/dev-dist/
+wrangler-dev.err
+wrangler-dev.out
+wsl_test_result.txt

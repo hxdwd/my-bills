@@ -3,6 +3,7 @@ import { runHistory } from '../../../src/core/valuation/index'
 
 export const onRequestGet = async (context: any) => {
   const { request, env } = context
+  const _t0 = Date.now()
   const url = new URL(request.url)
   const symbol = url.searchParams.get('symbol')
   const market = (url.searchParams.get('market') as Market) || undefined
@@ -14,6 +15,7 @@ export const onRequestGet = async (context: any) => {
 
   try {
     const data: HistoryPoint[] = await runHistory(symbol, market, period, env.QUOTE_CACHE)
+    console.log(`[perf] GET /api/quote/history total=${Date.now() - _t0}ms symbol=${symbol} market=${market ?? '-'} period=${period} points=${Array.isArray(data) ? data.length : 0}`)
     return json({ code: 0, message: 'ok', data }, 200)
   } catch (e: any) {
     console.error('[history] error', e)

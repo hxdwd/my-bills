@@ -74,7 +74,9 @@ export async function runValuation(
   const items = req.items ?? []
 
   // 汇率
+  const _fxT0 = Date.now()
   const fx = await loadExchangeRates(kv)
+  const fxMs = Date.now() - _fxT0
 
   // 1. 先批量查 KV 缓存（按归一化 key）
   const cacheKeys: string[] = []
@@ -86,15 +88,17 @@ export async function runValuation(
     ;(keyToItemIndex[key] ||= []).push(idx)
   })
 
+  const uniqueKeys = Array.from(new Set(cacheKeys))
   const cachedMap: Record<string, QuoteCacheValue | null> = {}
   await Promise.all(
-    cacheKeys.map(async (k) => {
+    uniqueKeys.map(async (k) => {
       cachedMap[k] = await getQuoteCache(kv, k)
     })
   )
 
   // 2. 找出未命中缓存的 symbol（去重），并行拉取
-  const missingKeys = Array.from(new Set(cacheKeys.filter((k) => !cachedMap[k])))
+  const missingKeys = uniqueKeys.filter((k) => !cachedMap[k])
+  console.log(`[perf] batch kv: total=${uniqueKeys.length} hit=${uniqueKeys.length - missingKeys.length} miss=${missingKeys.length} fx=${fxMs}ms`)
   const fetched: Record<string, QuoteCacheValue | null> = {}
 
   await Promise.allSettled(
@@ -206,6 +210,7 @@ export async function runQuoteDetail(
     const key = quoteCacheKey(m, symbol)
     const c = await getQuoteCache(kv, key)
     if (c) {
+      console.log(`[perf] detail kv: hit key=${key}`)
       return {
         quote: {
           symbol,
@@ -223,6 +228,7 @@ export async function runQuoteDetail(
   const q = await fetchQuote(symbol, m)
   if (kv) {
     const key = quoteCacheKey(m, symbol)
+    console.log(`[perf] detail kv: miss key=${key}`)
     setQuoteCache(kv, key, {
       price: q.price,
       timestamp: Date.now(),
@@ -257,12 +263,14 @@ export async function runHistory(
   const key = historyCacheKey(p.market, symbol, period)
   const cached = await getHistoryCache(kv, key)
   if (cached) {
+    console.log(`[perf] history kv: hit key=${key}`)
     try {
       return JSON.parse(cached)
     } catch {
       // 忽略损坏缓存
     }
   }
+  console.log(`[perf] history kv: miss key=${key}`)
   try {
     const data = await fetchHistory(symbol, p.market, period)
     if (data.length > 0) {

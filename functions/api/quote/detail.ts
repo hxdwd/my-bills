@@ -3,6 +3,7 @@ import { runQuoteDetail } from '../../../src/core/valuation/index'
 
 export const onRequestGet = async (context: any) => {
   const { request, env } = context
+  const _t0 = Date.now()
   const url = new URL(request.url)
   const symbol = url.searchParams.get('symbol')
   const market = (url.searchParams.get('market') as Market) || undefined
@@ -12,7 +13,8 @@ export const onRequestGet = async (context: any) => {
   }
 
   try {
-    const { quote } = await runQuoteDetail(symbol, market, env.QUOTE_CACHE)
+    const { quote, cached } = await runQuoteDetail(symbol, market, env.QUOTE_CACHE)
+    console.log(`[perf] GET /api/quote/detail total=${Date.now() - _t0}ms symbol=${symbol} market=${market ?? '-'} kv=${cached ? 'hit' : 'miss'}`)
     const data = quote as QuoteDetailData
     return json({ code: 0, message: 'ok', data }, 200)
   } catch (e: any) {

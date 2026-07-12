@@ -5,6 +5,7 @@ const MAX_ITEMS = 50
 
 export const onRequestPost = async (context: any) => {
   const { request, env } = context
+  const _t0 = Date.now()
   let body: BatchRequest
   try {
     body = await request.json()
@@ -22,6 +23,7 @@ export const onRequestPost = async (context: any) => {
 
   try {
     const data: BatchResponseData = await runValuation(body, env.QUOTE_CACHE)
+    console.log(`[perf] POST /api/valuation/batch total=${Date.now() - _t0}ms items=${items.length}`)
     return json({ code: 0, message: 'ok', data }, 200)
   } catch (e: any) {
     console.error('[batch] error', e)
