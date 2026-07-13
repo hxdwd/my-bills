@@ -180,7 +180,7 @@ export default function BudgetPage() {
                 剩余 {daysRemaining} 天
               </div>
               <div className={`font-medium ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
-                日均可用 ¥{dailyBudget.toFixed(0)}
+                日均可用 {dailyBudget.toFixed(0)}
               </div>
             </div>
             <button
@@ -195,7 +195,7 @@ export default function BudgetPage() {
               }}
               className={`text-sm font-medium ${theme === 'dark' ? 'text-ink-2 hover:text-ink' : 'text-ink-2 hover:text-ink'} transition-colors`}
             >
-              {totalBudget ? '预算 ¥' + totalBudget.amount.toLocaleString() : '设置总预算'}
+              {totalBudget ? '预算 ' + totalBudget.amount.toLocaleString() : '设置总预算'}
             </button>
           </div>
         </Card>

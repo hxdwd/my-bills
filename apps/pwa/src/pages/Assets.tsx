@@ -121,7 +121,7 @@ export default function AssetsPage() {
       legend: { display: false },
       tooltip: {
         callbacks: {
-          label: (context: any) => ` ¥${context.raw.toLocaleString()}`
+          label: (context: any) => ` ${context.raw.toLocaleString()}`
         }
       }
     },

@@ -19,7 +19,8 @@ import {
   setGoldCache,
   FxCache,
 } from './cache'
-import { fetchQuote, fetchHistory } from './adapter'
+import { fetchQuote, fetchHistory, getAdapters } from './adapter'
+import { log } from './logger'
 
 const SUPPORTED_CURRENCIES: Currency[] = ['CNY', 'USD', 'HKD']
 
@@ -33,7 +34,7 @@ async function loadExchangeRates(kv: KVNamespace): Promise<FxCache> {
   const cached = await getFxCache(kv)
   // 命中且未过期：直接返回，省去每次回源 + 重复写 KV 的固定开销
   if (cached && Date.now() - cached.timestamp < FX_FRESH_MS) {
-    console.log(`[perf] fx KV cache HIT (age ${Math.round((Date.now() - cached.timestamp) / 1000)}s, skip origin)`)
+    log(2, `[perf] fx KV cache HIT (age ${Math.round((Date.now() - cached.timestamp) / 1000)}s, skip origin)`)
     return cached
   }
   try {
@@ -50,7 +51,7 @@ async function loadExchangeRates(kv: KVNamespace): Promise<FxCache> {
     } finally {
       clearTimeout(timer)
     }
-    console.log(`[perf] fx origin fetch ${Date.now() - _t0}ms (每次强制回源 exchangerate-api)`)
+    log(2, `[perf] fx origin fetch ${Date.now() - _t0}ms (exchangerate-api)`)
     const ratesRaw: Record<string, number> = json?.rates ?? {}
     const rates: Record<string, number> = { CNY: 1 }
     for (const c of SUPPORTED_CURRENCIES) {
@@ -63,7 +64,7 @@ async function loadExchangeRates(kv: KVNamespace): Promise<FxCache> {
     return fx
   } catch {
     // 失败用缓存，再失败默认 1:1
-    console.log('[perf] fx origin FAILED -> ' + (cached ? 'fallback KV cache' : 'fallback 1:1'))
+    log(2, '[perf] fx origin FAILED -> ' + (cached ? 'fallback KV cache' : 'fallback 1:1'))
     if (cached) return cached
     return { rates: { CNY: 1, USD: 1, HKD: 1 }, timestamp: Date.now() }
   }
@@ -92,7 +93,7 @@ export async function runValuation(
   const _fxT0 = Date.now()
   const fx = await loadExchangeRates(kv)
   const fxMs = Date.now() - _fxT0
-  console.log(`[perf] loadExchangeRates total ${fxMs}ms`)
+  log(2, `[perf] loadExchangeRates total ${fxMs}ms`)
 
   // 1. 先批量查 KV 缓存（按归一化 key）
   const cacheKeys: string[] = []
@@ -117,12 +118,14 @@ export async function runValuation(
   // 2. 找出未命中缓存的 symbol（去重），并行拉取
   const missingKeys = uniqueKeys.filter((k) => !cachedMap[k])
   const fetched: Record<string, QuoteCacheValue | null> = {}
-  console.log(
+  log(2,
     `[perf] KV quote lookup ${_kvMs}ms | keys=${uniqueKeys.length} hit=${uniqueKeys.length - missingKeys.length} miss=${missingKeys.length}` +
       (missingKeys.length ? ` missKeys=[${missingKeys.join(', ')}]` : '')
   )
 
   const _fetchT0 = Date.now()
+  // 数据源统计：记录本次请求各市场实际回源用的 adapter（level=1 汇总用）
+  const srcStats: string[] = []
   await Promise.allSettled(
     missingKeys.map(async (k) => {
       // key 形如 quote:{market}:{symbol}
@@ -134,7 +137,8 @@ export async function runValuation(
         if (gc.state === 'fresh' && gc.value) {
           fetched[k] = gc.value
           cachedMap[k] = gc.value
-          console.log(`[perf]   gold KV cache HIT (age ${Math.round((Date.now() - gc.value.timestamp) / 1000)}s, skip origin)`)
+          srcStats.push('gold:kv')
+          log(2, `[perf]   gold KV cache HIT (age ${Math.round((Date.now() - gc.value.timestamp) / 1000)}s, skip origin)`)
           return
         }
       }
@@ -153,7 +157,10 @@ export async function runValuation(
         if (marketStr === 'GOLD') setGoldCache(kv, val)
         // 把最新价格也合并进 cachedMap，供本轮使用
         cachedMap[k] = val
-        console.log(`[perf]   fetch OK  ${marketStr}:${sym} ${Date.now() - _one0}ms`)
+        // 记录该市场第一个可用的数据源名（由 adapter 的 trySources 决定）
+        const adapters = getAdapters(marketStr as Market)
+        srcStats.push(`${marketStr}:${adapters[0]?.name ?? '?'}`)
+        log(2, `[perf]   fetch OK  ${marketStr}:${sym} ${Date.now() - _one0}ms`)
       } catch (e: any) {
         fetched[k] = null
         cachedMap[k] = null
@@ -163,16 +170,18 @@ export async function runValuation(
           if (gc.state === 'stale' && gc.value) {
             fetched[k] = gc.value
             cachedMap[k] = gc.value
-            console.log(`[perf]   fetch ERR GOLD -> stale fallback age ${Math.round((Date.now() - gc.value.timestamp) / 1000)}s ${e?.message || e}`)
+            srcStats.push('gold:stale')
+            log(2, `[perf]   fetch ERR GOLD -> stale fallback age ${Math.round((Date.now() - gc.value.timestamp) / 1000)}s ${e?.message || e}`)
             return
           }
         }
-        console.log(`[perf]   fetch ERR ${marketStr}:${sym} ${Date.now() - _one0}ms ${e?.message || e}`)
+        srcStats.push(`${marketStr}:FAIL`)
+        log(2, `[perf]   fetch ERR ${marketStr}:${sym} ${Date.now() - _one0}ms ${e?.message || e}`)
       }
     })
   )
   if (missingKeys.length) {
-    console.log(`[perf] origin fetch total ${Date.now() - _fetchT0}ms (${missingKeys.length} symbols)`)
+    log(2, `[perf] origin fetch total ${Date.now() - _fetchT0}ms (${missingKeys.length} symbols)`)
   }
 
   // 3. 组装每只资产结果
@@ -237,8 +246,9 @@ export async function runValuation(
   // 5. 按需字段裁剪
   const trimmed = req.fields ? results.map((r) => pickFields(r, req.fields)) : results
 
-  console.log(
-    `[perf] runValuation TOTAL ${Date.now() - _total0}ms | items=${items.length} fx=${fxMs}ms kv=${_kvMs}ms miss=${missingKeys.length}`
+  log(1,
+    `[perf] runValuation ${Date.now() - _total0}ms items=${items.length} fx=${fxMs}ms kv=${_kvMs}ms miss=${missingKeys.length}` +
+      (srcStats.length ? ` src=[${srcStats.join(', ')}]` : '')
   )
 
   return {

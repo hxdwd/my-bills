@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useWealthValuation, todayProfit, toBaseCurrency, ValuationWithHolding } from '../hooks/useWealthValuation'
 import { marketToCategory, marketLabel, AssetCategory } from '../db/wealthStore'
 import type { Market } from '../utils/quoteApi'
-import { fmtWithSymbol, fmtMoney as fmtMoneyUtil, CURRENCY_SYMBOL, CURRENCY_LABEL, BASE_CURRENCIES, Currency } from '../utils/currency'
+import { fmtMoney as fmtMoneyUtil, CURRENCY_SYMBOL, CURRENCY_LABEL, BASE_CURRENCIES, Currency } from '../utils/currency'
 import CashIcon from '../components/ui/CashIcon'
 
 const CAT_META: Record<AssetCategory, { label: string; color: string }> = {
@@ -36,11 +36,11 @@ function sign(n: number | null | undefined): string {
   return n >= 0 ? '+' : ''
 }
 
-function Card({ title, value, sub, color }: { title: string; value: string; sub?: string; color?: string }) {
+function Card({ title, value, sub, color, large }: { title: string; value: string; sub?: string; color?: string; large?: boolean }) {
   return (
     <div className="flex-1 bg-surface rounded-2xl p-3 border border-brand-tint">
       <div className="text-xs text-ink-2 mb-1">{title}</div>
-      <div className="text-lg font-bold font-amount amount-fluid-sm whitespace-nowrap" style={{ color }}>{value}</div>
+      <div className={`font-amount whitespace-nowrap ${large ? 'text-xl font-extrabold amount-fluid-lg' : 'text-lg font-bold amount-fluid-sm'}`} style={{ color }}>{value}</div>
       {sub && <div className="text-[10px] text-ink-3 mt-0.5">{sub}</div>}
     </div>
   )
@@ -48,6 +48,7 @@ function Card({ title, value, sub, color }: { title: string; value: string; sub?
 
 type FilterCat = 'all' | AssetCategory | Market
 type SortKey = 'market_value' | 'profit_loss' | 'profit_rate'
+type ViewMode = 'today' | 'total'
 
 export function WealthHome() {
   const { results, lastUpdated, error, refresh, rates, baseCurrency, setBaseCurrency, summary } = useWealthValuation()
@@ -55,6 +56,7 @@ export function WealthHome() {
   const [refreshing, setRefreshing] = useState(false)
   const [filter, setFilter] = useState<FilterCat>('all')
   const [sortKey, setSortKey] = useState<SortKey>('market_value')
+  const [viewMode, setViewMode] = useState<ViewMode>('today')
   const [showSortMenu, setShowSortMenu] = useState(false)
   const [showDist, setShowDist] = useState(true)
   const [showCurrencyPop, setShowCurrencyPop] = useState(false)
@@ -90,9 +92,30 @@ export function WealthHome() {
     curToastTimer.current = setTimeout(() => setCurToast(''), 1600)
   }
   useEffect(() => () => { if (curToastTimer.current) clearTimeout(curToastTimer.current) }, [])
+
+  // 首次进入财富页面时自动提示当前计价币种（同一次会话仅弹一次，从子页返回不重复）
+  useEffect(() => {
+    const KEY = 'wealth-currency-intro-shown'
+    if (sessionStorage.getItem(KEY)) return
+    sessionStorage.setItem(KEY, '1')
+    showCurToast(`当前${CURRENCY_LABEL[baseCurrency]}计价 · 点击切换`, 'right')
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   const [sortToastLabel, setSortToastLabel] = useState('')
   const sortToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const sortRef = useRef<HTMLDivElement>(null)
+  const [viewToast, setViewToast] = useState('')
+  const viewToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const toggleViewMode = () => {
+    const next: ViewMode = viewMode === 'today' ? 'total' : 'today'
+    setViewMode(next)
+    const label = next === 'today' ? '当日收益视角' : '累计收益视角'
+    setViewToast('')
+    if (viewToastTimer.current) clearTimeout(viewToastTimer.current)
+    setViewToast(label)
+    viewToastTimer.current = setTimeout(() => setViewToast(''), 1500)
+  }
 
   // 点击排序项后，在按钮下方短暂提示"已按 X 排序"，避免纯图标看不出当前排序维度
   const showSortToast = (label: string) => {
@@ -146,15 +169,21 @@ export function WealthHome() {
     const sorted = [...arr]
     sorted.sort((a, b) => {
       if (sortKey === 'profit_rate') {
-        return (b.profit_rate ?? -Infinity) - (a.profit_rate ?? -Infinity)
+        // 当日视角按涨跌幅，累计视角按累计收益率
+        const va = viewMode === 'today' ? (a.change_percent ?? -Infinity) : (a.profit_rate ?? -Infinity)
+        const vb = viewMode === 'today' ? (b.change_percent ?? -Infinity) : (b.profit_rate ?? -Infinity)
+        return vb - va
       }
       if (sortKey === 'profit_loss') {
-        return (b.profit_loss ?? -Infinity) - (a.profit_loss ?? -Infinity)
+        // 当日视角按今日收益额，累计视角按累计盈亏
+        const va = viewMode === 'today' ? todayProfit(a) : (a.profit_loss ?? -Infinity)
+        const vb = viewMode === 'today' ? todayProfit(b) : (b.profit_loss ?? -Infinity)
+        return vb - va
       }
       return (b.market_value || 0) - (a.market_value || 0)
     })
     return sorted
-  }, [results, filter, sortKey])
+  }, [results, filter, sortKey, viewMode])
 
   const onPullRefresh = async () => {
     setRefreshing(true)
@@ -208,7 +237,15 @@ export function WealthHome() {
       ),
     },
   ]
-  const sortLabel = SORTS.find(s => s.key === sortKey)?.label || '市值'
+  const sortLabel = (() => {
+    const s = SORTS.find(x => x.key === sortKey)
+    if (!s) return '市值'
+    if (viewMode === 'today') {
+      if (s.key === 'profit_rate') return '涨跌幅'
+      if (s.key === 'profit_loss') return '今日收益'
+    }
+    return s.label
+  })()
 
   return (
     <div className="min-h-screen bg-bg px-4 pt-6 pb-28">
@@ -224,7 +261,7 @@ export function WealthHome() {
               aria-expanded={showCurrencyPop}
               className="flex items-center justify-center rounded-full p-0.5 transition-transform active:scale-95"
             >
-              <CashIcon currency={baseCurrency} size={26} />
+              <CashIcon currency={baseCurrency} size={46} />
             </button>
             {showCurrencyPop && (
               <div
@@ -242,9 +279,9 @@ export function WealthHome() {
                         onClick={() => selectCurrency(c)}
                         aria-label={c}
                         aria-pressed={active}
-                        className={`pointer-events-auto flex h-8 w-8 items-center justify-center rounded-xl transition-colors active:scale-90 ${active ? 'bg-[#fbf3d9]' : 'bg-transparent hover:bg-black/[0.04]'}`}
+                        className={`pointer-events-auto flex h-8 w-14 items-center justify-center rounded-xl transition-colors active:scale-90 ${active ? 'bg-[#fbf3d9]' : 'bg-transparent hover:bg-black/[0.04]'}`}
                       >
-                        <CashIcon currency={c} size={22} className={active ? '' : 'opacity-60'} />
+                        <CashIcon currency={c} size={38} className={active ? '' : 'opacity-60'} />
                       </button>
                     )
                   })}
@@ -273,9 +310,9 @@ export function WealthHome() {
 
       {/* 三卡片（按本位币折算合计） */}
       <div className="flex gap-2 mb-4">
-        <Card title={`总市值 (${CURRENCY_SYMBOL[baseCurrency]})`} value={fmtWithSymbol(baseMV, baseCurrency, 0)} />
-        <Card title="今日收益" value={`${sign(todayTotal)}${fmtWithSymbol(todayTotal, baseCurrency, 0)}`} color={colorOf(todayTotal)} />
-        <Card title="累计收益" value={`${sign(basePL)}${fmtWithSymbol(basePL, baseCurrency, 0)}`} color={colorOf(basePL)} />
+        <Card title={`总市值 (${CURRENCY_SYMBOL[baseCurrency]})`} value={fmtMoneyUtil(baseMV, 0)} large />
+        <Card title="今日收益" value={`${sign(todayTotal)}${fmtMoneyUtil(todayTotal, 0)}`} color={colorOf(todayTotal)} />
+        <Card title="累计收益" value={`${sign(basePL)}${fmtMoneyUtil(basePL, 0)}`} color={colorOf(basePL)} />
       </div>
 
 
@@ -308,7 +345,7 @@ export function WealthHome() {
                     <span className="flex items-center gap-2 text-sm text-ink">
                       <span className="w-2.5 h-2.5 rounded-full" style={{ background: color }} />
                       {CAT_META[cat].label}
-                      <span className="text-sm text-ink-2">{fmtWithSymbol(v, baseCurrency, 0)}</span>
+                      <span className="text-sm text-ink-2">{fmtMoneyUtil(v, 0)}</span>
                     </span>
                     <span className="text-sm text-ink-2 tabular-nums">{pct.toFixed(0)}%</span>
                   </div>
@@ -325,7 +362,7 @@ export function WealthHome() {
         )}
       </div>
 
-      {/* 分类筛选（弱化呈现，仅作筛选用） + 排序入口 */}
+      {/* 分类筛选（弱化呈现，仅作筛选用） + 视角切换 + 排序入口 */}
       <div className="flex items-center justify-between mb-3 gap-2" data-testid="filter-bar">
         <div className="flex gap-2 flex-wrap">
           {FILTERS.map(f => {
@@ -348,50 +385,86 @@ export function WealthHome() {
           })}
         </div>
 
-        <div className="relative" ref={sortRef}>
-          <button
-            onClick={() => setShowSortMenu(v => !v)}
-            onContextMenu={(e) => { e.preventDefault(); setShowSortMenu(true) }}
-            data-testid="sort-trigger"
-            title={`排序：${sortLabel}`}
-            aria-label={`排序：${sortLabel}`}
-            className="w-7 h-7 flex items-center justify-center rounded-lg text-ink-3 hover:text-ink hover:bg-brand-tint transition-colors"
-          >
-            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M5 3v10M5 13l-2-2M5 13l2-2M11 13V3M11 3l-2 2M11 3l2 2" />
-            </svg>
-          </button>
-          {showSortMenu && (
-            <div
-              data-testid="sort-menu"
-              className="absolute right-0 top-full mt-1 z-20 bg-surface border border-brand-tint rounded-xl py-1 shadow-lg"
+        <div className="flex items-center gap-1">
+          {/* 视角切换按钮：眼睛图标，有神/无神区分当日/累计 */}
+          <div className="relative">
+            <button
+              onClick={toggleViewMode}
+              data-testid="view-mode-toggle"
+              title={viewMode === 'today' ? '当前：当日收益视角，点击切换' : '当前：累计收益视角，点击切换'}
+              aria-label={viewMode === 'today' ? '切换至累计收益视角' : '切换至当日收益视角'}
+              className="w-7 h-7 flex items-center justify-center rounded-lg text-ink-3 hover:text-ink hover:bg-brand-tint transition-colors"
             >
-              {SORTS.map(s => {
-                const active = sortKey === s.key
-                return (
-                  <button
-                    key={s.key}
-                    data-testid={`sort-${s.key}`}
-                    title={s.label}
-                    aria-label={s.label}
-                    onClick={() => { setSortKey(s.key); setShowSortMenu(false); showSortToast(s.label) }}
-                    className={`flex items-center justify-center w-9 h-9 mx-1 rounded-lg transition-colors ${active ? 'text-ink bg-brand-tint' : 'text-ink-3 hover:text-ink'}`}
-                  >
-                    {s.icon}
-                  </button>
-                )
-              })}
+              {viewMode === 'today' ? (
+                <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+                  <ellipse cx="8" cy="8" rx="6" ry="3.5" />
+                  <circle cx="8" cy="8" r="2" />
+                  <circle cx="8" cy="8" r="0.8" fill="currentColor" />
+                </svg>
+              ) : (
+                <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+                  <ellipse cx="8" cy="8" rx="6" ry="3.5" />
+                  <circle cx="8" cy="8" r="2" />
+                </svg>
+              )}
+            </button>
+            {/* 视角切换提示气泡 */}
+            {viewToast && (
+              <div
+                data-testid="view-toast"
+                className="absolute right-0 bottom-full mb-1 z-30 px-2.5 py-1 rounded-lg bg-ink text-bg text-[11px] font-medium whitespace-nowrap shadow-lg animate-fade-in"
+              >
+                已切换至{viewToast}
+              </div>
+            )}
+          </div>
+
+          {/* 排序入口 */}
+          <div className="relative" ref={sortRef}>
+              <button
+                onClick={() => setShowSortMenu(v => !v)}
+                onContextMenu={(e) => { e.preventDefault(); setShowSortMenu(true) }}
+                data-testid="sort-trigger"
+                title={`排序：${sortLabel}`}
+                aria-label={`排序：${sortLabel}`}
+                className="w-7 h-7 flex items-center justify-center rounded-lg text-ink-3 hover:text-ink hover:bg-brand-tint transition-colors"
+              >
+                <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M5 3v10M5 13l-2-2M5 13l2-2M11 13V3M11 3l-2 2M11 3l2 2" />
+                </svg>
+              </button>
+              {showSortMenu && (
+                <div
+                  data-testid="sort-menu"
+                  className="absolute right-0 top-full mt-1 z-20 bg-surface border border-brand-tint rounded-xl py-1 shadow-lg"
+                >
+                  {SORTS.map(s => {
+                    const active = sortKey === s.key
+                    return (
+                      <button
+                        key={s.key}
+                        data-testid={`sort-${s.key}`}
+                        title={s.label}
+                        aria-label={s.label}
+                        onClick={() => { setSortKey(s.key); setShowSortMenu(false); showSortToast(s.label) }}
+                        className={`flex items-center justify-center w-9 h-9 mx-1 rounded-lg transition-colors ${active ? 'text-ink bg-brand-tint' : 'text-ink-3 hover:text-ink'}`}
+                      >
+                        {s.icon}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+              {/* 排序反馈气泡：贴在排序按钮正上方，1.5s 自动消失 */}
+              {sortToastLabel && (
+                <div
+                  data-testid="sort-toast"
+                  className="absolute right-0 bottom-full mb-1 z-30 px-2.5 py-1 rounded-lg bg-ink text-bg text-[11px] font-medium whitespace-nowrap shadow-lg animate-fade-in"
+                >
+                  已按{sortToastLabel}排序
+                </div>
+              )}
             </div>
-          )}
-          {/* 排序反馈气泡：贴在排序按钮正下方，1.5s 自动消失 */}
-          {sortToastLabel && (
-            <div
-              data-testid="sort-toast"
-              className="absolute right-0 top-full mt-11 z-30 px-2.5 py-1 rounded-lg bg-ink text-bg text-[11px] font-medium whitespace-nowrap shadow-lg animate-fade-in"
-            >
-              已按{sortToastLabel}排序
-            </div>
-          )}
         </div>
       </div>
 
@@ -417,6 +490,13 @@ export function WealthHome() {
             const mv = toBaseCurrency(r.market_value ?? 0, cur, baseCurrency, rates)
             const pl = r.profit_loss != null ? toBaseCurrency(r.profit_loss, cur, baseCurrency, rates) : null
             const pr = r.profit_rate ?? null
+            // 当日收益（本位币折算）
+            const td = toBaseCurrency(todayProfit(r), cur, baseCurrency, rates)
+            const cp = r.change_percent ?? null
+            // 根据视角选择第二行显示内容
+            const isToday = viewMode === 'today'
+            const line2Val = isToday ? td : pl
+            const line2Pct = isToday ? cp : pr
             return (
               <button
                 key={`${r.market}:${r.symbol}`}
@@ -429,10 +509,10 @@ export function WealthHome() {
                   <div className="font-medium text-ink truncate">{r.name || r.symbol}</div>
                   <div className="text-xs text-ink-3 mt-0.5">{r.symbol} · {r.market}</div>
                 </div>
-                <div className="text-right ml-3 min-w-0">
-                  <div className="font-medium text-ink font-amount amount-fluid whitespace-nowrap">{fmtWithSymbol(mv, baseCurrency, 0)}</div>
-                  <div className="text-xs mt-0.5 font-amount whitespace-nowrap" style={{ color: colorOf(pl) }}>
-                    {sign(pl)}{fmtWithSymbol(pl, baseCurrency, 0)} / {pr != null ? `${sign(pr * 100)}${(pr * 100).toFixed(2)}%` : '—'}
+                <div className="text-right ml-3 min-w-0 flex-shrink-0">
+                  <div className="font-bold text-ink font-amount amount-fluid whitespace-nowrap">{fmtMoneyUtil(mv, 0)}</div>
+                  <div className="text-[11px] mt-0.5 font-amount amount-fluid-sm whitespace-nowrap leading-tight" style={{ color: colorOf(line2Val) }}>
+                    {sign(line2Val)}{fmtMoneyUtil(line2Val, 0)} / {line2Pct != null ? `${sign(line2Pct * 100)}${(line2Pct * 100).toFixed(2)}%` : '—'}
                   </div>
                 </div>
               </button>
@@ -441,7 +521,31 @@ export function WealthHome() {
         </div>
       )}
 
-      {lastUpdated && <div className="text-center text-[10px] text-ink-3 mt-4">更新于 {lastUpdated.toLocaleTimeString('zh-CN')}</div>}
+      {lastUpdated && (
+        <div className="text-center text-[10px] text-ink-3/60 mt-5 mb-1">
+          更新于 {lastUpdated.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+        </div>
+      )}
+      <div className="text-center text-[9px] text-ink-3/40 mb-6 leading-relaxed">
+        基金当日收益为盘中估算，仅供参考，实际以确认净值结算
+      </div>
+
+      {/* 悬浮加仓胶囊：右下角，紧贴底部导航栏设置图标左上方，呼吸灯 + 光晕 */}
+      <button
+        onClick={() => navigate('/wealth/add')}
+        data-testid="wealth-fab"
+        aria-label="导入持仓"
+        className="fixed right-4 z-40 flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-medium text-ink-2 bg-white/70 backdrop-blur-sm border border-[#e8e6dc]/60 shadow-sm transition-all active:scale-95"
+        style={{
+          bottom: 'calc(env(safe-area-inset-bottom) + 72px)',
+          animation: 'breathe 2.4s ease-in-out infinite, glow-pulse 3s ease-in-out infinite',
+        }}
+      >
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+          <path d="M8 3v10M3 8h10" />
+        </svg>
+        <span>导入</span>
+      </button>
     </div>
   )
 }

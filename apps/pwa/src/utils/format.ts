@@ -15,15 +15,15 @@ export function formatCurrency(amount: number, showSign = false, compact = false
 
   if (compact && abs > COMPACT_THRESHOLD) {
     if (abs >= 100000000) {
-      return `${sign}¥${(abs / 100000000).toFixed(2)}亿`;
+      return `${sign}${(abs / 100000000).toFixed(2)}亿`;
     }
     if (abs >= 10000) {
-      return `${sign}¥${(abs / 10000).toFixed(2)}万`;
+      return `${sign}${(abs / 10000).toFixed(2)}万`;
     }
-    return `${sign}¥${(abs / 1000).toFixed(2)}k`;
+    return `${sign}${(abs / 1000).toFixed(2)}k`;
   }
 
-  return `${sign}¥${abs.toLocaleString('zh-CN', {
+  return `${sign}${abs.toLocaleString('zh-CN', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;

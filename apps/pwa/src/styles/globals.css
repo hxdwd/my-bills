@@ -153,6 +153,18 @@ select {
   padding-bottom: calc(env(safe-area-inset-bottom) + 140px);
 }
 
+/* 呼吸灯动画：透明度 60%↔100% 循环，用于悬浮操作按钮 */
+@keyframes breathe {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+/* 光晕动画：环形扩散 + 淡出 */
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(201, 100, 66, 0.15); }
+  50% { box-shadow: 0 0 0 8px rgba(201, 100, 66, 0); }
+}
+
 /* 滚动条（极简） */
 ::-webkit-scrollbar {
   width: 0;

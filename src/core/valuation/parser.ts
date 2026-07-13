@@ -109,8 +109,9 @@ export function parseSymbol(symbol: string, explicitMarket?: Market): ParsedSymb
   // US
   // 剥掉交易所后缀：Yahoo 只用纯代码（如 QQQ），不认 .OQ/.N/.O/.A/.PK/.US 等。
   // 注意：不能无脑剥所有 "."（港股用 .HK 由 HK 分支处理，这里只处理美股常见后缀）。
+  // 腾讯 smartbox 返回的美股 code 会带交易所后缀，需全部剥离后才能用于 Yahoo 查询。
   const yahoo = raw
-    .replace(/\.(us|oq|n|o|a|pk|l|sa|si)$/i, '')
+    .replace(/\.(us|oq|n|o|a|pk|l|sa|si|am|ne|to|v|ax|cn|tw|ks|ksq|t|jp|hk|ss|sz|mi|pa|co|ta|bo|ba|sn|de|he|is|mu|mc|ma|me|sg|st|sw|vi|wa|bc|bi)$/i, '')
     .toUpperCase()
   return {
     market,

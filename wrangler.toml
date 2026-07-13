@@ -26,6 +26,9 @@ id = "a025d8ed33bf444c9ec7df45993aae92"
 # id = "a025d8ed33bf444c9ec7df45993aae92"
 # preview_id = "<ID_OF_PREVIEW_KV_NAMESPACE_FOR_LOCAL_DEVELOPMENT>"
 
-# 本地开发可选：设置允许的 CORS 来源（_middleware.ts 当前默认 *）
-# [vars]
+# 日志级别（仅影响 Functions console.log 输出）：
+#   0 = 不输出   1 = 仅请求汇总（默认，生产推荐）   2 = 汇总 + 数据源调用详情（排查用）
+# 修改后需重启 wrangler dev 或重新部署生效。
+[vars]
+LOG_LEVEL = "1"
 # ALLOWED_ORIGINS = "https://your-domain.com"

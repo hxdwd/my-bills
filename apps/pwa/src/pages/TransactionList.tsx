@@ -253,8 +253,8 @@ export default function TransactionListPage() {
                       {date}
                     </span>
                     <span className={`text-xs ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
-                      {expense > 0 && <span className="text-ink mr-2">支出 ¥{expense.toFixed(2)}</span>}
-                      {income > 0 && <span className="text-danger">收入 ¥{income.toFixed(2)}</span>}
+                      {expense > 0 && <span className="text-ink mr-2">支出 {expense.toFixed(2)}</span>}
+                      {income > 0 && <span className="text-danger">收入 {income.toFixed(2)}</span>}
                     </span>
                   </div>
                   <Card className="!p-0 divide-y divide-[#f0eee6] dark:divide-[#3d3d3a]">

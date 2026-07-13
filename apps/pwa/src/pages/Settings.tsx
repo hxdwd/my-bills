@@ -130,7 +130,7 @@ export default function SettingsPage() {
         { 
           icon: <DollarSign size={20} className="text-danger" />, 
           title: '大额支出阈值', 
-          subtitle: `当前 ¥${bigExpenseThreshold}`,
+          subtitle: `当前 ${bigExpenseThreshold}`,
           onClick: () => {
             setThresholdInput(bigExpenseThreshold.toString())
             setShowThresholdEdit(true)

@@ -186,7 +186,7 @@ export default function CalendarPage() {
               <div className={`p-2 rounded-lg ${theme === 'dark' ? 'bg-surface' : 'bg-bg'}`}>
                 <div className={`text-xs ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>支出</div>
                 <div className="text-danger font-mono font-medium">
-                  ¥{selectedDayTransactions
+                  {selectedDayTransactions
                     .filter(t => t.type === 'expense')
                     .reduce((sum, t) => sum + t.amount, 0)
                     .toLocaleString()}
@@ -195,7 +195,7 @@ export default function CalendarPage() {
               <div className={`p-2 rounded-lg ${theme === 'dark' ? 'bg-surface' : 'bg-bg'}`}>
                 <div className={`text-xs ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>收入</div>
                 <div className="text-ok font-mono font-medium">
-                  ¥{selectedDayTransactions
+                  {selectedDayTransactions
                     .filter(t => t.type === 'income')
                     .reduce((sum, t) => sum + t.amount, 0)
                     .toLocaleString()}

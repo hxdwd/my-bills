@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { parseHoldingsText, ParsedHolding, ImportMode } from '../utils/holdingImport'
 import { searchQuote, fetchQuoteDetail, QuoteSearchResult } from '../utils/quoteApi'
 import { addHoldingTransaction } from '../db/wealthStore'
-import { fmtWithSymbol, Currency } from '../utils/currency'
+import { fmtMoney as fmtMoneyUtil, Currency } from '../utils/currency'
 import { Trash2, Check, Loader2 } from 'lucide-react'
 
 // 市场 → 默认币种（与后端 marketCurrency 一致）
@@ -368,8 +368,8 @@ export function WealthImport() {
               )}
               {!r.resolving && !r.drop && (
                 <div className="text-[10px] text-ink-3 mt-1.5">
-                  持有金额 {fmtWithSymbol(r.raw.marketValue, marketToCurrency(r.market))}
-                  {r.raw.holdProfit != null && ` · 持有收益 ${r.raw.holdProfit >= 0 ? '+' : ''}${fmtWithSymbol(r.raw.holdProfit, marketToCurrency(r.market))}`}
+                  持有金额 {fmtMoneyUtil(r.raw.marketValue)}
+                  {r.raw.holdProfit != null && ` · 持有收益 ${r.raw.holdProfit >= 0 ? '+' : ''}${fmtMoneyUtil(r.raw.holdProfit)}`}
                 </div>
               )}
             </div>

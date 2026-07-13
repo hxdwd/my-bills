@@ -1,9 +1,9 @@
 import type { Currency } from '../../utils/currency'
 
-const META: Record<Currency, { symbol: string; color: string; bg: string }> = {
-  CNY: { symbol: '¥', color: '#c96442', bg: '#fff3ec' },
-  USD: { symbol: '$', color: '#2f6f4f', bg: '#eaf5ee' },
-  HKD: { symbol: 'HK$', color: '#3b5b9a', bg: '#eaf0fa' },
+const META: Record<Currency, { symbol: string; gradientStart: string; gradientEnd: string; flag: string }> = {
+  CNY: { symbol: '¥', gradientStart: '#c96442', gradientEnd: '#e8a87c', flag: '🇨🇳' },
+  USD: { symbol: '$', gradientStart: '#2f6f4f', gradientEnd: '#5aad7f', flag: '🇺🇸' },
+  HKD: { symbol: 'HK$', gradientStart: '#3b5b9a', gradientEnd: '#6b8ec8', flag: '🇭🇰' },
 }
 
 interface Props {
@@ -12,30 +12,45 @@ interface Props {
   className?: string
 }
 
-// 矢量纸质钞票图标：零依赖、风格与现有扁平 UI 统一
-export default function CashIcon({ currency, size = 28, className = '' }: Props) {
+// 方案 D — 镂空圆章 + 渐变底 + 国旗 emoji + 大字币种符号
+export default function CashIcon({ currency, size = 68, className = '' }: Props) {
   const m = META[currency] ?? META.CNY
+  const w = size
+  const h = Math.round(size * 0.5)
+  const gradientId = `cash-grad-${currency}`
+  const symFontSize = currency === 'HKD' ? 10 : 13
   return (
     <svg
-      width={size}
-      height={size}
-      viewBox="0 0 28 28"
+      width={w}
+      height={h}
+      viewBox="0 0 68 34"
       className={className}
       role="img"
       aria-label={currency}
     >
-      <rect x="2" y="5" width="24" height="18" rx="3" fill={m.bg} stroke={m.color} strokeWidth="1.4" />
-      <circle cx="14" cy="14" r="5.4" fill="none" stroke={m.color} strokeWidth="1.2" opacity="0.55" />
-      <circle cx="14" cy="14" r="2.2" fill={m.color} opacity="0.35" />
+      <defs>
+        <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor={m.gradientStart} />
+          <stop offset="100%" stopColor={m.gradientEnd} />
+        </linearGradient>
+      </defs>
+      <rect x="1" y="1" width="66" height="32" rx="5" fill={`url(#${gradientId})`} />
+      <circle cx="20" cy="17" r="9" fill="rgba(255,255,255,0.15)" stroke="rgba(255,255,255,0.5)" strokeWidth="1.3" />
       <text
-        x="14"
-        y="14"
+        x="20" y="21.5"
         textAnchor="middle"
-        dominantBaseline="central"
-        fontSize={currency === 'HKD' ? 8 : 11}
-        fontWeight="700"
-        fill={m.color}
-        fontFamily="system-ui, sans-serif"
+        fontSize="11"
+        fontFamily="system-ui, 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', sans-serif"
+      >
+        {m.flag}
+      </text>
+      <text
+        x="46" y="22"
+        textAnchor="middle"
+        fontSize={symFontSize}
+        fontWeight="800"
+        fill="rgba(255,255,255,0.95)"
+        fontFamily="system-ui"
       >
         {m.symbol}
       </text>

@@ -15,7 +15,6 @@ export const onRequestGet = async (context: any) => {
 
   try {
     const data: HistoryPoint[] = await runHistory(symbol, market, period, env.QUOTE_CACHE)
-    console.log(`[perf] GET /api/quote/history total=${Date.now() - _t0}ms symbol=${symbol} market=${market ?? '-'} period=${period} points=${Array.isArray(data) ? data.length : 0}`)
     return json({ code: 0, message: 'ok', data }, 200)
   } catch (e: any) {
     console.error('[history] error', e)

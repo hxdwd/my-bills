@@ -24,7 +24,10 @@ function normalizeSymbol(market: Market, code: string): string {
     return num.padStart(5, '0')
   }
   if (market === 'US') {
-    return code.replace(/^us/i, '').replace(/\.us$/i, '').toUpperCase()
+    // 剥掉腾讯 smartbox 返回的美股交易所后缀（.OQ/.N/.AM/.O 等），只留纯代码
+    return code.replace(/^us/i, '')
+      .replace(/\.(us|oq|n|o|a|pk|l|sa|si|am|ne|to|v|ax|cn|tw|ks|ksq|t|jp|hk|ss|sz|mi|pa|co|ta|bo|ba|sn|de|he|is|mu|mc|ma|me|sg|st|sw|vi|wa|bc|bi)$/i, '')
+      .toUpperCase()
   }
   return code.replace(/^(sh|sz|hk)/i, '').replace(/\.hk$/i, '')
 }

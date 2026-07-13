@@ -249,7 +249,7 @@ export default function ReportsPage() {
         grid: { color: theme === 'dark' ? '#3d3d3a' : '#f0eee6' },
         ticks: { 
           color: '#888888',
-          callback: (value: any) => `¥${value}`
+          callback: (value: any) => `${value}`
         }
       }
     }
@@ -278,7 +278,7 @@ export default function ReportsPage() {
         grid: { color: theme === 'dark' ? '#3d3d3a' : '#f0eee6' },
         ticks: { 
           color: '#888888',
-          callback: (value: any) => `¥${value}`
+          callback: (value: any) => `${value}`
         }
       }
     }

@@ -127,10 +127,12 @@ export function useWealthValuation(intervalMs = 60000) {
   }
 }
 
-// 今日收益：change_percent 是比例（与币种无关），用资产自身币种市值即可
+// 今日收益：change_percent 是小数（如 -0.02 表示 -2%），用资产自身币种市值即可
+// 公式：昨日市值 = 当前市值 / (1 + change_percent)
+//       今日收益 = 当前市值 - 昨日市值
 export function todayProfit(v: ValuationWithHolding): number {
   if (v.market_value == null || v.change_percent == null) return 0
-  return v.market_value - v.market_value / (1 + v.change_percent / 100)
+  return v.market_value - v.market_value / (1 + v.change_percent)
 }
 
 // 把某资产金额折算到当前本位币（供页面展示时调用）

@@ -35,14 +35,21 @@ export function fmtMoney(n: number | null | undefined, digits = 2): string {
   })
 }
 
-// 带币种符号的金额（如 $1,234.50）
+// 带币种符号的金额（如 $1,234.50 / -¥1,776）
 export function fmtWithSymbol(
   n: number | null | undefined,
   currency: Currency | undefined | null,
   digits = 2,
 ): string {
+  if (n == null || isNaN(n)) return '—'
   const sym = CURRENCY_SYMBOL[currency ?? 'CNY'] ?? '¥'
-  return `${sym}${fmtMoney(n, digits)}`
+  const abs = Math.abs(n)
+  const formatted = abs.toLocaleString('zh-CN', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: digits,
+  })
+  const sign = n < 0 ? '-' : ''
+  return `${sign}${sym}${formatted}`
 }
 
 // 汇率折算：rates 中 rates[x] 表示「1 x = ? CNY」（见后端 loadExchangeRates）。

@@ -51,13 +51,13 @@ export function TabBar({ activeTab, onTabChange, onAddClick }: TabBarProps) {
         })}
       </div>
 
-      {/* 悬浮 + 号：仅在首页/财富页出现。首页=记一笔账单；财富页=新增持仓。统一入口，避免重复 */}
-      {(activeTab === 'home' || activeTab === 'wealth') && (
+      {/* 悬浮 + 号：仅在首页出现。首页=记一笔账单。财富页的加仓入口移至页面内悬浮胶囊。 */}
+      {activeTab === 'home' && (
         <button
-          onClick={() => (activeTab === 'wealth' ? navigate('/wealth/add') : onAddClick())}
+          onClick={onAddClick}
           className="fixed left-1/2 -translate-x-1/2 z-[60] w-[56px] h-[56px] rounded-full bg-brand text-ink shadow-soft-brand flex items-center justify-center hover:bg-brand-strong active:scale-90 transition-all"
           style={{ bottom: 'calc(82px + env(safe-area-inset-bottom))' }}
-          aria-label={activeTab === 'wealth' ? '新增持仓' : '记一笔'}
+          aria-label="记一笔"
         >
           <Plus size={28} strokeWidth={2.5} />
         </button>

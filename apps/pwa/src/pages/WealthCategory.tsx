@@ -46,18 +46,18 @@ export function WealthCategory() {
       <div className="flex gap-2 mb-5">
         <div className="flex-1 bg-surface rounded-2xl p-3 border border-brand-tint">
           <div className="text-xs text-ink-2 mb-1">总市值</div>
-          <div className="text-lg font-bold amount-fluid-sm">¥{fmtMoney(totalMarketValue)}</div>
+          <div className="text-lg font-bold amount-fluid-sm">{fmtMoney(totalMarketValue)}</div>
         </div>
         <div className="flex-1 bg-surface rounded-2xl p-3 border border-brand-tint">
           <div className="text-xs text-ink-2 mb-1">今日收益</div>
           <div className="text-lg font-bold amount-fluid-sm" style={{ color: todayTotal >= 0 ? '#dc2626' : '#16a34a' }}>
-            {todayTotal >= 0 ? '+' : ''}¥{fmtMoney(todayTotal)}
+            {todayTotal >= 0 ? '+' : ''}{fmtMoney(todayTotal)}
           </div>
         </div>
         <div className="flex-1 bg-surface rounded-2xl p-3 border border-brand-tint">
           <div className="text-xs text-ink-2 mb-1">累计收益</div>
           <div className="text-lg font-bold amount-fluid-sm" style={{ color: totalProfit >= 0 ? '#dc2626' : '#16a34a' }}>
-            {totalProfit >= 0 ? '+' : ''}¥{fmtMoney(totalProfit)}
+            {totalProfit >= 0 ? '+' : ''}{fmtMoney(totalProfit)}
           </div>
         </div>
       </div>
@@ -82,9 +82,9 @@ export function WealthCategory() {
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="text-right">
-                      <div className="font-medium text-ink">¥{fmtMoney(r.market_value)}</div>
+                      <div className="font-medium text-ink">{fmtMoney(r.market_value)}</div>
                       <div className="text-xs" style={{ color: (r.profit_loss || 0) >= 0 ? '#dc2626' : '#16a34a' }}>
-                        {r.profit_loss! >= 0 ? '+' : ''}¥{fmtMoney(r.profit_loss)}
+                        {r.profit_loss! >= 0 ? '+' : ''}{fmtMoney(r.profit_loss)}
                       </div>
                     </div>
                     <ChevronRight size={18} className="text-ink-3" />

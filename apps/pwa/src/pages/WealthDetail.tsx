@@ -1,18 +1,19 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { LineChart } from '../components/charts'
 import { Modal } from '../components/ui/Modal'
 import Toast from '../components/ui/Toast'
 import Button from '../components/ui/Button'
-import { fetchQuoteDetail, fetchQuoteHistory, HistoryPeriod, Market } from '../utils/quoteApi'
+import { fetchQuoteHistory, HistoryPeriod, Market } from '../utils/quoteApi'
 import {
   deleteHolding,
   marketLabel,
   getAllTransactions,
   updateHoldingTransaction,
   deleteHoldingTransaction,
+  addHoldingTransaction,
 } from '../db/wealthStore'
-import { useWealthValuation } from '../hooks/useWealthValuation'
+import { useWealthValuation, todayProfit } from '../hooks/useWealthValuation'
 import { fmtWithSymbol, Currency } from '../utils/currency'
 
 function fmt(n: number | null | undefined, d = 2): string {
@@ -50,7 +51,6 @@ export function WealthDetail() {
   const { market, symbol } = useParams<{ market: string; symbol: string }>()
   const navigate = useNavigate()
   const { results } = useWealthValuation()
-  const [detail, setDetail] = useState<any>(null)
   const [history, setHistory] = useState<{ labels: string[]; data: number[] }>({ labels: [], data: [] })
   const [period, setPeriod] = useState<HistoryPeriod>('1m')
   const [loadingHist, setLoadingHist] = useState(false)
@@ -66,6 +66,13 @@ export function WealthDetail() {
   // 自定义确认弹窗 + Toast 反馈（替代原生 confirm/无提示）
   const [confirmTx, setConfirmTx] = useState<any | null>(null)
   const [confirmHolding, setConfirmHolding] = useState(false)
+  // 加减仓 BottomSheet
+  const [showTradeSheet, setShowTradeSheet] = useState(false)
+  const [tradeDirection, setTradeDirection] = useState<'buy' | 'sell'>('buy')
+  const [tradeQty, setTradeQty] = useState('')
+  const [tradePrice, setTradePrice] = useState('')
+  const [tradeDate, setTradeDate] = useState(new Date().toISOString().slice(0, 10))
+  const [confirmClear, setConfirmClear] = useState(false) // 清仓二次确认
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
   const toastTimer = useRef<number | null>(null)
   const showToast = useCallback((msg: string, type: 'success' | 'error' = 'success') => {
@@ -75,16 +82,12 @@ export function WealthDetail() {
   }, [])
 
 
-  const v = results.find(r => r.market === market && r.symbol === symbol)
+  // 直接复用 useWealthValuation 的 batch 结果，无需额外调 detail 接口
+  const v = useMemo(
+    () => results.find(r => r.market === market && r.symbol === symbol),
+    [results, market, symbol],
+  )
   const holding = v?.holding
-
-  const loadDetail = useCallback(async () => {
-    if (!symbol) return
-    try {
-      const d = await fetchQuoteDetail(symbol, market as any)
-      setDetail(d)
-    } catch { /* 兜底：detail.name 可能空，用 v.name */ }
-  }, [symbol, market])
 
   const loadHistory = useCallback(async () => {
     if (!symbol) return
@@ -112,23 +115,24 @@ export function WealthDetail() {
     setTxs(list)
   }, [symbol, market])
 
-  useEffect(() => { loadDetail() }, [loadDetail])
   useEffect(() => { loadHistory() }, [loadHistory])
   useEffect(() => { loadTxs() }, [loadTxs])
 
-  const name = v?.name || detail?.name || symbol
+  const name = v?.name || symbol
   const cur = (v?.currency ?? 'CNY') as Currency
   const mv = v?.market_value ?? null
   const pl = v?.profit_loss ?? null
   const pr = v?.profit_rate ?? null
-  const curPrice = detail?.current_price ?? v?.current_price ?? null
-  const changePct = detail?.change_percent ?? v?.change_percent ?? null
+  const curPrice = v?.current_price ?? null
+  const changePct = v?.change_percent ?? null
+  // 今日收益：按资产自身币种计算（详情页不折算）
+  const td = v ? todayProfit(v) : null
 
-  // 涨跌颜色状态机：核心收益(pl/pr) 与 当日涨跌(changePct)
+  // 涨跌颜色状态机：累计收益(pl/pr) 与 今日涨跌
   const plColor = colorOf(trendOf(pl))
-  const prColor = colorOf(trendOf(pr))
   const plSign = signOf(pl)
-  const prSign = signOf(pr)
+  const tdColor = colorOf(trendOf(td))
+  const tdSign = signOf(td)
   const changeColor = colorOf(trendOf(changePct))
   const changeArrow = trendOf(changePct) === 'up' ? '▲' : trendOf(changePct) === 'down' ? '▼' : ''
 
@@ -183,6 +187,51 @@ export function WealthDetail() {
     showToast(`已删除该${t.direction === 'buy' ? '买入' : '卖出'}流水`, 'success')
   }
 
+  // 打开加减仓面板
+  const openTradeSheet = (direction: 'buy' | 'sell') => {
+    setTradeDirection(direction)
+    setTradeQty('')
+    setTradePrice(curPrice != null ? String(curPrice) : '')
+    setTradeDate(new Date().toISOString().slice(0, 10))
+    setConfirmClear(false)
+    setShowTradeSheet(true)
+  }
+
+  // 减仓份额校验
+  const totalQty = holding?.quantity ?? 0
+  const tradeQtyNum = parseFloat(tradeQty) || 0
+  const tradePriceNum = parseFloat(tradePrice) || 0
+  const isSellOver = tradeDirection === 'sell' && tradeQtyNum > totalQty
+  const isNearClear = tradeDirection === 'sell' && totalQty - tradeQtyNum < 0.01 && tradeQtyNum > 0 && tradeQtyNum <= totalQty
+  const canSubmit = tradeQtyNum > 0 && tradePriceNum > 0 && tradeDate && !isSellOver
+
+  // 提交交易
+  const submitTrade = async () => {
+    if (!canSubmit) return
+    if (!symbol || !market) return
+    // 接近清仓时二次确认
+    if (isNearClear && !confirmClear) {
+      setConfirmClear(true)
+      return
+    }
+    try {
+      await addHoldingTransaction({
+        symbol,
+        market: market as any,
+        name: name || symbol,
+        direction: tradeDirection,
+        quantity: tradeQtyNum,
+        price: tradePriceNum,
+        date: tradeDate,
+      })
+      showToast(`${tradeDirection === 'buy' ? '加仓' : '减仓'}成功`, 'success')
+      setShowTradeSheet(false)
+      await loadTxs()
+    } catch (e: any) {
+      showToast(e?.message || '操作失败', 'error')
+    }
+  }
+
   return (
     <div className="min-h-screen bg-bg px-4 pt-6 pb-24">
       <div className="flex items-center mb-4">
@@ -193,42 +242,45 @@ export function WealthDetail() {
         </div>
       </div>
 
-      {/* 实时行情：左大右小 —— 左核心(市值+累计收益)，右辅助(现价+当日涨跌) */}
+      {/* 方案二：左重右精 · 主次分明 */}
       <div className="bg-surface rounded-3xl p-4 border border-brand-tint mb-3">
-        <div className="flex items-end justify-between gap-4">
-          {/* 左侧核心视觉：市值 + 累计收益 */}
+        <div className="flex items-center justify-between">
+          {/* 左侧：超大总市值 + 累计收益 */}
           <div className="min-w-0 flex-1">
-            <div className="text-xs text-ink-2 mb-1">当前市值</div>
-            <div className="text-3xl font-bold amount-fluid-lg text-ink leading-tight">
+            <div className="text-[11px] text-ink-2 mb-1">当前市值</div>
+            <div className="text-[32px] font-extrabold font-amount leading-tight text-ink">
               {mv == null ? '—' : fmtWithSymbol(mv, cur)}
             </div>
-            <div className="mt-2 flex items-baseline gap-2 flex-wrap">
-              <span
-                className="text-lg font-bold"
-                style={{ color: plColor }}
-              >
-                {pl == null ? '—' : `${plSign}${fmtWithSymbol(pl, cur)}`}
-              </span>
-              <span
-                className="text-sm font-medium"
-                style={{ color: prColor }}
-              >
-                {pr == null ? '' : `${prSign}${(pr * 100).toFixed(2)}%`}
-              </span>
+            <div className="mt-2">
+              <div className="text-[11px] text-ink-2 mb-0.5">累计收益</div>
+              <div className="flex items-baseline gap-1.5 flex-wrap">
+                <span className="text-base font-bold font-amount" style={{ color: plColor }}>
+                  {pl == null ? '—' : pl >= 0 ? `+${fmtWithSymbol(pl, cur)}` : fmtWithSymbol(pl, cur)}
+                </span>
+                <span className="text-xs font-semibold" style={{ color: plColor }}>
+                  {pr == null ? '' : `(${pl >= 0 ? '+' : ''}${(pr * 100).toFixed(2)}%)`}
+                </span>
+              </div>
             </div>
           </div>
 
-          {/* 右侧辅助：单股现价 + 当日涨跌幅 */}
-          <div className="text-right shrink-0">
-            <div className="text-xs text-ink-2 mb-1">现价</div>
-            <div className="text-base font-semibold text-ink">{curPrice == null ? '—' : fmtWithSymbol(curPrice, cur)}</div>
-            {changePct != null && (
-              <div className="text-xs mt-1.5" style={{ color: changeColor }}>
-                {changeArrow} {Math.abs(changePct).toFixed(2)}%
-                {market === 'FUND' && <span className="text-ink-3 ml-1">(估算)</span>}
-              </div>
-            )}
+          {/* 右侧：今日收益中心 */}
+          <div className="text-center shrink-0 ml-4">
+            <div className="text-[11px] text-ink-2 mb-1">今日收益</div>
+            <div className="text-2xl font-bold font-amount leading-tight" style={{ color: tdColor }}>
+              {td == null ? '—' : td >= 0 ? `+${fmtWithSymbol(td, cur)}` : fmtWithSymbol(td, cur)}
+            </div>
+            <div className="text-[11px] mt-2 text-ink-2/70 leading-relaxed">
+              {changePct != null && (
+                <span style={{ color: changeColor }}>{changeArrow} {(Math.abs(changePct) * 100).toFixed(2)}%</span>
+              )}
+              {curPrice != null && <span> ｜ 现价 {fmtWithSymbol(curPrice, cur)}</span>}
+              {market === 'FUND' && <span className="text-ink-3"> (估算)</span>}
+            </div>
           </div>
+        </div>
+        <div className="text-[10px] text-ink-3/40 text-right mt-3">
+          更新于 {v?.quote_time ? new Date(v.quote_time).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(/\//g, '-') : '—'}
         </div>
       </div>
 
@@ -279,9 +331,21 @@ export function WealthDetail() {
         )}
       </div>
 
-      {/* 交易流水（内联可编辑/删除，买入卖出均开放） */}
+      {/* 交易流水 + 加减仓入口 */}
       <div className="bg-surface rounded-3xl p-4 border border-brand-tint mt-3">
-        <div className="font-semibold text-ink mb-2">交易流水</div>
+        <div className="flex items-center justify-between mb-3">
+          <div className="font-semibold text-ink">交易流水</div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => openTradeSheet('buy')}
+              className="text-xs font-medium px-3 py-1.5 rounded-full bg-[#dc2626]/10 text-[#dc2626] active:scale-95 transition-transform"
+            >➕ 加仓</button>
+            <button
+              onClick={() => openTradeSheet('sell')}
+              className="text-xs font-medium px-3 py-1.5 rounded-full bg-[#16a34a]/10 text-[#16a34a] active:scale-95 transition-transform"
+            >➖ 减仓</button>
+          </div>
+        </div>
         {txs.length === 0 ? (
           <div className="text-center text-ink-3 text-sm py-6">暂无流水记录</div>
         ) : (
@@ -302,16 +366,22 @@ export function WealthDetail() {
                         ))}
                       </div>
                       <div className="flex gap-2">
-                        <input
-                          className="flex-1 bg-surface rounded-lg px-2 py-1.5 text-sm text-ink outline-none border border-brand-tint"
-                          placeholder="数量" inputMode="decimal" value={editDraft.quantity}
-                          onChange={e => setEditDraft(s => ({ ...s, quantity: e.target.value }))}
-                        />
-                        <input
-                          className="flex-1 bg-surface rounded-lg px-2 py-1.5 text-sm text-ink outline-none border border-brand-tint"
-                          placeholder="价格" inputMode="decimal" value={editDraft.price}
-                          onChange={e => setEditDraft(s => ({ ...s, price: e.target.value }))}
-                        />
+                        <div className="flex-1">
+                          <input
+                            className="w-full bg-surface rounded-lg px-2 py-1.5 text-sm text-ink outline-none border border-brand-tint"
+                            placeholder={`份额（当前持仓 ${fmt(holding?.quantity ?? 0, 4)} 份）`}
+                            inputMode="decimal" value={editDraft.quantity}
+                            onChange={e => setEditDraft(s => ({ ...s, quantity: e.target.value }))}
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <input
+                            className="w-full bg-surface rounded-lg px-2 py-1.5 text-sm text-ink outline-none border border-brand-tint"
+                            placeholder={`价格（现价 ${curPrice != null ? fmtWithSymbol(curPrice, cur) : '—'}）`}
+                            inputMode="decimal" value={editDraft.price}
+                            onChange={e => setEditDraft(s => ({ ...s, price: e.target.value }))}
+                          />
+                        </div>
                       </div>
                       <input
                         className="w-full bg-surface rounded-lg px-2 py-1.5 text-sm text-ink outline-none border border-brand-tint"
@@ -380,6 +450,91 @@ export function WealthDetail() {
           </Button>
         </div>
       </Modal>
+
+      {/* 加减仓 BottomSheet */}
+      {showTradeSheet && (
+        <>
+          <div className="fixed inset-0 z-40 bg-black/20" onClick={() => setShowTradeSheet(false)} />
+          <div className="fixed bottom-0 left-0 right-0 z-50 bg-surface rounded-t-3xl px-5 pt-5 pb-8 shadow-[0_-8px_30px_rgba(0,0,0,0.08)] animate-slide-up">
+            <div className="w-10 h-1 rounded-full bg-ink-3/20 mx-auto mb-4" />
+            <div className="text-base font-bold text-ink mb-4">
+              {tradeDirection === 'buy' ? '➕ 加仓' : '➖ 减仓'}
+            </div>
+
+            {/* 份额 */}
+            <div className="mb-3">
+              <div className="text-xs text-ink-2 mb-1.5">
+                {tradeDirection === 'buy' ? '买入份额' : '卖出份额'}
+                <span className="text-ink-3 ml-1">（当前持仓 {fmt(totalQty, 4)} 份）</span>
+              </div>
+              <input
+                className={`w-full bg-bg rounded-xl px-3 py-2.5 text-sm text-ink outline-none border transition-colors ${isSellOver ? 'border-red-400 bg-red-50' : 'border-brand-tint'}`}
+                placeholder={tradeDirection === 'sell' ? `最大可卖 ${fmt(totalQty, 4)} 份` : '请输入买入份额'}
+                inputMode="decimal"
+                value={tradeQty}
+                onChange={e => { setTradeQty(e.target.value); setConfirmClear(false) }}
+              />
+              {isSellOver && (
+                <div className="text-[11px] text-red-400 mt-1">
+                  持仓不足，最大可卖 {fmt(totalQty, 4)} 份
+                </div>
+              )}
+              {isNearClear && !isSellOver && (
+                <div className="text-[11px] text-amber-500 mt-1">
+                  接近清仓，提交时需二次确认
+                </div>
+              )}
+            </div>
+
+            {/* 价格 */}
+            <div className="mb-3">
+              <div className="text-xs text-ink-2 mb-1.5">
+                交易价格
+                {curPrice != null && <span className="text-ink-3 ml-1">（现价 {fmtWithSymbol(curPrice, cur)}）</span>}
+              </div>
+              <input
+                className={`w-full bg-bg rounded-xl px-3 py-2.5 text-sm text-ink outline-none border transition-colors ${tradePriceNum > 0 && curPrice != null && Math.abs(tradePriceNum - curPrice) > 0.01 ? 'border-amber-300 bg-amber-50' : 'border-brand-tint'}`}
+                placeholder="请输入交易价格"
+                inputMode="decimal"
+                value={tradePrice}
+                onChange={e => setTradePrice(e.target.value)}
+              />
+              {tradePriceNum > 0 && curPrice != null && Math.abs(tradePriceNum - curPrice) > 0.01 && (
+                <div className="text-[11px] text-amber-500 mt-1">
+                  注意：当前市场价不同
+                </div>
+              )}
+            </div>
+
+            {/* 日期 */}
+            <div className="mb-5">
+              <div className="text-xs text-ink-2 mb-1.5">交易日期</div>
+              <input
+                className="w-full bg-bg rounded-xl px-3 py-2.5 text-sm text-ink outline-none border border-brand-tint"
+                type="date"
+                value={tradeDate}
+                onChange={e => setTradeDate(e.target.value)}
+              />
+            </div>
+
+            {/* 确认按钮 */}
+            <button
+              onClick={submitTrade}
+              disabled={!canSubmit}
+              className={`w-full py-3 rounded-xl text-sm font-semibold transition-all active:scale-[0.98] ${canSubmit ? 'bg-brand text-ink' : 'bg-ink-3/10 text-ink-3 cursor-not-allowed'}`}
+            >
+              {confirmClear ? '确认清仓？' : tradeDirection === 'buy' ? '确认加仓' : '确认减仓'}
+            </button>
+
+            {/* 清仓二次确认提示 */}
+            {confirmClear && (
+              <div className="text-center text-[11px] text-amber-500 mt-2">
+                当前卖出份额将清空该持仓，再次点击确认
+              </div>
+            )}
+          </div>
+        </>
+      )}
 
       {/* 操作反馈 Toast */}
       {toast && (

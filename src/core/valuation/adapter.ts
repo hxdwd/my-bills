@@ -1,5 +1,6 @@
 import type { Market, NormalizedQuote, Currency } from '../../types/api'
 import { parseSymbol } from './parser'
+import { log } from './logger'
 
 // 统一超时 fetch：超过 timeoutMs 视为失败抛 AbortError
 async function fetchWithTimeout(
@@ -19,15 +20,20 @@ async function fetchWithTimeout(
   }
 }
 
-// 内部：依次尝试多个源，任一成功即返回；全部失败抛最后一个错误
-async function trySources(sources: Array<() => Promise<NormalizedQuote>>): Promise<NormalizedQuote> {
+// 内部：依次尝试多个源，任一成功即返回；全部失败抛最后一个错误。
+// level=2 时记录每次源调用的耗时与结果，方便线上排查数据源波动。
+type NamedAdapter = { name: string; fn: () => Promise<NormalizedQuote> }
+async function trySources(sources: NamedAdapter[]): Promise<NormalizedQuote> {
   let lastErr: unknown
   for (const src of sources) {
+    const t0 = Date.now()
     try {
-      return await src()
-    } catch (e) {
+      const result = await src.fn()
+      log(2, `[adapter]   ${src.name} OK ${Date.now() - t0}ms`)
+      return result
+    } catch (e: any) {
+      log(2, `[adapter]   ${src.name} FAIL ${Date.now() - t0}ms ${e?.message || e} -> try next`)
       lastErr = e
-      // 继续尝试下一个备用源
     }
   }
   throw lastErr instanceof Error ? lastErr : new Error('all sources failed')
@@ -183,6 +189,60 @@ async function fetchYahoo2(symbol: string): Promise<NormalizedQuote> {
   }
 }
 
+// ============ 美股备用源：腾讯财经 ============
+// 腾讯美股接口：https://qt.gtimg.cn/q=us{CODE} 返回延时行情（15min）
+// 字段：0=名称, 3=现价, 4=昨收, 31=涨跌幅(%), 32=涨跌额
+async function fetchTencentUS(symbol: string): Promise<NormalizedQuote> {
+  const p = parseSymbol(symbol, 'US')
+  const url = `https://qt.gtimg.cn/q=us${p.yahoo.toLowerCase()}`
+  const res = await fetchWithTimeout(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0' },
+  }, 3000)
+  if (!res.ok) throw new Error(`tencentUS http ${res.status}`)
+  const buf = await res.arrayBuffer()
+  const text = new TextDecoder('gbk').decode(buf)
+  const m = text.match(/="(.+)";/)
+  if (!m) throw new Error('tencentUS parse empty')
+  const parts = m[1].split('~')
+  const price = parseFloat(parts[3])
+  if (!isFinite(price)) throw new Error('tencentUS price NaN')
+  const prevClose = parseFloat(parts[4])
+  const changePercent = prevClose > 0 ? (price - prevClose) / prevClose : 0
+  return {
+    price,
+    name: parts[1] || undefined,
+    changePercent,
+    currency: 'USD',
+    quoteTime: new Date().toISOString(),
+  }
+}
+
+// ============ 美股备用源：东方财富 ============
+// 东财美股接口：secid=105.{CODE}，f43=最新价(×1000), f169=涨跌额(×1000), f170=涨跌幅(×100)
+// 注意：美股价格精度需 3 位小数（如 $315.320），因此东财用 ×1000 而非 A股的 ×100。
+async function fetchEastmoneyUS(symbol: string): Promise<NormalizedQuote> {
+  const p = parseSymbol(symbol, 'US')
+  const secid = `105.${p.yahoo}`
+  const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${secid}&fields=f43,f169,f170,f57,f58`
+  const res = await fetchWithTimeout(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0' },
+  }, 3000)
+  if (!res.ok) throw new Error(`eastmoneyUS http ${res.status}`)
+  const json = (await res.json()) as any
+  const d = json?.data
+  if (!d) throw new Error('eastmoneyUS no data')
+  const price = parseFloat(d.f43) / 1000
+  if (!isFinite(price) || price <= 0) throw new Error('eastmoneyUS price NaN')
+  const changePercent = parseFloat(d.f170) / 10000
+  return {
+    price,
+    name: d.f58 || undefined,
+    changePercent: isFinite(changePercent) ? changePercent : 0,
+    currency: 'USD',
+    quoteTime: new Date().toISOString(),
+  }
+}
+
 // ============ 国内基金：新浪财经基金实时估值 ============
 // 接口：https://hq.sinajs.cn/list=fu_{code}  （带 Referer 防 403）
 // 返回：var hq_str_fu_110011="名称,时间,当前净值,昨收净值,...";
@@ -234,7 +294,8 @@ async function fetchGold(_symbol: string): Promise<NormalizedQuote> {
   if (!d) throw new Error('gold no data')
   const price = parseFloat(d.f43) / 100
   if (!isFinite(price) || price <= 0) throw new Error('gold price NaN')
-  const changePercent = parseFloat(d.f170) / 100
+  // f170 是涨跌幅 × 100（如 -104 表示 -1.04%），需 /10000 转为小数（如 -0.0104）与其它适配器一致
+  const changePercent = parseFloat(d.f170) / 10000
   return {
     price,
     name: d.f58 || '黄金',
@@ -276,24 +337,30 @@ async function fetchGoldSina(_symbol: string): Promise<NormalizedQuote> {
 }
 
 // ============ 对外：按市场返回适配器链 ============
-export function getAdapters(market: Market): Array<(symbol: string) => Promise<NormalizedQuote>> {
+export function getAdapters(market: Market): NamedAdapter[] {
   switch (market) {
     case 'CN':
-      return [fetchSinaA]
+      return [{ name: 'sinaA', fn: (s) => fetchSinaA(s) }]
     case 'HK':
-      return [fetchTencentHK, fetchSinaHK]
+      return [{ name: 'tencentHK', fn: (s) => fetchTencentHK(s) }, { name: 'sinaHK', fn: (s) => fetchSinaHK(s) }]
     case 'US':
-      return [fetchYahoo, fetchYahoo2]
+      return [
+        { name: 'tencentUS', fn: (s) => fetchTencentUS(s) },
+        { name: 'eastmoneyUS', fn: (s) => fetchEastmoneyUS(s) },
+        { name: 'yahoo', fn: (s) => fetchYahoo(s) },
+        { name: 'yahoo2', fn: (s) => fetchYahoo2(s) },
+      ]
     case 'FUND':
-      return [fetchSinaFund]
+      return [{ name: 'sinaFund', fn: (s) => fetchSinaFund(s) }]
     case 'GOLD':
-      return [fetchGold, fetchGoldSina]
+      return [{ name: 'eastmoneyGold', fn: (s) => fetchGold(s) }, { name: 'sinaGold', fn: (s) => fetchGoldSina(s) }]
   }
 }
 
 // 统一入口：带备用源容错
 export async function fetchQuote(symbol: string, market: Market): Promise<NormalizedQuote> {
-  return trySources(getAdapters(market).map((fn) => () => fn(symbol)))
+  const adapters = getAdapters(market).map(a => ({ name: a.name, fn: () => a.fn(symbol) }))
+  return trySources(adapters)
 }
 
 // 历史走势（美股/港股走 Yahoo；A股 Yahoo 近似；基金走东方财富净值序列）
