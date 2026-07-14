@@ -1,10 +1,10 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { parseHoldingsText, ParsedHolding, ImportMode } from '../utils/holdingImport'
+import { ParsedHolding } from '../utils/holdingImport'
 import { searchQuote, fetchQuoteDetail, QuoteSearchResult } from '../utils/quoteApi'
 import { addHoldingTransaction } from '../db/wealthStore'
 import { fmtMoney as fmtMoneyUtil, Currency } from '../utils/currency'
-import { Trash2, Check, Loader2 } from 'lucide-react'
+import { Trash2, Check, Loader2, Upload } from 'lucide-react'
 
 // 市场 → 默认币种（与后端 marketCurrency 一致）
 function marketToCurrency(market: ImportRow['market']): Currency {
@@ -130,22 +130,6 @@ async function resolveRow(raw: ParsedHolding): Promise<{
   }
 }
 
-// 示例覆盖两种常见识文布局：
-// 1) 表头列对齐（支付宝/天天基金导出、Excel 复制）
-// 2) 逐行堆叠（纯文本粘贴）
-const SAMPLE = `名称／金额        日收益      持有收益     累计收益    收益率
-永赢先锋半导体智选混合 C    -1,044.02   26,148.09   +8,912.77  +51.71%
-华宝中证细分化工产业主题 ETF 联接 C  -42.07     2,226.75   +200.63   -10.93%
-
-永赢先锋半导体智选混合 C
-基金进阶理财
-26,148.09
--1,044.02
-+8,912.77
-+10,347.77
-占比14.72%
-+51.71%`
-
 export function WealthImport() {
   const navigate = useNavigate()
   const [text, setText] = useState('')
@@ -153,31 +137,61 @@ export function WealthImport() {
   const [parsed, setParsed] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveMsg, setSaveMsg] = useState<string | null>(null)
-  const [mode, setMode] = useState<ImportMode>('CNA')
+  // 双模式切换：paste = 粘贴文本，upload = 上传截图
+  const [inputMode, setInputMode] = useState<'paste' | 'upload'>('paste')
+  const [uploading, setUploading] = useState(false)
+  const [uploadMsg, setUploadMsg] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const onParse = async () => {
-    if (!text.trim()) return
-    const list = parseHoldingsText(text, mode)
-    const base = list.map((raw, i) => ({
-      id: `${Date.now()}-${i}`,
-      raw,
-      matched: null as QuoteSearchResult | null,
-      name: raw.name,
-      symbol: raw.name,
-      market: raw.market,
-      quantity: '',
-      price: '',
-      curPrice: null,
-      date: new Date().toISOString().slice(0, 10),
-      resolving: true,
-      resolveError: null,
-      drop: false,
-    }))
+  // ====== 公共：调用 import-screenshot 接口（rawText 或 imageBase64）→ 解析结果 ======
+  const apiBase = (import.meta as any).env?.VITE_FUNCTIONS_URL || ''
+
+  const callImportAPI = async (payload: { imageBase64?: string; rawText?: string }) => {
+    const resp = await fetch(`${apiBase}/api/wealth/import-screenshot`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    const json = await resp.json()
+    if (json.code !== 0) throw new Error(json.message || '识别失败')
+    return json.data?.items || []
+  }
+
+  // ====== 公共：AI 返回的 items → ImportRow[] → resolveRow 并行匹配 ======
+  const processAIResult = async (items: any[]) => {
+    const base: ImportRow[] = items.map((item: any, i: number) => {
+      const raw: ParsedHolding = {
+        name: item.name || '',
+        market: item.market === 'A股' ? 'CN' : item.market || 'CN',
+        marketLabel: item.market,
+        marketValue: item.market_value ?? 0,
+        holdProfit: item.profit_loss ?? null,
+        profitRate: item.profit_rate ?? null,
+        costPrice: item.cost_price ?? null,
+        currentPrice: item.current_price ?? null,
+        quantity: item.quantity ?? null,
+        precise: (item.quantity > 0 && item.cost_price > 0),
+      }
+      return {
+        id: `${Date.now()}-${i}`,
+        raw,
+        matched: null as QuoteSearchResult | null,
+        name: raw.name,
+        symbol: raw.name,
+        market: raw.market as ImportRow['market'],
+        quantity: '',
+        price: '',
+        curPrice: null,
+        date: new Date().toISOString().slice(0, 10),
+        resolving: true,
+        resolveError: null,
+        drop: false,
+      }
+    })
     setRows(base)
     setParsed(true)
     setSaveMsg(null)
 
-    // 并行匹配 + 计算
     const settled = await Promise.all(
       base.map(async r => {
         const res = await resolveRow(r.raw)
@@ -196,6 +210,58 @@ export function WealthImport() {
       })
     )
     setRows(settled)
+  }
+
+  // ====== 粘贴文本 → AI 识别 ======
+  const onParse = async () => {
+    if (!text.trim()) return
+    setUploading(true)
+    setUploadMsg('AI 识别中…')
+    try {
+      const items = await callImportAPI({ rawText: text.trim() })
+      if (items.length === 0) {
+        setUploadMsg('未识别到持仓数据')
+        setUploading(false)
+        return
+      }
+      await processAIResult(items)
+      setUploading(false)
+      setUploadMsg(null)
+    } catch (e: any) {
+      setUploadMsg(e?.message || '识别失败')
+      setUploading(false)
+    }
+  }
+
+  // 截图上传 → OCR + DeepSeek → 复用 processAIResult
+  const handleScreenshot = async (file: File) => {
+    setUploading(true)
+    setUploadMsg('识别中…')
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => {
+          const result = reader.result as string
+          const comma = result.indexOf(',')
+          resolve(comma >= 0 ? result.slice(comma + 1) : result)
+        }
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
+
+      const items = await callImportAPI({ imageBase64: base64 })
+      if (items.length === 0) {
+        setUploadMsg('未识别到持仓数据')
+        setUploading(false)
+        return
+      }
+      await processAIResult(items)
+      setUploading(false)
+      setUploadMsg(null)
+    } catch (e: any) {
+      setUploadMsg(e?.message || '上传失败')
+      setUploading(false)
+    }
   }
 
   const updateRow = (id: string, patch: Partial<ImportRow>) => {
@@ -247,37 +313,92 @@ export function WealthImport() {
       {!parsed && (
         <div className="space-y-3">
           <p className="text-xs text-ink-3 leading-relaxed">
-            先选择资产类别，再粘贴持仓文本。若文本已含数量、成本、现价（股票 / 券商常见），将直接采用、不查行情；若只有市值与持有收益（基金常见），则自动匹配行情反推买入数量与成本价。
+            粘贴持仓文本或上传截图，AI 将自动识别资产类型、数量、成本、市值等信息。若文本已含数量与成本价，将直接采用；若仅有市值与收益，则自动匹配行情反推。
           </p>
 
-          {/* 资产类别选择条：A股 / 基金 / 港股 / 美股 */}
-          <div className="flex bg-bg rounded-xl p-1 border border-brand-tint">
-            {(['CNA', 'FUND', 'HK', 'US'] as ImportMode[]).map(m => (
-              <button
-                key={m}
-                onClick={() => setMode(m)}
-                className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  mode === m ? 'bg-brand text-ink' : 'text-ink-2'
-                }`}
-              >
-                {m === 'CNA' ? 'A股' : m === 'FUND' ? '基金' : m === 'HK' ? '港股' : '美股'}
-              </button>
-            ))}
+          {/* 双模式切换胶囊 */}
+          <div className="flex bg-bg rounded-xl p-1 border border-brand-tint shadow-sm">
+            <button
+              onClick={() => setInputMode('paste')}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                inputMode === 'paste' ? 'bg-brand text-ink' : 'bg-[#f5f5f5] text-[#999]'
+              }`}
+            >
+              📝 粘贴文本
+            </button>
+            <button
+              onClick={() => setInputMode('upload')}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                inputMode === 'upload' ? 'bg-brand text-ink' : 'bg-[#f5f5f5] text-[#999]'
+              }`}
+            >
+              📸 上传截图
+            </button>
           </div>
 
-          <textarea
-            value={text}
-            onChange={e => setText(e.target.value)}
-            placeholder={SAMPLE}
-            className="w-full h-64 bg-surface rounded-2xl p-3 border border-brand-tint text-ink text-sm leading-relaxed resize-none"
-          />
-          <button
-            onClick={onParse}
-            disabled={!text.trim()}
-            className="w-full bg-brand text-ink py-3 rounded-xl font-bold disabled:opacity-50"
-          >
-            解析并匹配
-          </button>
+          {/* 粘贴文本模式 */}
+          {inputMode === 'paste' && (
+            <>
+              <textarea
+                value={text}
+                onChange={e => setText(e.target.value)}
+                placeholder="粘贴持仓文本，支持支付宝/天天基金/券商等任意格式，AI 自动识别"
+                className="w-full h-64 bg-surface rounded-2xl p-3 border border-brand-tint text-ink text-sm leading-relaxed resize-none"
+              />
+              {uploading ? (
+                <div className="w-full bg-brand/60 text-ink py-3 rounded-xl font-bold text-center flex items-center justify-center gap-2">
+                  <Loader2 size={16} className="animate-spin" />
+                  {uploadMsg}
+                </div>
+              ) : (
+                <button
+                  onClick={onParse}
+                  disabled={!text.trim()}
+                  className="w-full bg-brand text-ink py-3 rounded-xl font-bold disabled:opacity-50"
+                >
+                  AI 智能识别
+                </button>
+              )}
+            </>
+          )}
+
+          {/* 上传截图模式 */}
+          {inputMode === 'upload' && (
+            <div className="space-y-3">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={e => {
+                  const file = e.target.files?.[0]
+                  if (file) handleScreenshot(file)
+                }}
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                className="w-full h-48 bg-surface rounded-2xl border-2 border-dashed border-brand-tint flex flex-col items-center justify-center gap-3 text-ink-3 hover:border-brand hover:text-ink transition-colors disabled:opacity-50"
+              >
+                {uploading ? (
+                  <>
+                    <Loader2 size={32} className="animate-spin" />
+                    <span className="text-sm">{uploadMsg}</span>
+                  </>
+                ) : (
+                  <>
+                    <Upload size={32} />
+                    <span className="text-sm font-medium">点击上传持仓截图</span>
+                    <span className="text-xs text-ink-3">支持相册选择或拍照</span>
+                  </>
+                )}
+              </button>
+              {uploadMsg && !uploading && (
+                <div className="text-center text-sm text-red-400">{uploadMsg}</div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -328,7 +449,6 @@ export function WealthImport() {
                       <div className={`text-[11px] rounded-lg px-2 py-1.5 ${gain ? 'bg-red-500/10 text-red-600' : 'bg-green-500/10 text-green-600'}`}>
                         成本 {cost.toFixed(4)} · 净值 {r.curPrice.toFixed(4)} ·
                         {gain ? ` 盈利 ${rate.toFixed(2)}%` : ` 亏损 ${Math.abs(rate).toFixed(2)}%`}
-                        <span className="text-ink-3">（应与 App 持有收益方向一致）</span>
                       </div>
                     )
                   })()}

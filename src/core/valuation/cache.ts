@@ -14,14 +14,18 @@ export const FX_TTL = 60 * 60 // 1 小时
 // 故黄金行情缓存用更长的 TTL，显著减少回源次数。
 export const GOLD_TTL = 10 * 60 // 10 分钟
 
-// 读取行情缓存；未命中或解析失败返回 null
+// 读取行情缓存；未命中返回 null，KV 存有失败标志返回特殊标记 __FAIL__
+const FAIL_FLAG = '__FAIL__'
+
 export async function getQuoteCache(
   kv: KVNamespace,
   key: string
-): Promise<QuoteCacheValue | null> {
+): Promise<QuoteCacheValue | typeof FAIL_FLAG | null> {
   try {
     const raw = await kv.get(key)
     if (!raw) return null
+    // 识别失败标志：写入的 null（JSON 化后为 "null" 字符串）表示该标的上次回源失败
+    if (raw === 'null') return FAIL_FLAG
     const parsed = JSON.parse(raw) as QuoteCacheValue
     if (typeof parsed.price !== 'number' || typeof parsed.timestamp !== 'number') {
       return null

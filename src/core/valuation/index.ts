@@ -116,7 +116,8 @@ export async function runValuation(
   const _kvMs = Date.now() - _kvT0
 
   // 2. 找出未命中缓存的 symbol（去重），并行拉取
-  const missingKeys = uniqueKeys.filter((k) => !cachedMap[k])
+  // KV 中存有失败标志（__FAIL__）也视为"命中"，跳过回源避免重复无效请求
+  const missingKeys = uniqueKeys.filter((k) => cachedMap[k] === null || cachedMap[k] === undefined)
   const fetched: Record<string, QuoteCacheValue | null> = {}
   log(2,
     `[perf] KV quote lookup ${_kvMs}ms | keys=${uniqueKeys.length} hit=${uniqueKeys.length - missingKeys.length} miss=${missingKeys.length}` +
@@ -164,6 +165,13 @@ export async function runValuation(
       } catch (e: any) {
         fetched[k] = null
         cachedMap[k] = null
+        // 写入失败标志到 KV（短 TTL），避免每次请求都重复回源必然失败的标的
+        const FAIL_TTL = 300 // 5 分钟，源服务异常可在此周期后恢复
+        try {
+          await kv.put(k, JSON.stringify(null), { expirationTtl: FAIL_TTL })
+        } catch (putErr) {
+          console.error('[cache] 写入失败标志异常', k, putErr)
+        }
         // 黄金回源失败：若有过期缓存（6h 宽限内）则降级用旧价，避免报错
         if (marketStr === 'GOLD') {
           const gc = await getGoldCache(kv)
@@ -195,8 +203,8 @@ export async function runValuation(
     const totalCost = it.total_cost ?? (it.cost_price ?? 0) * it.quantity
     const costPrice = it.cost_price ?? (it.quantity > 0 ? it.total_cost! / it.quantity : 0)
 
-    if (!cached) {
-      // 拉取失败
+    if (!cached || cached === '__FAIL__') {
+      // 拉取失败（包括 KV 中缓存的失败标志）
       return {
         symbol: it.symbol,
         market,
