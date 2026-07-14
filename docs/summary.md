@@ -4,6 +4,72 @@
 
 ---
 
+## 2026-07-14：截图OCR导入、AI文本识别、失败缓存、响应式字号
+
+### 一、截图导入持仓（OCR + DeepSeek）
+
+#### 架构
+- 新增 `functions/api/wealth/import-screenshot.ts`：接收 `imageBase64` 或 `rawText`
+- 百度 OCR `general_basic` → 识文 → DeepSeek `deepseek-chat` 结构化提取 → JSON 数组
+- DeepSeek 调用 9s 超时（AbortController），防止 Worker 免费版 10s 限制崩溃
+
+#### 前端
+- `WealthImport.tsx` 新增双模式切换胶囊（📝 粘贴文本 / 📸 上传截图）
+- 粘贴文本也接入 AI 识别，删除了旧的 `parseHoldingsText` 关键词匹配
+- 公共封装：`callImportAPI()` + `processAIResult()`，粘贴和截图复用同一链路
+
+#### 踩坑：OCR 无法识别
+- **现象**：百度 OCR 返回 `error_code=6`（No permission to access data）
+- **根因**：百度智能云控制台未开通"通用文字识别（标准版）"服务权限
+- **解决**：在百度控制台开通服务即可，无需改代码
+
+#### 踩坑：AI 编造数据
+- **现象**：DeepSeek 返回的 `quantity` 被填成了 `market_value`（26148.09 份而非实际的 8787.2064）
+- **根因**：提示词中的示例包含了具体数值，AI 倾向套用示例而非从 OCR 文本提取
+- **解决**：去掉示例中的数值，强调"原文没有的字段填0，禁止使用任何示例中的数值"
+
+#### 踩坑：成本价提取不到
+- **现象**：部分标的 `cost_price=0`，而 OCR 文本中确实有成本数据
+- **根因**：AI 对 OCR 布局的字段映射理解不足，尤其是券商截图的"成本/现价"列
+- **解决**：强化提示词，加入常见 OCR 布局识别说明（支付宝/天天基金/券商格式），并输出完整 OCR 文本和 AI 原始返回用于调试
+
+### 二、估值失败缓存修复
+
+- **问题**：失败的标的每次 `runValuation` 都重新回源，日志反复 `src=[CN:FAIL, CN:FAIL]`，`miss` 永远消不掉
+- **根因**：`catch` 分支只设了 `cachedMap[k] = null`，没写 KV，下次请求仍然判定为 miss
+- **解决**：
+  - `catch` 分支写入 `null` 到 KV（TTL=5min），下次请求命中失败标志跳过回源
+  - `getQuoteCache` 新增 `__FAIL__` 常量区分"KV 中不存在"和"KV 中存了失败标志"
+  - `missingKeys` 过滤和结果组装都正确处理 `__FAIL__` 标记
+
+### 三、持仓详情页响应式字号
+
+- **问题**：顶部卡片固定 px 字号，小屏手机上数字重叠溢出
+- **解决**：全部改为 `clamp()` 响应式字号
+  - 当前市值：`clamp(26px, 5.5vw, 42px)`
+  - 今日收益：`clamp(18px, 3.5vw, 28px)`
+  - 累计收益：`clamp(15px, 3vw, 22px)`
+  - 辅助信息：`clamp(10~11px, 1.4~2vw, 12~14px)`
+- **踩坑**：Tailwind `text-[clamp(...)]` 语法中逗号被解析为 class 分隔符，clamp 不生效
+- **解决**：全部改用 `style={{ fontSize: 'clamp(...)' }}` 内联样式
+- **踩坑**：Vite dist 缓存导致重新构建后产物不变
+- **解决**：`rmdir /s /q apps\pwa\dist` 删缓存后重建
+
+### 四、数据库测试账号造数踩坑
+
+- `accounts.type` / `categories.type` / `transactions.type` 是 PostgreSQL 枚举，字符串字面量需显式 `::public.account_type` 转换
+- `transactions.transaction_time` 需 `::time` 转换
+- `holdings_transactions` 外键和 `sub_categories` RLS 仍需前置修复
+
+### 五、提交流水
+
+| commit | 内容 |
+|--------|------|
+| `c114838` | 截图OCR+DeepSeek导入、粘贴文本AI识别、失败缓存、响应式字号 |
+| `7dd4d61` | 财富模块全面升级（视角切换、今日收益修复、详情页重构、日志系统、UI优化） |
+
+---
+
 ## 2026-07-13：财富模块全面升级与 Bug 修复
 
 > 本日围绕财富模块做了大量 UI 优化、数据精度修复、功能新增和测试造数。
