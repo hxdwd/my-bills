@@ -15,7 +15,7 @@ CREATE OR REPLACE FUNCTION public.login_user(
   p_password TEXT
 )
 RETURNS TABLE (
-  user_id UUID,
+  id UUID,
   username TEXT,
   display_name TEXT,
   avatar_url TEXT,
