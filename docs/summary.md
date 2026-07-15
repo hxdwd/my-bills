@@ -21,6 +21,9 @@
 | 6 | `accounts.balance` CHECK | `>= 0`（手动加固） | 无 |
 | 7 | `transfers.fee` CHECK | `>= 0`（手动加固） | 无 |
 
+#### ⚠️ 遗漏：对比范围不完整
+**上述对比仅覆盖了 `supabase/migrations/` ↔ 远程表**，未跨到 `apps/pwa/src/db/database.ts` 检查本地 IndexedDB Dexie schema。导致遗漏了 `sub_categories.sort_order` 字段——本地 IndexedDB 有此字段（`reorder` 功能写入并标记 `local_dirty`），远程表无此列。后续同步推送时 PostgREST 400 报错（详见第五节）。
+
 #### 修复方案
 - **新建** `migrations/011_sync_constraints.sql`：幂等修复全部 7 项（`DROP ... IF EXISTS` + 重建），已通过 MCP 远程执行验证
 - **更新** `007_sub_categories.sql`：建表外键 `auth.users` → `public.users`，RLS 策略 `auth.uid()` → `get_current_user_id()` + `WITH CHECK`
@@ -32,6 +35,13 @@
 - `users` 表新增 `role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'premium', 'admin'))`
 - `login_user` RPC 返回值增加 `role` 字段
 - Migration `012_add_user_role.sql` 已应用到线上
+
+#### 🔴 严重错误：`login_user` RPC 列名不一致导致全站白屏
+- **012 migration 将 `RETURNS TABLE` 第一列命名为 `user_id`**，而前端 `useAuthStore.login()` 使用 `row.id` 取值
+- 结果：`row.id` 为 `undefined` → 存入 localStorage 的 user 对象 `id` 为空 → `initAuth` 恢复后 `userId=null` → `loadData` 跳过 → 不拉数据 → 全部页面空白
+- **根因**：写完 SQL 后未对照原始 002 migration 的列名，也未在线上执行后 `SELECT * FROM login_user(...)` 验证返回 JSON key
+- **修复**：`RETURNS TABLE` 第一列 `user_id` → `id`，线上已热修
+- **教训**：凡涉及 DDL/RPC 签名的 SQL 必须三步自检：(1) 对照原始定义比对列名；(2) 对照前端 `row.xxx` 取值点确认匹配；(3) 线上执行后立即 SELECT 验证返回 JSON key
 
 #### 前端
 - `AppUser` 接口新增 `role: 'user' | 'premium' | 'admin'`
@@ -45,7 +55,7 @@
 
 #### 顶部 VIP 会员卡片
 - 左侧：头像（`avatarUrl` 或默认 emoji）+ 昵称
-- 右侧：普通用户显示 `当前身份：普通用户` + `升级至VIP` 按钮；VIP 显示金色边框 + 皇冠图标 + 权益清单（AI解析、高级图表、无限截图、优先刷新）
+- 右侧：普通用户显示 `当前身份：普通用户` + `升级至VIP` 按钮；VIP 显示金色边框 + `Crown` 图标 + 权益清单
 
 #### 分组重构
 | 变化 | 详情 |
@@ -67,13 +77,43 @@
 #### 修复（三轮迭代）
 1. 左侧去掉 `maxWidth`，右侧去掉 `shrink-0`
 2. 今日收益 `clamp` 下限 `14px` → `12px`，右侧加 `minWidth: 70px` 防极端压扁
-3. 现价行加 `hidden sm:inline`，小屏（<640px）隐藏"｜ 现价 ¥xxx"，右侧宽度自动缩窄 ~40px，左侧释放足够空间
+3. 现价行加 `hidden sm:inline`，小屏隐藏"｜ 现价 ¥xxx"，右侧宽度自动缩窄，左侧释放足够空间
 
-### 五、提交流水
+### 五、sub_categories 同步失败（sort_order 列缺失）
+
+#### 现象
+用户改 `role` 为 `premium` 后刷新页面，`sync-engine` 推送 `subCategories` 时报：
+```
+Could not find the 'sort_order' column of 'sub_categories' in the schema cache
+```
+
+#### 根因
+- 本地 IndexedDB `SubCategoryRecord` 接口定义了 `sort_order` 字段
+- `localSubCategories.reorder()` 写入 `sort_order` 并标记 `local_dirty`
+- `sync-engine.pushTable()` 只剥离 `_sync_status` 和 `_updated_at_local`，其余字段（含 `sort_order`）全量发送
+- 远程 `sub_categories` 表无此列 → PostgREST 400
+
+#### 修复
+- 新建 `migrations/013_sub_categories_sort_order.sql`：`ALTER TABLE ADD COLUMN sort_order INT NOT NULL DEFAULT 0`
+- 同步更新 `007_sub_categories.sql` 建表语句
+
+#### 教训
+**数据库同步对比不能只看 migration 文件和远程表，必须加入第三步——本地 Dexie schema（`database.ts` 中的接口定义）也纳入对比范围，确保三端一致。**
+
+### 六、提交流水
 
 | commit | 内容 |
 |---|---|
-| 待 commit | 数据库同步修复 + 用户等级体系 + 设置页重构 + 持仓详情小屏适配 |
+| `d54ca76` | 数据库同步修复 + 用户等级体系 + 设置页重构 + 持仓详情小屏适配 |
+| `f6f375c` | fix: sub_categories 远程表缺失 sort_order 列 |
+| `a970c9c` | fix: login_user RPC 列名 user_id → id |
+
+### 七、今日犯错总结
+
+| # | 错误 | 影响 | 根因 | 预防措施 |
+|---|---|---|---|---|
+| 1 | 数据库对比遗漏 IndexedDB schema | `sub_categories.sort_order` 缺失，同步推送 400 | 只比了 migration↔远程，漏了 Dexie | 三端对比：migration ↔ 远程 ↔ Dexie schema |
+| 2 | `login_user` RPC 列名写成 `user_id` | 全站白屏，userId=null 无法拉数据 | 写完 SQL 没对照原定义，没验证返回 JSON | SQL 三步自检：对照原始列名 + 对照前端解构 + SELECT 验证 |
 
 ---
 
