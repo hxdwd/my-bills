@@ -39,7 +39,7 @@ export default function CashIcon({ currency, size = 68, className = '' }: Props)
       <text
         x="20" y="21.5"
         textAnchor="middle"
-        fontSize="11"
+        fontSize="13"
         fontFamily="system-ui, 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', sans-serif"
       >
         {m.flag}

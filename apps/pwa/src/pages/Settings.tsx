@@ -6,22 +6,20 @@ import { useAuthStore } from '../stores/useAuthStore'
 import Card from '../components/ui/Card'
 import BottomSheet from '../components/ui/BottomSheet'
 import Toast from '../components/ui/Toast'
-import { 
-  ChevronRight, 
-  Moon, 
+import {
+  ChevronRight,
+  Moon,
   Sun,
   Download,
   Upload,
-  Bell,
-  Shield,
   Info,
   Wallet,
   Tag,
   Globe,
-  Cloud,
   DollarSign,
   Trash2,
   LogOut,
+  Crown,
 } from 'lucide-react'
 
 interface SettingItemProps {
@@ -34,7 +32,7 @@ interface SettingItemProps {
 
 function SettingItem({ icon, title, subtitle, onClick, rightElement }: SettingItemProps) {
   const { theme } = useTheme()
-  
+
   return (
     <button
       onClick={onClick}
@@ -64,7 +62,9 @@ export default function SettingsPage() {
   const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
   const { bigExpenseThreshold, setBigExpenseThreshold, resetAndReload } = useApp()
-  const { logout } = useAuthStore()
+  const { logout, user } = useAuthStore()
+  const role = user?.role ?? 'user'
+  const displayName = user?.displayName ?? user?.username ?? '用户'
   const [showExport, setShowExport] = useState(false)
   const [showThresholdEdit, setShowThresholdEdit] = useState(false)
   const [thresholdInput, setThresholdInput] = useState(bigExpenseThreshold.toString())
@@ -85,8 +85,6 @@ export default function SettingsPage() {
   const handleClearCache = async () => {
     setClearing(true)
     try {
-      // 方案B: 走可靠路径 —— 先清空内存 state 再清 IndexedDB 并重载，
-      // 任何一步失败都会进入 catch 并明确提示，不再"静默无效"。
       await resetAndReload()
       setShowClearCache(false)
       showToast('缓存已清除，正在从云端恢复数据', 'success')
@@ -104,67 +102,170 @@ export default function SettingsPage() {
     navigate('/login')
   }
 
+  // ============================================================
+  // 步骤 1: 顶部会员/VIP 状态卡片（左侧头像+昵称，右侧身份标识）
+  // ============================================================
+  const isPremium = role === 'premium' || role === 'admin'
+
+  const profileCard = (
+    <div
+      className={`rounded-2xl p-4 border ${
+        isPremium
+          ? 'bg-gradient-to-br from-amber-50 to-yellow-50 border-amber-200 dark:from-amber-900/20 dark:to-yellow-900/20 dark:border-amber-700/40'
+          : 'bg-surface border-brand-tint'
+      }`}
+    >
+      <div className="flex items-center gap-3">
+        {/* 左侧：头像 + 昵称 */}
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className={`w-11 h-11 rounded-full flex items-center justify-center text-lg shrink-0 ${
+            isPremium
+              ? 'bg-amber-400'
+              : 'bg-ink-3/10'
+          }`}>
+            {user?.avatarUrl ? (
+              <img src={user.avatarUrl} alt="" className="w-full h-full rounded-full object-cover" />
+            ) : (
+              <span>{isPremium ? '👑' : '👤'}</span>
+            )}
+          </div>
+          <div className="min-w-0">
+            <div className="font-semibold text-ink text-base truncate">{displayName}</div>
+            <div className={`text-xs mt-0.5 ${isPremium ? 'text-amber-600 dark:text-amber-400' : 'text-ink-2'}`}>
+              {isPremium
+                ? (role === 'admin' ? '系统管理员' : '尊贵 VIP 会员')
+                : '当前身份：普通用户'}
+            </div>
+          </div>
+        </div>
+        {/* 右侧：操作按钮 */}
+        {isPremium ? (
+          <div className="shrink-0 w-9 h-9 rounded-full bg-amber-400 flex items-center justify-center">
+            <Crown size={18} className="text-white" />
+          </div>
+        ) : (
+          <button className="shrink-0 px-3 py-1.5 rounded-full bg-brand text-ink text-xs font-medium active:scale-95 transition-transform">
+            升级至VIP
+          </button>
+        )}
+      </div>
+      {/* VIP 权益清单 */}
+      {isPremium && (
+        <div className="mt-3 pt-3 border-t border-amber-200/60 dark:border-amber-700/30">
+          <div className="text-[11px] text-ink-2 mb-2">VIP 专属权益</div>
+          <div className="grid grid-cols-2 gap-1.5">
+            {[
+              { icon: '🤖', label: '更频繁的 AI 解析' },
+              { icon: '📊', label: '高级图表分析' },
+              { icon: '📸', label: '无限次截图导入' },
+              { icon: '⚡', label: '优先数据刷新' },
+            ].map((item, i) => (
+              <div key={i} className="flex items-center gap-1.5 text-xs text-ink-2">
+                <span className="text-sm">{item.icon}</span>
+                <span>{item.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+
+  // ============================================================
+  // 步骤 2-4: 重构 settingGroups 布局
+  // 顺序: 基本信息 → 数据与备份 → 账户与安全 → 其他
+  // 移除: 云同步、安全设置、通知组
+  // ============================================================
   const settingGroups = [
     {
-      title: '账户',
+      title: '基本信息',
       items: [
-        { icon: <Wallet size={20} className="text-[#1e88e5]" />, title: '账户管理', subtitle: '管理你的账户', onClick: () => navigate('/assets') },
-        { icon: <Tag size={20} className="text-[#a855f7]" />, title: '分类管理', subtitle: '自定义收支分类', onClick: () => navigate('/categories') },
-      ]
-    },
-    {
-      title: '偏好',
-      items: [
-        { 
-          icon: theme === 'dark' ? <Moon size={20} className="text-[#818cf8]" /> : <Sun size={20} className="text-brand-strong" />, 
-          title: '主题设置', 
+        {
+          icon: <Tag size={20} className="text-[#a855f7]" />,
+          title: '分类管理',
+          subtitle: '自定义收支分类',
+          onClick: () => navigate('/categories'),
+        },
+        {
+          icon: <DollarSign size={20} className="text-danger" />,
+          title: '大额支出阈值',
+          subtitle: `当前 ${bigExpenseThreshold}`,
+          onClick: () => {
+            setThresholdInput(bigExpenseThreshold.toString())
+            setShowThresholdEdit(true)
+          },
+        },
+        {
+          icon: theme === 'dark'
+            ? <Moon size={20} className="text-[#818cf8]" />
+            : <Sun size={20} className="text-brand-strong" />,
+          title: '主题设置',
           subtitle: theme === 'dark' ? '深色模式' : '浅色模式',
           onClick: toggleTheme,
           rightElement: (
             <div className={`w-12 h-7 rounded-full p-1 transition-colors ${theme === 'dark' ? 'bg-brand' : 'bg-brand-tint'}`}>
               <div className={`w-5 h-5 rounded-full bg-white transition-transform ${theme === 'dark' ? 'translate-x-5' : 'translate-x-0'}`} />
             </div>
-          )
+          ),
         },
-        { icon: <Globe size={20} className="text-ok" />, title: '多币种资产', subtitle: '美股/港股按原币种展示，可在财富页切换本位币', onClick: () => navigate('/wealth') },
-        { 
-          icon: <DollarSign size={20} className="text-danger" />, 
-          title: '大额支出阈值', 
-          subtitle: `当前 ${bigExpenseThreshold}`,
-          onClick: () => {
-            setThresholdInput(bigExpenseThreshold.toString())
-            setShowThresholdEdit(true)
-          }
+        {
+          icon: <Globe size={20} className="text-ok" />,
+          title: '多币种资产',
+          subtitle: '美股/港股按原币种展示，可在财富页切换本位币',
+          onClick: () => navigate('/wealth'),
         },
-      ]
+      ],
     },
     {
-      title: '通知',
+      title: '数据与备份',
       items: [
-        { icon: <Bell size={20} className="text-brand-strong" />, title: '提醒设置', subtitle: '账单到期提醒', onClick: () => {} },
-      ]
+        {
+          icon: <Download size={20} className="text-[#5b8dee]" />,
+          title: '导出数据',
+          subtitle: '导出为 Excel/JSON',
+          onClick: () => setShowExport(true),
+        },
+        {
+          icon: <Upload size={20} className="text-[#10b981]" />,
+          title: '导入数据',
+          subtitle: '从其他应用导入',
+          onClick: () => {},
+        },
+        {
+          icon: <Trash2 size={20} className="text-danger" />,
+          title: '清除缓存',
+          subtitle: '清除本地缓存数据',
+          onClick: () => setShowClearCache(true),
+        },
+      ],
     },
     {
-      title: '数据',
+      title: '账户与安全',
       items: [
-        { icon: <Download size={20} className="text-[#5b8dee]" />, title: '导出数据', subtitle: '导出为 Excel/JSON', onClick: () => setShowExport(true) },
-        { icon: <Upload size={20} className="text-[#10b981]" />, title: '导入数据', subtitle: '从其他应用导入', onClick: () => {} },
-        { icon: <Cloud size={20} className="text-[#818cf8]" />, title: '云同步', subtitle: '未开启', onClick: () => {} },
-        { icon: <Trash2 size={20} className="text-danger" />, title: '清除缓存', subtitle: '清除本地缓存数据', onClick: () => setShowClearCache(true) },
-      ]
-    },
-    {
-      title: '安全',
-      items: [
-        { icon: <Shield size={20} className="text-ink" />, title: '安全设置', subtitle: '密码/生物识别', onClick: () => {} },
-        { icon: <LogOut size={20} className="text-danger" />, title: '退出登录', subtitle: '退出当前账号', onClick: () => setShowLogout(true) },
-      ]
+        {
+          icon: <Wallet size={20} className="text-[#1e88e5]" />,
+          title: '账户管理',
+          subtitle: '管理你的账户',
+          onClick: () => navigate('/assets'),
+        },
+        {
+          icon: <LogOut size={20} className="text-danger" />,
+          title: '退出登录',
+          subtitle: '退出当前账号',
+          onClick: () => setShowLogout(true),
+        },
+      ],
     },
     {
       title: '其他',
       items: [
-        { icon: <Info size={20} className="text-ink-2" />, title: '关于', subtitle: '版本 1.0.0', onClick: () => {} },
-      ]
+        {
+          icon: <Info size={20} className="text-ink-2" />,
+          title: '关于',
+          subtitle: '版本 1.0.0',
+          onClick: () => {},
+        },
+      ],
     },
   ]
 
@@ -178,6 +279,10 @@ export default function SettingsPage() {
       </header>
 
       <main className="px-5 tabbar-safe space-y-4 animate-page-fade">
+        {/* 步骤 1: 顶部会员/VIP 状态卡片 */}
+        {profileCard}
+
+        {/* 步骤 2-4: 重构后的分组 */}
         {settingGroups.map((group, i) => (
           <div key={i}>
             <h3 className={`text-sm font-medium mb-2 px-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
@@ -257,7 +362,7 @@ export default function SettingsPage() {
               <div className={`text-sm ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>包含所有交易记录</div>
             </div>
           </button>
-          
+
           <button className={`w-full flex items-center gap-4 p-4 rounded-xl transition-colors ${theme === 'dark' ? 'bg-surface hover:bg-brand-tint' : 'bg-bg hover:bg-brand-tint'}`}>
             <div className="w-12 h-12 rounded-xl bg-[#5b8dee]/10 flex items-center justify-center">
               <span className="text-xl">📋</span>
@@ -267,7 +372,7 @@ export default function SettingsPage() {
               <div className={`text-sm ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>可用于数据备份</div>
             </div>
           </button>
-          
+
           <button className={`w-full flex items-center gap-4 p-4 rounded-xl transition-colors ${theme === 'dark' ? 'bg-surface hover:bg-brand-tint' : 'bg-bg hover:bg-brand-tint'}`}>
             <div className="w-12 h-12 rounded-xl bg-brand/10 flex items-center justify-center">
               <span className="text-xl">🖼️</span>

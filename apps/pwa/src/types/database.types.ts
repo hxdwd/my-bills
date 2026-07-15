@@ -341,6 +341,7 @@ export interface Database {
           avatar_url: string | null
           currency: string | null
           locale: string | null
+          role: string
         }[]
       }
       register_user: {
@@ -356,6 +357,7 @@ export interface Database {
           avatar_url: string | null
           currency: string | null
           locale: string | null
+          role: string
         }[]
       }
     }

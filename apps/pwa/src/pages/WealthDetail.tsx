@@ -246,26 +246,26 @@ export function WealthDetail() {
       <div className="bg-surface rounded-3xl p-4 border border-brand-tint mb-3">
         <div className="flex items-center justify-between">
           {/* 左侧：超大总市值 + 累计收益 */}
-          <div className="min-w-0 flex-1" style={{ maxWidth: '62%' }}>
-            <div className="text-ink-2 mb-1" style={{ fontSize: 'clamp(10px, 1.8vw, 12px)' }}>当前市值</div>
+          <div className="min-w-0 flex-1">
+            <div className="text-ink-2 mb-1" style={{ fontSize: 'clamp(10px, 2vw, 13px)' }}>当前市值</div>
             <div
               className="font-extrabold font-amount leading-tight text-ink whitespace-nowrap overflow-hidden text-ellipsis"
-              style={{ fontSize: 'clamp(26px, 5.5vw, 42px)' }}
+              style={{ fontSize: 'clamp(22px, 6vw, 38px)' }}
             >
               {mv == null ? '—' : fmtWithSymbol(mv, cur)}
             </div>
             <div className="mt-2">
-              <div className="text-ink-2 mb-0.5" style={{ fontSize: 'clamp(10px, 1.8vw, 12px)' }}>累计收益</div>
+              <div className="text-ink-2 mb-0.5" style={{ fontSize: 'clamp(10px, 2vw, 13px)' }}>累计收益</div>
               <div className="flex items-baseline gap-1.5 flex-wrap">
                 <span
                   className="font-bold font-amount whitespace-nowrap"
-                  style={{ color: plColor, fontSize: 'clamp(15px, 3vw, 22px)' }}
+                  style={{ color: plColor, fontSize: 'clamp(13px, 3.5vw, 20px)' }}
                 >
                   {pl == null ? '—' : pl >= 0 ? `+${fmtWithSymbol(pl, cur)}` : fmtWithSymbol(pl, cur)}
                 </span>
                 <span
                   className="font-semibold whitespace-nowrap"
-                  style={{ color: plColor, fontSize: 'clamp(11px, 2vw, 14px)' }}
+                  style={{ color: plColor, fontSize: 'clamp(10px, 2.2vw, 14px)' }}
                 >
                   {pr == null ? '' : `(${pl >= 0 ? '+' : ''}${(pr * 100).toFixed(2)}%)`}
                 </span>
@@ -274,29 +274,29 @@ export function WealthDetail() {
           </div>
 
           {/* 右侧：今日收益中心 */}
-          <div className="text-center shrink-0 ml-3">
-            <div className="text-ink-2 mb-1" style={{ fontSize: 'clamp(10px, 1.8vw, 12px)' }}>今日收益</div>
+          <div className="text-center ml-3 flex-shrink-0">
+            <div className="text-ink-2 mb-1" style={{ fontSize: 'clamp(10px, 2vw, 13px)' }}>今日收益</div>
             <div
               className="font-bold font-amount leading-tight whitespace-nowrap"
-              style={{ color: tdColor, fontSize: 'clamp(18px, 3.5vw, 28px)' }}
+              style={{ color: tdColor, fontSize: 'clamp(12px, 4vw, 24px)' }}
             >
               {td == null ? '—' : td >= 0 ? `+${fmtWithSymbol(td, cur)}` : fmtWithSymbol(td, cur)}
             </div>
             <div
               className="mt-2 text-ink-2/70 leading-relaxed whitespace-nowrap"
-              style={{ fontSize: 'clamp(10px, 1.6vw, 12px)' }}
+              style={{ fontSize: 'clamp(10px, 1.8vw, 12px)' }}
             >
               {changePct != null && (
                 <span style={{ color: changeColor }}>{changeArrow} {(Math.abs(changePct) * 100).toFixed(2)}%</span>
               )}
-              {curPrice != null && <span> ｜ 现价 {fmtWithSymbol(curPrice, cur)}</span>}
+              {curPrice != null && <span className="hidden sm:inline"> ｜ 现价 {fmtWithSymbol(curPrice, cur)}</span>}
               {market === 'FUND' && <span className="text-ink-3"> (估算)</span>}
             </div>
           </div>
         </div>
         <div
           className="text-ink-3/40 text-right mt-3"
-          style={{ fontSize: 'clamp(9px, 1.4vw, 11px)' }}
+          style={{ fontSize: 'clamp(9px, 1.5vw, 11px)' }}
         >
           更新于 {v?.quote_time ? new Date(v.quote_time).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(/\//g, '-') : '—'}
         </div>

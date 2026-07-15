@@ -41,6 +41,9 @@ export default defineConfig({
         ]
       },
       workbox: {
+        // 新 SW 立即接管页面，无需等待旧页面关闭
+        skipWaiting: true,
+        clientsClaim: true,
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         runtimeCaching: [
           {

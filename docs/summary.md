@@ -4,6 +4,79 @@
 
 ---
 
+## 2026-07-15：数据库同步修复 + 用户等级体系 + 设置页重构 + 持仓详情小屏适配
+
+### 一、数据库 Migration 链与线上同步
+
+#### 对比发现的 7 项差异
+通过 Supabase MCP 拉取远程 `public` schema（10 张表完整结构），与本地 10 个 migration 文件逐项比对，发现线上经过多轮手动修复后已与 migration 文件脱节：
+
+| # | 问题 | 线上实际 | 本地 migration |
+|---|---|---|---|
+| 1 | `sub_categories.user_id` 外键 | `public.users` | `auth.users` |
+| 2 | `sub_categories` RLS 策略 | `get_current_user_id()` | `auth.uid()` |
+| 3 | `profiles.id` 外键 | `public.users` | `auth.users` |
+| 4 | `holdings_transactions.user_id` 外键 | `public.users` | `auth.users` |
+| 5 | `transactions.amount` CHECK | `>= 0` | `> 0` |
+| 6 | `accounts.balance` CHECK | `>= 0`（手动加固） | 无 |
+| 7 | `transfers.fee` CHECK | `>= 0`（手动加固） | 无 |
+
+#### 修复方案
+- **新建** `migrations/011_sync_constraints.sql`：幂等修复全部 7 项（`DROP ... IF EXISTS` + 重建），已通过 MCP 远程执行验证
+- **更新** `007_sub_categories.sql`：建表外键 `auth.users` → `public.users`，RLS 策略 `auth.uid()` → `get_current_user_id()` + `WITH CHECK`
+- **更新** `002_simple_auth.sql`：`users` 建表语句补 `role` 列
+
+### 二、用户等级体系（VIP/普通会员）
+
+#### 数据库
+- `users` 表新增 `role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'premium', 'admin'))`
+- `login_user` RPC 返回值增加 `role` 字段
+- Migration `012_add_user_role.sql` 已应用到线上
+
+#### 前端
+- `AppUser` 接口新增 `role: 'user' | 'premium' | 'admin'`
+- `login` / `register` 解析 `row.role` 写入 state
+- `database.types.ts` 同步更新 RPC 返回类型签名
+
+#### 安全拦截
+- **前端无任何 `UPDATE users SET role` 的路径**——role 仅由 DB 管理员直接操作，天然白名单隔离
+
+### 三、设置页（Settings.tsx）重构
+
+#### 顶部 VIP 会员卡片
+- 左侧：头像（`avatarUrl` 或默认 emoji）+ 昵称
+- 右侧：普通用户显示 `当前身份：普通用户` + `升级至VIP` 按钮；VIP 显示金色边框 + 皇冠图标 + 权益清单（AI解析、高级图表、无限截图、优先刷新）
+
+#### 分组重构
+| 变化 | 详情 |
+|---|---|
+| 新增 | **【基本信息】**组：合并分类管理、大额支出阈值、主题设置、多币种资产 |
+| 精简 | **【数据与备份】**组：移除云同步，保留导出/导入/清除缓存 |
+| 新增 | **【账户与安全】**组：合并账户管理 + 退出登录 |
+| 删除 | 【通知】组、【安全设置】、【云同步】 |
+| 保留 | 【其他】→ 关于 |
+
+### 四、持仓详情页小屏适配（WealthDetail.tsx）
+
+顶部资产卡片在小屏设备下左侧"当前市值"被截断为 `¥249...`。
+
+#### 根因
+- 左侧 `maxWidth: '62%'` 限制过紧
+- 右侧 `shrink-0` 强制不收缩，挤压左侧
+
+#### 修复（三轮迭代）
+1. 左侧去掉 `maxWidth`，右侧去掉 `shrink-0`
+2. 今日收益 `clamp` 下限 `14px` → `12px`，右侧加 `minWidth: 70px` 防极端压扁
+3. 现价行加 `hidden sm:inline`，小屏（<640px）隐藏"｜ 现价 ¥xxx"，右侧宽度自动缩窄 ~40px，左侧释放足够空间
+
+### 五、提交流水
+
+| commit | 内容 |
+|---|---|
+| 待 commit | 数据库同步修复 + 用户等级体系 + 设置页重构 + 持仓详情小屏适配 |
+
+---
+
 ## 2026-07-14：截图OCR导入、AI文本识别、失败缓存、响应式字号
 
 ### 一、截图导入持仓（OCR + DeepSeek）

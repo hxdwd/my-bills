@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS public.users (
   avatar_url TEXT,
   currency TEXT DEFAULT 'CNY' CHECK (currency IN ('CNY', 'USD', 'HKD', 'EUR', 'JPY', 'GBP')),
   locale TEXT DEFAULT 'zh-CN',
+  role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'premium', 'admin')),
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
@@ -72,11 +73,12 @@ RETURNS TABLE (
   display_name TEXT,
   avatar_url TEXT,
   currency TEXT,
-  locale TEXT
+  locale TEXT,
+  role TEXT
 ) AS $$
 BEGIN
   RETURN QUERY
-  SELECT u.id, u.username, u.display_name, u.avatar_url, u.currency, u.locale
+  SELECT u.id, u.username, u.display_name, u.avatar_url, u.currency, u.locale, u.role
   FROM public.users u
   WHERE u.username = p_username
     AND u.password_hash = crypt(p_password, u.password_hash);

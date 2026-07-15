@@ -9,7 +9,7 @@
 -- 1. 新建子分类表（二级分类，绑一级分类，最末级）
 CREATE TABLE IF NOT EXISTS public.sub_categories (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  user_id UUID REFERENCES public.users(id) ON DELETE CASCADE NOT NULL,
   name TEXT NOT NULL,
   color TEXT DEFAULT '#818cf8',
   category_id UUID REFERENCES public.categories(id) ON DELETE CASCADE NOT NULL,
@@ -24,7 +24,8 @@ CREATE INDEX IF NOT EXISTS idx_sub_categories_category_id ON public.sub_categori
 ALTER TABLE public.sub_categories ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can CRUD own sub_categories"
   ON public.sub_categories FOR ALL
-  USING (auth.uid() = user_id);
+  USING (user_id = public.get_current_user_id())
+  WITH CHECK (user_id = public.get_current_user_id());
 
 -- updated_at 触发器
 CREATE OR REPLACE FUNCTION update_sub_categories_updated_at()

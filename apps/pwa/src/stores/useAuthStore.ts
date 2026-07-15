@@ -9,6 +9,7 @@ export interface AppUser {
   avatarUrl?: string;
   currency: string;
   locale: string;
+  role: 'user' | 'premium' | 'admin';
 }
 
 interface AuthState {
@@ -67,6 +68,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         avatarUrl: row.avatar_url || undefined,
         currency: row.currency || 'CNY',
         locale: row.locale || 'zh-CN',
+        role: row.role || 'user',
       };
 
       // 设置全局 user_id（用于 RLS header 和 RPC）
@@ -108,6 +110,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         displayName: row.display_name || row.username,
         currency: 'CNY',
         locale: 'zh-CN',
+        role: row.role || 'user',
       };
 
       // 设置全局 user_id（用于 RLS header 和 RPC）
