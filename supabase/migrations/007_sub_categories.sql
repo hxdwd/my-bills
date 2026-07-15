@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS public.sub_categories (
   name TEXT NOT NULL,
   color TEXT DEFAULT '#818cf8',
   category_id UUID REFERENCES public.categories(id) ON DELETE CASCADE NOT NULL,
+  sort_order INT NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now(),
   UNIQUE(user_id, category_id, name)
