@@ -62,6 +62,11 @@ export function useWealthValuation(intervalMs = 60000) {
       const hs = await aggregateHoldings()
       setHoldings(hs)
       if (hs.length === 0) {
+        // 无持仓时也尝试拉取汇率（资产页等其他页面依赖汇率做币种换算）
+        try {
+          const data = await fetchBatchValuation([])
+          if (data?.exchange_rates) setRates(data.exchange_rates)
+        } catch { /* 汇率拉取失败不影响页面 */ }
         setResults([])
         saveCache([])
         setLastUpdated(new Date())

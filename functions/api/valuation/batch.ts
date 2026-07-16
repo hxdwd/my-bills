@@ -13,8 +13,8 @@ export const onRequestPost = async (context: any) => {
   }
 
   const items = body?.items
-  if (!Array.isArray(items) || items.length === 0) {
-    return json({ code: 400, message: 'items 必须为非空数组' }, 400)
+  if (!Array.isArray(items)) {
+    return json({ code: 400, message: 'items 必须为数组' }, 400)
   }
   if (items.length > MAX_ITEMS) {
     return json({ code: 400, message: `items 最多 ${MAX_ITEMS} 条，当前 ${items.length}` }, 400)
