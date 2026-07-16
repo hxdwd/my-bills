@@ -46,8 +46,8 @@ const currencySymbol: Record<string, string> = {
 export default function AssetsPage() {
   const { theme } = useTheme()
   const { accounts, loading, getTotalLiabilities, addAccount, updateAccount, setDefaultAccount, deleteAccount, getAssetTrend } = useApp()
-  // 汇率数据（来自财富估值模块，无持仓时为默认 1:1）
-  const { rates } = useWealthValuation()
+  // 汇率数据 + 持仓估值（用于投资账户展示持仓市值）
+  const { rates, results } = useWealthValuation()
   const [showAddAccount, setShowAddAccount] = useState(false)
   const [editingAccount, setEditingAccount] = useState<Account | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -96,6 +96,20 @@ export default function AssetsPage() {
     const c = (currency || 'CNY') as 'CNY' | 'USD' | 'HKD'
     return toBase(balance, c, 'CNY', rates)
   }
+
+  // 按投资账户聚合持仓市值（account_id → 该账户下所有持仓的市值汇总，原始币种）
+  const holdingsValueByAccount = useMemo(() => {
+    const map: Record<string, { value: number; currency: string }> = {}
+    for (const r of results) {
+      const h = r.holding
+      if (!h?.accountId) continue
+      const accId = h.accountId
+      if (!map[accId]) map[accId] = { value: 0, currency: r.currency || 'CNY' }
+      // 港股通用 Worker 折算后的 CNY 值
+      map[accId].value += r.converted_value ?? r.market_value ?? 0
+    }
+    return map
+  }, [results])
 
   // 折算后总资产（所有币种折 CNY 汇总）
   const totalAssetsCNY = useMemo(
@@ -418,53 +432,110 @@ export default function AssetsPage() {
               const c = (acc.currency || 'CNY')
               const isOtherCurrency = c !== 'CNY'
               const cny = toCNY(acc.balance, acc.currency)
+              const isInvestment = acc.type === 'investment'
+              const hv = holdingsValueByAccount[acc.id]
+              const holdingsVal = hv?.value ?? 0
+              const totalNet = acc.balance + holdingsVal
+              const sym = currencySymbol[c] || '¥'
+
               return (
                 <div
                   key={acc.id}
                   onClick={() => handleOpenEdit(acc)}
-                  className={`flex items-center gap-3 p-4 cursor-pointer transition-colors
+                  className={`p-4 cursor-pointer transition-colors
                     ${theme === 'dark' ? 'hover:bg-surface' : 'hover:bg-[#faf9f5]'}`}
                 >
-                  <div
-                    className="relative w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0"
-                    style={{ backgroundColor: `${acc.color}15` }}
-                  >
-                    {acc.icon}
-                    {acc.isDefault && (
-                      <span className={`absolute -top-1 -right-1 w-4 h-4 rounded-full bg-brand border-2 flex items-center justify-center text-[8px] leading-none text-white font-bold ${theme === 'dark' ? 'border-[#141413]' : 'border-[#faf9f5]'}`}>
-                        ✓
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className={`font-medium truncate ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
-                        {acc.name}
-                      </span>
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0 ${
-                        theme === 'dark' ? 'bg-surface text-ink-2' : 'bg-bg text-ink-2'
-                      }`}>
-                        {c}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <div className={`text-xs ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
-                        {accountTypeLabels[acc.type]}
+                  {isInvestment ? (
+                    /* 投资账户：三行展示 */
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <div
+                          className="relative w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0"
+                          style={{ backgroundColor: `${acc.color}15` }}
+                        >
+                          {acc.icon}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className={`font-medium truncate ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
+                              {acc.name}
+                            </span>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0 ${
+                              theme === 'dark' ? 'bg-surface text-ink-2' : 'bg-bg text-ink-2'
+                            }`}>
+                              {c}
+                            </span>
+                          </div>
+                          <div className={`text-xs ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
+                            {accountTypeLabels[acc.type]}
+                          </div>
+                        </div>
+                      </div>
+                      {/* 明细行 */}
+                      <div className="pl-12 space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className={theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}>可用现金</span>
+                          <span className={`font-mono ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
+                            {sym}{acc.balance.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs">
+                          <span className={theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}>持仓市值</span>
+                          <span className={`font-mono ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
+                            {sym}{holdingsVal.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs pt-1 border-t border-brand-tint/50">
+                          <span className={`font-medium ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>总净资产</span>
+                          <span className={`font-mono font-bold ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
+                            {sym}{totalNet.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div className="text-right shrink-0 min-w-0">
-                    {/* 主金额：原始币种 */}
-                    <div className={`font-mono font-medium amount-fluid break-amount ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
-                      {currencySymbol[c]}{acc.balance.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </div>
-                    {/* 辅金额：折算 CNY（非 CNY 币种时显示） */}
-                    {isOtherCurrency && (
-                      <div className={`text-[11px] font-mono mt-0.5 ${theme === 'dark' ? 'text-ink-3' : 'text-ink-3'}`}>
-                        (¥{cny.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                  ) : (
+                    /* 普通账户：原有展示 */
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="relative w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0"
+                        style={{ backgroundColor: `${acc.color}15` }}
+                      >
+                        {acc.icon}
+                        {acc.isDefault && (
+                          <span className={`absolute -top-1 -right-1 w-4 h-4 rounded-full bg-brand border-2 flex items-center justify-center text-[8px] leading-none text-white font-bold ${theme === 'dark' ? 'border-[#141413]' : 'border-[#faf9f5]'}`}>
+                            ✓
+                          </span>
+                        )}
                       </div>
-                    )}
-                  </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`font-medium truncate ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
+                            {acc.name}
+                          </span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0 ${
+                            theme === 'dark' ? 'bg-surface text-ink-2' : 'bg-bg text-ink-2'
+                          }`}>
+                            {c}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <div className={`text-xs ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
+                            {accountTypeLabels[acc.type]}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0 min-w-0">
+                        <div className={`font-mono font-medium amount-fluid break-amount ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
+                          {sym}{acc.balance.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                        {isOtherCurrency && (
+                          <div className={`text-[11px] font-mono mt-0.5 ${theme === 'dark' ? 'text-ink-3' : 'text-ink-3'}`}>
+                            (¥{cny.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )
             })}
