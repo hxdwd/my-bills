@@ -690,6 +690,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       name: a.name,
       type: a.type,
       balance: a.balance,
+      currency: (a as any).currency || 'CNY',
       icon: a.icon,
       color: a.color,
       sort_order: accounts.length,
@@ -713,6 +714,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (data.balance !== undefined) dbUpdates.balance = data.balance
     if (data.icon !== undefined) dbUpdates.icon = data.icon
     if (data.color !== undefined) dbUpdates.color = data.color
+    if ((data as any).currency !== undefined) dbUpdates.currency = (data as any).currency
 
     await localAccounts.update(id, dbUpdates)
 
@@ -737,6 +739,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const setDefaultAccount = useCallback(async (id: string) => {
     if (!userId) return
+
+    // 投资账户不可设为默认账户
+    const target = accounts.find(a => a.id === id)
+    if (target?.type === 'investment') return
 
     // 1. 找到当前默认账户，取消其默认标识
     const currentDefault = accounts.find(a => a.isDefault)

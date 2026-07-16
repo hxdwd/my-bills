@@ -2,8 +2,8 @@ import { useTheme } from '../context/ThemeContext'
 import { useApp, Account } from '../context/AppContext'
 import Card from '../components/ui/Card'
 import BottomSheet from '../components/ui/BottomSheet'
-import { useState, useMemo, useCallback } from 'react'
-import { TrendingUp, TrendingDown, Plus, ChevronRight, Trash2, AlertCircle, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { TrendingDown, Plus, ChevronRight, Trash2, AlertCircle, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import { Pie } from 'react-chartjs-2'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
 import { formatCurrency } from '../utils/format'
@@ -39,7 +39,7 @@ const accountTypeLabels: Record<string, string> = {
 
 export default function AssetsPage() {
   const { theme } = useTheme()
-  const { accounts, loading, getTotalAssets, getTotalLiabilities, getNetAssets, addAccount, updateAccount, setDefaultAccount, deleteAccount, getAssetTrend } = useApp()
+  const { accounts, loading, getTotalLiabilities, addAccount, updateAccount, setDefaultAccount, deleteAccount, getAssetTrend } = useApp()
   const [showAddAccount, setShowAddAccount] = useState(false)
   const [editingAccount, setEditingAccount] = useState<Account | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -53,6 +53,7 @@ export default function AssetsPage() {
     icon: '🏦',
     color: '#1e88e5',
     balance: 0,
+    currency: 'CNY' as string,
   }
 
   // 编辑账户表单初始值
@@ -62,14 +63,13 @@ export default function AssetsPage() {
     icon: '🏦',
     color: '#1e88e5',
     balance: 0,
+    currency: 'CNY' as string,
   }
 
   const [newAccountForm, setNewAccountForm] = useState(initNewAccountForm)
   const [editForm, setEditForm] = useState(initEditForm)
 
-  const totalAssets = getTotalAssets()
   const totalLiabilities = getTotalLiabilities()
-  const netAssets = getNetAssets()
   const assetTrend = getAssetTrend(6)
 
   // 资产账户：非负债类型的账户（余额 >= 0）
@@ -88,6 +88,36 @@ export default function AssetsPage() {
     return sorted
   }, [assetAccountsRaw, sortOrder])
 
+  // 按币种分组资产（不跨币种相加，避免 USD 按 1:1 计入 CNY 的错误）
+  const assetsByCurrency = useMemo(() => {
+    const groups: Record<string, { balance: number; count: number }> = {}
+    for (const a of assetAccounts) {
+      const c = a.currency || 'CNY'
+      if (!groups[c]) groups[c] = { balance: 0, count: 0 }
+      groups[c].balance += a.balance
+      groups[c].count += 1
+    }
+    return groups
+  }, [assetAccounts])
+
+  const currencySymbol: Record<string, string> = {
+    CNY: '¥', USD: '$', HKD: 'HK$',
+  }
+
+  // 饼图按币种拆分，每币种一个饼图，使用原始币种金额
+  const pieDataByCurrency = useMemo(() => {
+    const result: Record<string, { labels: string[]; data: number[]; backgroundColor: string[] }> = {}
+    for (const c of Object.keys(assetsByCurrency)) {
+      const accs = assetAccounts.filter(a => (a.currency || 'CNY') === c)
+      result[c] = {
+        labels: accs.map(a => a.name),
+        data: accs.map(a => a.balance),
+        backgroundColor: accs.map(a => a.color),
+      }
+    }
+    return result
+  }, [assetAccounts, assetsByCurrency])
+
   // 排序按钮点击切换
   const handleSortToggle = () => {
     setSortOrder(prev => {
@@ -104,16 +134,6 @@ export default function AssetsPage() {
     return <ArrowUp size={14} />
   }
 
-  const pieData = {
-    labels: assetAccounts.map(a => a.name),
-    datasets: [{
-      data: assetAccounts.map(a => a.balance),
-      backgroundColor: assetAccounts.map(a => a.color),
-      borderWidth: 0,
-      hoverOffset: 4,
-    }]
-  }
-
   const pieOptions = {
     responsive: true,
     maintainAspectRatio: false,
@@ -127,6 +147,8 @@ export default function AssetsPage() {
     },
     cutout: '65%',
   }
+
+
 
   // 打开新增账户弹窗
   const handleOpenAdd = () => {
@@ -150,7 +172,8 @@ export default function AssetsPage() {
         icon: newAccountForm.icon,
         color: newAccountForm.color,
         balance: newAccountForm.balance,
-      })
+        currency: newAccountForm.currency,
+      } as any)
       setShowAddAccount(false)
     } catch (e) {
       console.error('添加账户失败:', e)
@@ -165,6 +188,7 @@ export default function AssetsPage() {
       icon: account.icon,
       color: account.color,
       balance: account.balance,
+      currency: account.currency || 'CNY',
     })
     setEditingAccount(account)
     setShowDeleteConfirm(false)
@@ -187,7 +211,8 @@ export default function AssetsPage() {
         icon: editForm.icon,
         color: editForm.color,
         balance: editForm.balance,
-      })
+        currency: editForm.currency,
+      } as any)
       setEditingAccount(null)
       setEditForm({ ...initEditForm })
     } catch (e) {
@@ -313,68 +338,83 @@ export default function AssetsPage() {
           </>
         ) : (
           <>
-        {/* Total Assets Card */}
+        {/* 按币种分栏资产卡片 */}
         <Card className="!p-5">
-          <div className="text-center mb-4">
-            <p className={`text-sm mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
-              总资产
-            </p>
-            <div className={`font-bold font-mono amount-fluid-lg ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
-              {formatCurrency(totalAssets, false, false)}
-            </div>
+          <p className={`text-sm mb-3 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
+            总资产（按币种）
+          </p>
+          <div className="space-y-2">
+            {Object.entries(assetsByCurrency).map(([c, g]) => (
+              <div key={c} className="flex items-center justify-between">
+                <span className={`text-sm ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
+                  {c === 'CNY' ? '人民币资产' : c === 'USD' ? '美元资产' : '港币资产'}
+                </span>
+                <span className={`font-bold font-mono amount-fluid ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
+                  {currencySymbol[c] || ''}{g.balance.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+            ))}
           </div>
-          
-          <div className="grid grid-cols-2 gap-4 pt-4 border-t border-brand-tint dark:border-brand-tint">
-            <div className="text-center">
-              <div className="flex items-center justify-center gap-1 mb-1">
-                <TrendingUp size={14} className="text-ok" />
-                <span className={`text-xs ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>净资产</span>
-              </div>
-              <div className={`text-lg font-bold font-mono amount-fluid ${netAssets >= 0 ? 'text-ok' : 'text-danger'}`}>
-                {formatCurrency(netAssets, false, false)}
-              </div>
+          {Object.keys(assetsByCurrency).length === 0 && (
+            <div className={`text-center py-4 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
+              <p className="text-sm">暂无资产账户</p>
+              <p className="text-xs mt-1">点击下方按钮添加</p>
             </div>
-            <div className="text-center">
-              <div className="flex items-center justify-center gap-1 mb-1">
-                <TrendingDown size={14} className="text-danger" />
-                <span className={`text-xs ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>负债</span>
-              </div>
-              <div className="text-lg font-bold font-mono amount-fluid text-danger">
-                {formatCurrency(totalLiabilities, false, false)}
-              </div>
-            </div>
-          </div>
+          )}
         </Card>
 
-        {/* Asset Distribution */}
-        <Card className="!p-4">
-          <h3 className={`font-semibold mb-3 ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
-            资产分布
-          </h3>
-          <div className="flex items-center gap-4">
-            <div className="w-32 h-32">
-              <Pie data={pieData} options={pieOptions} />
+        {/* 负债提示 */}
+        {totalLiabilities > 0 && (
+          <Card className="!p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <TrendingDown size={16} className="text-danger" />
+                <span className={`text-sm font-medium ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>负债</span>
+              </div>
+              <span className="text-lg font-bold font-mono text-danger">
+                ¥{totalLiabilities.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
             </div>
-            <div className="flex-1 space-y-2">
-              {assetAccounts.map((acc) => (
-                <div key={acc.id} className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div 
-                      className="w-3 h-3 rounded-full"
-                      style={{ backgroundColor: acc.color }}
-                    />
-                    <span className={`text-sm ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
-                      {acc.name}
-                    </span>
-                  </div>
-                  <span className={`text-sm font-mono amount-fluid break-amount ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
-                    {formatCurrency(acc.balance, false, false)}
-                  </span>
+          </Card>
+        )}
+
+        {/* 资产分布 - 按币种分饼图 */}
+        {Object.entries(pieDataByCurrency).map(([c, pd]) => {
+          const pieConfig = {
+            labels: pd.labels,
+            datasets: [{ data: pd.data, backgroundColor: pd.backgroundColor, borderWidth: 0, hoverOffset: 4 }],
+          }
+          return (
+            <Card key={c} className="!p-4">
+              <h3 className={`font-semibold mb-3 ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
+                资产分布 · {c === 'CNY' ? '人民币' : c === 'USD' ? '美元' : '港币'}
+              </h3>
+              <div className="flex items-center gap-4">
+                <div className="w-32 h-32">
+                  <Pie data={pieConfig} options={pieOptions} />
                 </div>
-              ))}
-            </div>
-          </div>
-        </Card>
+                <div className="flex-1 space-y-2">
+                  {assetAccounts.filter(a => (a.currency || 'CNY') === c).map((acc) => (
+                    <div key={acc.id} className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="w-3 h-3 rounded-full"
+                          style={{ backgroundColor: acc.color }}
+                        />
+                        <span className={`text-sm ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
+                          {acc.name}
+                        </span>
+                      </div>
+                      <span className={`text-sm font-mono amount-fluid break-amount ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
+                        {currencySymbol[c]}{acc.balance.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </Card>
+          )
+        })}
 
         {/* Asset Accounts */}
         <div>
@@ -421,9 +461,16 @@ export default function AssetsPage() {
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <span className={`font-medium truncate block ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
-                    {acc.name}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`font-medium truncate ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
+                      {acc.name}
+                    </span>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0 ${
+                      theme === 'dark' ? 'bg-surface text-ink-2' : 'bg-bg text-ink-2'
+                    }`}>
+                      {acc.currency || 'CNY'}
+                    </span>
+                  </div>
                   <div className="flex items-center gap-2 mt-0.5">
                     <div className={`text-xs ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                       {accountTypeLabels[acc.type]}
@@ -462,8 +509,15 @@ export default function AssetsPage() {
                     {acc.icon}
                   </div>
                   <div className="flex-1">
-                    <div className={`font-medium ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
-                      {acc.name}
+                    <div className="flex items-center gap-1.5">
+                      <span className={`font-medium ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
+                        {acc.name}
+                      </span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0 ${
+                        theme === 'dark' ? 'bg-surface text-ink-2' : 'bg-bg text-ink-2'
+                      }`}>
+                        {acc.currency || 'CNY'}
+                      </span>
                     </div>
                     <div className={`text-xs ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                       {accountTypeLabels[acc.type]}
@@ -589,6 +643,30 @@ export default function AssetsPage() {
             {renderTypeSelector(newAccountForm.type, (type, icon, color) => {
               setNewAccountForm(prev => ({ ...prev, type: type as Account['type'], icon, color }))
             })}
+          </div>
+
+          {/* 币种 */}
+          <div>
+            <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
+              账户币种
+            </label>
+            <div className="flex gap-2">
+              {(['CNY', 'USD', 'HKD'] as const).map(c => (
+                <button
+                  key={c}
+                  onClick={() => setNewAccountForm(prev => ({ ...prev, currency: c }))}
+                  className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-colors ${
+                    newAccountForm.currency === c
+                      ? 'bg-brand border-brand-tint text-ink'
+                      : theme === 'dark'
+                        ? 'bg-surface border-brand-tint text-ink-2'
+                        : 'bg-bg border-brand-tint text-ink-2'
+                  }`}
+                >
+                  {c === 'CNY' ? '¥ 人民币' : c === 'USD' ? '$ 美元' : 'HK$ 港币'}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* 颜色 */}
@@ -745,6 +823,30 @@ export default function AssetsPage() {
                   })}
                 </div>
 
+                {/* 币种 */}
+                <div>
+                  <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
+                    账户币种
+                  </label>
+                  <div className="flex gap-2">
+                    {(['CNY', 'USD', 'HKD'] as const).map(c => (
+                      <button
+                        key={c}
+                        onClick={() => setEditForm(prev => ({ ...prev, currency: c }))}
+                        className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-colors ${
+                          editForm.currency === c
+                            ? 'bg-brand border-brand-tint text-ink'
+                            : theme === 'dark'
+                              ? 'bg-surface border-brand-tint text-ink-2'
+                              : 'bg-bg border-brand-tint text-ink-2'
+                        }`}
+                      >
+                        {c === 'CNY' ? '¥ 人民币' : c === 'USD' ? '$ 美元' : 'HK$ 港币'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 {/* 图标 */}
                 <div>
                   <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
@@ -779,33 +881,35 @@ export default function AssetsPage() {
                   })}
                 </div>
 
-                {/* 设为默认账户 */}
-                <div className="pt-2 border-t border-brand-tint dark:border-brand-tint">
-                  <button
-                    onClick={async () => {
-                      if (!editingAccount) return
-                      try {
-                        await setDefaultAccount(editingAccount.id)
-                        handleCloseEdit()
-                      } catch (e) {
-                        console.error('设置默认账户失败:', e)
-                      }
-                    }}
-                    disabled={editingAccount?.isDefault}
-                    className={`w-full py-3 rounded-xl font-medium text-sm transition-all
-                      ${editingAccount?.isDefault
-                        ? 'bg-brand/10 text-ink cursor-not-allowed'
-                        : 'bg-brand text-white hover:bg-brand-strong active:scale-[0.98]'
-                      }`}
-                  >
-                    {editingAccount?.isDefault ? '✓ 已是默认账户' : '设为默认账户'}
-                  </button>
-                  {!editingAccount?.isDefault && (
-                    <p className={`text-xs text-center mt-1.5 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
-                      设为默认后，记一笔时将自动选择此账户
-                    </p>
-                  )}
-                </div>
+                {/* 设为默认账户（投资账户不可设为默认） */}
+                {editingAccount?.type !== 'investment' && (
+                  <div className="pt-2 border-t border-brand-tint dark:border-brand-tint">
+                    <button
+                      onClick={async () => {
+                        if (!editingAccount) return
+                        try {
+                          await setDefaultAccount(editingAccount.id)
+                          handleCloseEdit()
+                        } catch (e) {
+                          console.error('设置默认账户失败:', e)
+                        }
+                      }}
+                      disabled={editingAccount?.isDefault}
+                      className={`w-full py-3 rounded-xl font-medium text-sm transition-all
+                        ${editingAccount?.isDefault
+                          ? 'bg-brand/10 text-ink cursor-not-allowed'
+                          : 'bg-brand text-white hover:bg-brand-strong active:scale-[0.98]'
+                        }`}
+                    >
+                      {editingAccount?.isDefault ? '✓ 已是默认账户' : '设为默认账户'}
+                    </button>
+                    {!editingAccount?.isDefault && (
+                      <p className={`text-xs text-center mt-1.5 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
+                        设为默认后，记一笔时将自动选择此账户
+                      </p>
+                    )}
+                  </div>
+                )}
               </>
             )}
           </div>
