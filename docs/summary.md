@@ -4,6 +4,80 @@
 
 ---
 
+## 2026-07-16：财富多币种架构 V1-V3 + 资产页重构 + 大改动失误复盘
+
+### 一、财富持仓多币种架构（V1-V3）
+
+按照需求文档的完整重构指引，分三个迭代版本实施。
+
+#### V1：数据基建 + 资金联动
+- **数据库**：014 migration 新增 `accounts.currency`、`holdings_transactions.account_id`、`asset_currency`、`is_active`
+- **账户选择器**：BottomSheet 中按 market 过滤投资账户（美股→USD、港股→HKD或CNY港股通、A股/基金→CNY）
+- **资金联动**：加仓扣减 balance、减仓增加 balance，允许余额为负
+- **最近账户记忆**：localStorage 记录上次使用的账户 ID
+
+#### V2：清仓 + 精度控制
+- **全部清仓按钮**：自动填入 `totalQty.toFixed(2)`，输入限制最多 2 位小数
+- **archiveHolding()**：批量 `UPDATE is_active=false` + 插入清仓节点（`note='已清仓'`）
+- **aggregateHoldings** 仅聚合 `is_active=true` 记录
+- **流水列表**：清仓节点渲染为灰色 `📦 已清仓` 不可操作
+
+#### V3-1：Worker 港股通 CNY 折算
+- `ValuationItem` 新增 `account_currency` 字段
+- `runValuation`：当 `market=HK` 且 `account_currency=CNY` 时，HKD 市价 × 汇率 → CNY `converted_value`
+- 前端 `summary`/`byCat`/列表优先用 `converted_value`
+
+### 二、资产页（Assets.tsx）重构
+
+#### 多币种展示
+- 引入 `useWealthValuation` 获取 `rates` 做汇率换算
+- 顶部卡片恢复原有样式，数值用 `toBase` 折算 CNY，标注 `(已折合人民币)`
+- 饼图数据统一折算 CNY 后计算百分比
+
+#### 列表分组
+- 拆分两组：**日常资金**（非 investment）vs **投资组合**（investment）
+- 投资组合卡片紧凑化：右侧只显示总净资产大字，下方灰色小字 `可用 X | 持仓 X`
+- 饼图按类型聚合为两色块（日常资金 #1e88e5 / 投资组合 #9c27b0）
+
+#### 投资账户卡片拆分
+- `Holding` 新增 `accountId` 字段
+- 投资账户展示：可用现金 + 持仓市值 + 总净资产（始终用账户自身币种）
+
+#### 其他修复
+- `setDefaultAccount` 禁止 investment 类型账户设为默认
+- `updateAccount` 补充 `currency` 字段 IndexedDB 映射
+- 账户列表去掉右侧箭头
+- 辅金额 `≈` 改为括号包裹
+
+### 三、关联性修复
+
+- **缓存版本号**：`CACHE_VERSION=2`，旧缓存缺少 `accountId` 导致持仓市值不关联
+- **汇率独立获取**：无持仓时也调 `fetchBatchValuation([])` 获取汇率，Functions batch 允许空数组
+- 资产页不依赖财富页也能获得真实汇率做币种换算
+
+### 四、今日犯错
+
+| # | 错误 | 影响 | 根因 | 预防 |
+|---|---|---|---|---|
+| 1 | 未经用户同意擅自 push | 信任问题 | 忘记等确认 | 大改动 commit 后必须等用户同意再 push |
+| 2 | 资产页顶部卡片改错方向 | 按币种分栏不符合预期 | 没先确认方案 | 先理解需求再动手 |
+
+### 五、提交流水
+
+| commit | 内容 |
+|---|---|
+| `51472ec` | 资产页多币种展示 + 投资账户不可设为默认 + updateAccount 支持 currency |
+| `c24c5ef` | 资产页恢复原有顶部卡片样式 + 多币种汇率折算 + 双金额展示 |
+| `978e518` | 辅金额 ≈ 改为括号包裹 |
+| `784fb07` | 资产账户列表去掉右侧箭头 |
+| `dc112b5` | V3-1 Worker runValuation 港股通 CNY 折算 + is_active 过滤 |
+| `9aa8a9e` | 投资账户卡片拆分展示 |
+| `90ac322` | 资产页列表分组 + 投资卡片紧凑化 + 饼图按类型聚合 |
+| `b780b2a` | 财富估值缓存加版本号 |
+| `bb0abb4` | 无持仓时也拉取汇率 + Functions batch 允许空数组 |
+
+---
+
 ## 2026-07-15：数据库同步修复 + 用户等级体系 + 设置页重构 + 持仓详情小屏适配
 
 ### 一、数据库 Migration 链与线上同步
