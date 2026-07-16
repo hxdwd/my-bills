@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTheme } from '../context/ThemeContext'
 import { useApp } from '../context/AppContext'
 import { formatCurrency } from '../utils/format'
+import TransactionDetailSheet from './TransactionDetailSheet'
 
 export interface CategoryDetailSheetProps {
   visible: boolean
@@ -44,6 +45,9 @@ export default function CategoryDetailSheet({
 }: CategoryDetailSheetProps) {
   const { theme } = useTheme()
   const { transactions } = useApp()
+
+  // 点击某行打开交易详情/编辑弹窗（导入识别出错时可就地快速修改）
+  const [editingTx, setEditingTx] = useState<any | null>(null)
 
   // 选中的子类筛选状态；受控于外部传入的 subcategoryId（null=全部）
   const [selectedSub, setSelectedSub] = useState<string | null>(subcategoryId ?? null)
@@ -171,9 +175,13 @@ export default function CategoryDetailSheet({
         {rows.length > 0 ? (
           <div className="flex-1 overflow-y-auto px-5 pb-2 space-y-1 hide-scrollbar">
             {rows.map((r) => (
-              <div
+              <button
                 key={r.id}
-                className="flex items-center justify-between py-3 border-b border-[var(--border-warm)] last:border-b-0"
+                onClick={() => {
+                  const tx = transactions.find((t) => t.id === r.id)
+                  if (tx) setEditingTx(tx)
+                }}
+                className="w-full text-left flex items-center justify-between py-3 border-b border-[var(--border-warm)] last:border-b-0 hover:bg-brand-tint/40 active:bg-brand-tint/60 transition-colors -mx-1 px-1 rounded-lg"
               >
                 <div className="min-w-0 flex-1 pr-3">
                   <div className={`text-sm font-medium truncate ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
@@ -183,12 +191,15 @@ export default function CategoryDetailSheet({
                     {r.date}
                   </div>
                 </div>
-                <div className="text-right shrink-0">
-                  <div className="text-[15px] font-semibold font-mono text-danger amount-fluid break-amount">
-                    {formatCurrency(r.amount, false, false)}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <div className="text-right">
+                    <div className="text-[15px] font-semibold font-mono text-danger amount-fluid break-amount">
+                      {formatCurrency(r.amount, false, false)}
+                    </div>
                   </div>
+                  <span className="text-ink-2 text-sm">›</span>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         ) : (
@@ -197,6 +208,14 @@ export default function CategoryDetailSheet({
           </div>
         )}
       </div>
+
+      {/* 点击某条明细打开交易详情/编辑弹窗 */}
+      <TransactionDetailSheet
+        transaction={editingTx}
+        onClose={() => setEditingTx(null)}
+        onSaved={() => setEditingTx(null)}
+        onDeleted={() => setEditingTx(null)}
+      />
     </div>
   )
 }

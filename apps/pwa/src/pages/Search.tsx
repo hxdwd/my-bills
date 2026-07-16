@@ -102,6 +102,16 @@ function formatDateDisplay(dateStr: string): string {
   if (isNaN(m) || isNaN(d)) return dateStr
   return `${m}月${d}日`
 }
+// YYYY-MM-DD -> "YYYY年X月X日"（搜索结果列表需展示年份）
+function formatDateFull(dateStr: string): string {
+  const parts = dateStr.split('-')
+  if (parts.length !== 3) return dateStr
+  const y = parseInt(parts[0], 10)
+  const m = parseInt(parts[1], 10)
+  const d = parseInt(parts[2], 10)
+  if (isNaN(y) || isNaN(m) || isNaN(d)) return dateStr
+  return `${y}年${m}月${d}日`
+}
 
 // 将快捷日期区间换算为 [起始, 结束] 的 YYYY-MM-DD 字符串（含边界）
 function resolveRange(dateRange: DateRange, start: string, end: string): [string, string] {
@@ -380,11 +390,13 @@ export default function SearchPage() {
   const sortTransactions = (list: any[]): any[] => {
     const sorted = [...list]
     switch (filters.sort) {
+      // 最新在前：字典序降序（transactionDate 为 YYYY-MM-DD，可直接比较）
       case 'newest':
-        sorted.sort((a, b) => (a.transactionDate + a.time).localeCompare(b.transactionDate + b.time))
-        break
-      case 'oldest':
         sorted.sort((a, b) => (b.transactionDate + b.time).localeCompare(a.transactionDate + a.time))
+        break
+      // 最早在前：字典序升序
+      case 'oldest':
+        sorted.sort((a, b) => (a.transactionDate + a.time).localeCompare(b.transactionDate + b.time))
         break
       case 'amount_desc':
         sorted.sort((a, b) => b.amount - a.amount)
@@ -726,7 +738,7 @@ export default function SearchPage() {
                         icon={cat.icon}
                         iconBg={`${cat.color}15`}
                         title={t.categoryName}
-                        subtitle={`${t.date} ${t.time} · ${t.accountName}${t.subcategoryName ? ' · ' + t.subcategoryName : ''}`}
+                        subtitle={`${t.transactionDate ? formatDateFull(t.transactionDate) : t.date} ${t.time} · ${t.accountName}${t.subcategoryName ? ' · ' + t.subcategoryName : ''}`}
                         amount={t.amount}
                         type={t.type}
                         account={undefined}
@@ -795,7 +807,7 @@ export default function SearchPage() {
             <div>
               <h3 className="font-semibold text-ink mb-3">最近交易</h3>
               <Card className="!p-0 divide-y divide-[#f0eee6]">
-                {transactions.slice(0, 10).map(t => {
+                {[...transactions].sort((a, b) => (b.transactionDate + b.time).localeCompare(a.transactionDate + a.time)).slice(0, 10).map(t => {
                   const cat = getCategory(t)
                   return (
                     <TransactionItem
@@ -803,7 +815,7 @@ export default function SearchPage() {
                       icon={cat.icon}
                       iconBg={`${cat.color}15`}
                       title={t.categoryName}
-                      subtitle={`${t.date} ${t.time} · ${t.accountName}`}
+                      subtitle={`${t.transactionDate ? formatDateFull(t.transactionDate) : t.date} ${t.time} · ${t.accountName}`}
                       amount={t.amount}
                       type={t.type}
                       onClick={() => openDetail(t)}

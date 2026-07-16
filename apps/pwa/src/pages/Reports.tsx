@@ -161,30 +161,19 @@ export default function ReportsPage() {
   const expenseByCategory = timeRange === 'month'
     ? getMonthExpenseByCategory(selectedYear, selectedMonth)
     : (() => {
-        // 按年：汇总所有月份
+        // 按年：汇总 selectedYear 全年各分类支出（必须按年份过滤，否则会混入其他年份）
         const catMap = new Map<string, { id: string; name: string; icon: string; color: string; total: number }>()
-        for (let m = 1; m <= 12; m++) {
-          const monthCats = categories.expense.map(cat => {
-            const total = transactions
-              .filter(t => t.type === 'expense' && t.categoryId === cat.id)
-              .filter(t => {
-                const match = t.date.match(/(\d+)月(\d+)日/)
-                return match && parseInt(match[1]) === m
-              })
-              .reduce((sum, t) => sum + t.amount, 0)
-            return { ...cat, total }
-          }).filter(c => c.total > 0)
-          
-          monthCats.forEach(c => {
-            const existing = catMap.get(c.id)
-            if (existing) {
-              existing.total += c.total
-            } else {
-              catMap.set(c.id, { ...c })
-            }
-          })
+        for (const cat of categories.expense) {
+          catMap.set(cat.id, { ...cat, total: 0 })
         }
-        return Array.from(catMap.values()).sort((a, b) => b.total - a.total)
+        for (const t of transactions) {
+          if (t.type !== 'expense' || !t.transactionDate) continue
+          const d = new Date(t.transactionDate)
+          if (d.getFullYear() !== selectedYear) continue
+          const entry = catMap.get(t.categoryId)
+          if (entry) entry.total += t.amount
+        }
+        return Array.from(catMap.values()).filter(c => c.total > 0).sort((a, b) => b.total - a.total)
       })()
 
   const totalExpense = expenseByCategory.reduce((sum, c) => sum + c.total, 0)
@@ -214,8 +203,8 @@ export default function ReportsPage() {
       {
         label: '收入',
         data: yearMonthExpense.income,
-        borderColor: '#4CAF50',
-        backgroundColor: 'rgba(76, 175, 80, 0.1)',
+        borderColor: '#dc2626',
+        backgroundColor: 'rgba(220, 38, 38, 0.1)',
         fill: true,
         tension: 0.3,
         pointRadius: 4,
@@ -224,8 +213,8 @@ export default function ReportsPage() {
       {
         label: '支出',
         data: yearMonthExpense.expense,
-        borderColor: '#FF6B6B',
-        backgroundColor: 'rgba(255, 107, 107, 0.1)',
+        borderColor: '#16a34a',
+        backgroundColor: 'rgba(22, 163, 74, 0.1)',
         fill: true,
         tension: 0.3,
         pointRadius: 4,
@@ -368,19 +357,19 @@ export default function ReportsPage() {
           <div className="grid grid-cols-3 gap-3">
             <Card className="!p-3 text-center">
               <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>收入</div>
-              <div className={`text-lg font-bold font-mono amount-fluid text-ok`}>
+              <div className={`text-lg font-bold font-mono amount-fluid text-[#dc2626]`}>
                 {formatCurrency(monthSummary.income)}
               </div>
             </Card>
             <Card className="!p-3 text-center">
               <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>支出</div>
-              <div className={`text-lg font-bold font-mono text-danger`}>
+              <div className={`text-lg font-bold font-mono text-[#16a34a]`}>
                 {formatCurrency(monthSummary.expense)}
               </div>
             </Card>
             <Card className="!p-3 text-center">
               <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>结余</div>
-              <div className={`text-lg font-bold font-mono amount-fluid ${(monthSummary.income - monthSummary.expense) >= 0 ? 'text-[#5b8dee]' : 'text-danger'}`}>
+              <div className={`text-lg font-bold font-mono amount-fluid ${(monthSummary.income - monthSummary.expense) >= 0 ? 'text-[#dc2626]' : 'text-[#16a34a]'}`}>
                 {formatCurrency(monthSummary.income - monthSummary.expense, false, true)}
               </div>
             </Card>
@@ -394,19 +383,19 @@ export default function ReportsPage() {
               <div className="grid grid-cols-3 gap-3">
                 <Card className="!p-3 text-center">
                   <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>年收入</div>
-                  <div className={`text-lg font-bold font-mono amount-fluid text-ok`}>
+                  <div className={`text-lg font-bold font-mono amount-fluid text-[#dc2626]`}>
                     {formatCurrency(totalIncome, false, true)}
                   </div>
                 </Card>
                 <Card className="!p-3 text-center">
                   <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>年支出</div>
-                  <div className={`text-lg font-bold font-mono amount-fluid text-danger`}>
+                  <div className={`text-lg font-bold font-mono amount-fluid text-[#16a34a]`}>
                     {formatCurrency(totalExpense2, false, true)}
                   </div>
                 </Card>
                 <Card className="!p-3 text-center">
                   <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>年结余</div>
-                  <div className={`text-lg font-bold font-mono amount-fluid ${totalBalance >= 0 ? 'text-[#5b8dee]' : 'text-danger'}`}>
+                  <div className={`text-lg font-bold font-mono amount-fluid ${totalBalance >= 0 ? 'text-[#dc2626]' : 'text-[#16a34a]'}`}>
                     {formatCurrency(totalBalance, false, true)}
                   </div>
                 </Card>
@@ -477,7 +466,7 @@ export default function ReportsPage() {
                           />
                         </div>
                         {/* 第三行：金额 */}
-                        <div className={`mt-2 text-[18px] font-semibold font-mono amount-fluid ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
+                        <div className={`mt-2 text-[18px] font-semibold font-mono amount-fluid text-[#16a34a]`}>
                           {formatCurrency(cat.total, false, false)}
                         </div>
                       </button>
@@ -541,7 +530,7 @@ export default function ReportsPage() {
                         {t.date} · {t.accountName}
                       </div>
                     </div>
-                    <div className="text-danger font-mono font-medium">
+                    <div className="text-[#16a34a] font-mono font-medium">
                       {formatCurrency(-Math.abs(t.amount), true, false)}
                     </div>
                   </div>
@@ -566,8 +555,8 @@ export default function ReportsPage() {
                 <thead>
                   <tr className={`border-b ${theme === 'dark' ? 'border-brand-tint' : 'border-brand-tint'}`}>
                     <th className={`text-left py-2 px-2 font-medium ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>月份</th>
-                    <th className={`text-right py-2 px-2 font-medium text-ok`}>收入</th>
-                    <th className={`text-right py-2 px-2 font-medium text-danger`}>支出</th>
+                    <th className={`text-right py-2 px-2 font-medium text-[#dc2626]`}>收入</th>
+                    <th className={`text-right py-2 px-2 font-medium text-[#16a34a]`}>支出</th>
                     <th className={`text-right py-2 px-2 font-medium ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>结余</th>
                   </tr>
                 </thead>
@@ -578,13 +567,13 @@ export default function ReportsPage() {
                       className={`border-b ${theme === 'dark' ? 'border-brand-tint hover:bg-surface' : 'border-brand-tint hover:bg-bg'} transition-colors`}
                     >
                       <td className={`py-2.5 px-2 font-medium ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>{row.month}</td>
-                      <td className="py-2.5 px-2 text-right font-mono text-ok">
+                      <td className="py-2.5 px-2 text-right font-mono text-[#dc2626]">
                         {formatCurrency(row.income)}
                       </td>
-                      <td className="py-2.5 px-2 text-right font-mono text-danger">
+                      <td className="py-2.5 px-2 text-right font-mono text-[#16a34a]">
                         {formatCurrency(row.expense)}
                       </td>
-                      <td className={`py-2.5 px-2 text-right font-mono font-medium ${row.balance >= 0 ? 'text-[#5b8dee]' : 'text-danger'}`}>
+                      <td className={`py-2.5 px-2 text-right font-mono font-medium ${row.balance >= 0 ? 'text-[#dc2626]' : 'text-[#16a34a]'}`}>
                         {formatCurrency(row.balance)}
                       </td>
                     </tr>
@@ -593,13 +582,13 @@ export default function ReportsPage() {
                 <tfoot>
                   <tr className={`border-t-2 ${theme === 'dark' ? 'border-ink/10' : 'border-ink/10'}`}>
                     <td className={`py-3 px-2 font-bold ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>合计</td>
-                    <td className="py-3 px-2 text-right font-mono font-bold amount-fluid break-amount text-ok">
+                    <td className="py-3 px-2 text-right font-mono font-bold amount-fluid break-amount text-[#dc2626]">
                       {formatCurrency(yearMonthDetail.reduce((s, r) => s + r.income, 0))}
                     </td>
-                    <td className="py-3 px-2 text-right font-mono font-bold amount-fluid break-amount text-danger">
+                    <td className="py-3 px-2 text-right font-mono font-bold amount-fluid break-amount text-[#16a34a]">
                       {formatCurrency(yearMonthDetail.reduce((s, r) => s + r.expense, 0))}
                     </td>
-                    <td className={`py-3 px-2 text-right font-mono font-bold amount-fluid break-amount ${yearMonthDetail.reduce((s, r) => s + r.balance, 0) >= 0 ? 'text-[#5b8dee]' : 'text-danger'}`}>
+                    <td className={`py-3 px-2 text-right font-mono font-bold amount-fluid break-amount ${yearMonthDetail.reduce((s, r) => s + r.balance, 0) >= 0 ? 'text-[#dc2626]' : 'text-[#16a34a]'}`}>
                       {formatCurrency(yearMonthDetail.reduce((s, r) => s + r.balance, 0))}
                     </td>
                   </tr>
