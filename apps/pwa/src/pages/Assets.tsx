@@ -461,7 +461,7 @@ export default function AssetsPage() {
                     {/* 辅金额：折算 CNY（非 CNY 币种时显示） */}
                     {isOtherCurrency && (
                       <div className={`text-[11px] font-mono mt-0.5 ${theme === 'dark' ? 'text-ink-3' : 'text-ink-3'}`}>
-                        ≈ ¥{cny.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        (¥{cny.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
                       </div>
                     )}
                   </div>
