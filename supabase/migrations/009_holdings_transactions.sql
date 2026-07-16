@@ -14,6 +14,9 @@ CREATE TABLE public.holdings_transactions (
   price NUMERIC(18, 4) NOT NULL CHECK (price >= 0),
   date DATE NOT NULL,
   note TEXT,
+  account_id UUID REFERENCES public.accounts(id) ON DELETE SET NULL,
+  asset_currency TEXT CHECK (asset_currency IS NULL OR asset_currency IN ('CNY', 'USD', 'HKD')),
+  is_active BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
@@ -21,6 +24,8 @@ CREATE TABLE public.holdings_transactions (
 CREATE INDEX idx_holdings_user_id ON public.holdings_transactions(user_id);
 CREATE INDEX idx_holdings_user_symbol ON public.holdings_transactions(user_id, symbol, market);
 CREATE INDEX idx_holdings_user_date ON public.holdings_transactions(user_id, date DESC);
+CREATE INDEX idx_holdings_account_id ON public.holdings_transactions(account_id);
+CREATE INDEX idx_holdings_active ON public.holdings_transactions(user_id, symbol, market, is_active);
 
 ALTER TABLE public.holdings_transactions ENABLE ROW LEVEL SECURITY;
 

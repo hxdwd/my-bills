@@ -12,9 +12,11 @@ import {
   updateHoldingTransaction,
   deleteHoldingTransaction,
   addHoldingTransaction,
+  archiveHolding,
 } from '../db/wealthStore'
 import { useWealthValuation, todayProfit } from '../hooks/useWealthValuation'
 import { fmtWithSymbol, Currency } from '../utils/currency'
+import { useApp } from '../context/AppContext'
 
 function fmt(n: number | null | undefined, d = 2): string {
   if (n == null || isNaN(n)) return '—'
@@ -51,6 +53,7 @@ export function WealthDetail() {
   const { market, symbol } = useParams<{ market: string; symbol: string }>()
   const navigate = useNavigate()
   const { results } = useWealthValuation()
+  const { accounts, updateAccount } = useApp()
   const [history, setHistory] = useState<{ labels: string[]; data: number[] }>({ labels: [], data: [] })
   const [period, setPeriod] = useState<HistoryPeriod>('1m')
   const [loadingHist, setLoadingHist] = useState(false)
@@ -72,6 +75,7 @@ export function WealthDetail() {
   const [tradeQty, setTradeQty] = useState('')
   const [tradePrice, setTradePrice] = useState('')
   const [tradeDate, setTradeDate] = useState(new Date().toISOString().slice(0, 10))
+  const [tradeAccountId, setTradeAccountId] = useState('') // 选择的投资账户
   const [confirmClear, setConfirmClear] = useState(false) // 清仓二次确认
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
   const toastTimer = useRef<number | null>(null)
@@ -187,43 +191,115 @@ export function WealthDetail() {
     showToast(`已删除该${t.direction === 'buy' ? '买入' : '卖出'}流水`, 'success')
   }
 
+  // 根据 market 过滤可用投资账户
+  const investmentAccounts = useMemo(() => {
+    if (!market) return []
+    const m = market as Market
+    return accounts.filter(a => {
+      if (a.type !== 'investment') return false
+      const ac = a.currency || 'CNY'
+      if (m === 'US') return ac === 'USD'
+      if (m === 'HK') return ac === 'HKD' || ac === 'CNY' // 港股通用CNY账户
+      if (m === 'CN' || m === 'FUND') return ac === 'CNY'
+      return false
+    })
+  }, [accounts, market])
+
+  // 最近使用的账户记忆（localStorage）
+  const LAST_ACCOUNT_KEY = 'wealth_last_account_id'
+  const getLastAccountId = () => localStorage.getItem(LAST_ACCOUNT_KEY) || ''
+
   // 打开加减仓面板
   const openTradeSheet = (direction: 'buy' | 'sell') => {
     setTradeDirection(direction)
     setTradeQty('')
     setTradePrice(curPrice != null ? String(curPrice) : '')
     setTradeDate(new Date().toISOString().slice(0, 10))
+    // 默认选中最近账户或第一个可用账户
+    const lastId = getLastAccountId()
+    const defaultId = investmentAccounts.find(a => a.id === lastId)?.id || investmentAccounts[0]?.id || ''
+    setTradeAccountId(defaultId)
     setConfirmClear(false)
     setShowTradeSheet(true)
   }
+
+  // 资产原始币种（根据 market 推断）
+  const assetCurrency = useMemo(() => {
+    if (!market) return 'CNY'
+    const m = market as Market
+    if (m === 'US') return 'USD'
+    if (m === 'HK') return 'HKD'
+    return 'CNY'
+  }, [market])
 
   // 减仓份额校验
   const totalQty = holding?.quantity ?? 0
   const tradeQtyNum = parseFloat(tradeQty) || 0
   const tradePriceNum = parseFloat(tradePrice) || 0
   const isSellOver = tradeDirection === 'sell' && tradeQtyNum > totalQty
-  const isNearClear = tradeDirection === 'sell' && totalQty - tradeQtyNum < 0.01 && tradeQtyNum > 0 && tradeQtyNum <= totalQty
-  const canSubmit = tradeQtyNum > 0 && tradePriceNum > 0 && tradeDate && !isSellOver
+  const isExactClear = tradeDirection === 'sell' && Math.abs(tradeQtyNum - totalQty) < 0.005 && tradeQtyNum > 0
+  const canSubmit = tradeQtyNum > 0 && tradePriceNum > 0 && tradeDate && !isSellOver && !!tradeAccountId
+
+  // 快捷清仓：填入当前总持仓（2位小数）
+  const fillClearAll = () => {
+    setTradeQty(totalQty.toFixed(2))
+    setConfirmClear(true)
+  }
+
+  // 限制输入最多2位小数
+  const handleQtyInput = (val: string) => {
+    // 只允许数字和最多一个小数点，小数位不超过2位
+    const cleaned = val.replace(/[^0-9.]/g, '')
+    const parts = cleaned.split('.')
+    if (parts.length > 2) return
+    if (parts[1] && parts[1].length > 2) return
+    setTradeQty(cleaned)
+    setConfirmClear(false)
+  }
 
   // 提交交易
   const submitTrade = async () => {
     if (!canSubmit) return
     if (!symbol || !market) return
-    // 接近清仓时二次确认
-    if (isNearClear && !confirmClear) {
+    // 清仓时二次确认
+    if (isExactClear && !confirmClear) {
       setConfirmClear(true)
       return
     }
     try {
+      const qty = parseFloat(tradeQtyNum.toFixed(2))
+      const prc = parseFloat(tradePriceNum.toFixed(2))
       await addHoldingTransaction({
         symbol,
         market: market as any,
         name: name || symbol,
         direction: tradeDirection,
-        quantity: tradeQtyNum,
-        price: tradePriceNum,
+        quantity: qty,
+        price: prc,
         date: tradeDate,
-      })
+        account_id: tradeAccountId,
+        asset_currency: assetCurrency,
+        is_active: true,
+      } as any)
+
+      // 资金联动：更新投资账户 balance
+      const amount = qty * prc
+      const targetAccount = accounts.find(a => a.id === tradeAccountId)
+      if (targetAccount) {
+        const delta = tradeDirection === 'buy' ? -amount : amount
+        await updateAccount(targetAccount.id, {
+          balance: parseFloat((targetAccount.balance + delta).toFixed(2)),
+        })
+      }
+
+      // 清仓归档：卖出后净持仓归零 → 批量标记 is_active=false + 插入清仓节点
+      if (tradeDirection === 'sell' && isExactClear) {
+        await archiveHolding(symbol, market as Market)
+      }
+
+      // 记录最近账户
+      localStorage.setItem(LAST_ACCOUNT_KEY, tradeAccountId)
+
       showToast(`${tradeDirection === 'buy' ? '加仓' : '减仓'}成功`, 'success')
       setShowTradeSheet(false)
       await loadTxs()
@@ -411,6 +487,15 @@ export function WealthDetail() {
                         <button onClick={() => setEditingId(null)} className="flex-1 text-xs py-1.5 rounded-lg bg-surface text-ink-2">取消</button>
                       </div>
                     </div>
+                  ) : t.note === '已清仓' ? (
+                    // 清仓历史节点：灰色不可操作
+                    <div className="flex items-center justify-between opacity-50">
+                      <div className="text-sm">
+                        <span className="text-ink-3">📦 已清仓</span>
+                        <span className="text-ink-3 ml-2">{t.date}</span>
+                        <div className="text-xs text-ink-3 mt-0.5">持仓已清零，成本价已重置</div>
+                      </div>
+                    </div>
                   ) : (
                     <div className="flex items-center justify-between">
                       <div className="text-sm">
@@ -419,7 +504,7 @@ export function WealthDetail() {
                         </span>
                         <span className="text-ink ml-2">{t.date}</span>
                         <div className="text-xs text-ink-3 mt-0.5">
-                          {fmt(t.quantity, 4)} {market === 'GOLD' ? '克' : '份'} · {fmtWithSymbol(t.price, cur)}
+                          {fmt(t.quantity, 2)} {market === 'GOLD' ? '克' : '份'} · {fmtWithSymbol(t.price, cur)}
                         </div>
                       </div>
                       <div className="flex gap-3 text-xs">
@@ -473,33 +558,68 @@ export function WealthDetail() {
       {showTradeSheet && (
         <>
           <div className="fixed inset-0 z-40 bg-black/20" onClick={() => setShowTradeSheet(false)} />
-          <div className="fixed bottom-0 left-0 right-0 z-50 bg-surface rounded-t-3xl px-5 pt-5 pb-8 shadow-[0_-8px_30px_rgba(0,0,0,0.08)] animate-slide-up">
+          <div className="fixed bottom-0 left-0 right-0 z-50 bg-surface rounded-t-3xl px-5 pt-5 pb-8 shadow-[0_-8px_30px_rgba(0,0,0,0.08)] animate-slide-up max-h-[85vh] overflow-y-auto">
             <div className="w-10 h-1 rounded-full bg-ink-3/20 mx-auto mb-4" />
             <div className="text-base font-bold text-ink mb-4">
               {tradeDirection === 'buy' ? '➕ 加仓' : '➖ 减仓'}
+            </div>
+
+            {/* 资金账户选择器 */}
+            <div className="mb-3">
+              <div className="text-xs text-ink-2 mb-1.5">资金账户</div>
+              {investmentAccounts.length === 0 ? (
+                <div className="text-xs text-red-400 bg-red-50 rounded-xl px-3 py-2.5">
+                  没有可用的投资账户，请先在账户管理中创建对应币种的投资账户
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {investmentAccounts.map(acc => (
+                    <button
+                      key={acc.id}
+                      onClick={() => setTradeAccountId(acc.id)}
+                      className={`text-xs px-3 py-2 rounded-xl border transition-colors ${
+                        tradeAccountId === acc.id
+                          ? 'bg-brand border-brand-tint text-ink font-medium'
+                          : 'bg-bg border-brand-tint text-ink-2'
+                      }`}
+                    >
+                      {acc.icon} {acc.name} ({acc.currency || 'CNY'})
+                      {acc.currency === 'CNY' && market === 'HK' && <span className="text-[10px] ml-0.5">港股通</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* 份额 */}
             <div className="mb-3">
               <div className="text-xs text-ink-2 mb-1.5">
                 {tradeDirection === 'buy' ? '买入份额' : '卖出份额'}
-                <span className="text-ink-3 ml-1">（当前持仓 {fmt(totalQty, 4)} 份）</span>
+                <span className="text-ink-3 ml-1">（当前持仓 {fmt(totalQty, 2)} 份）</span>
+                {tradeDirection === 'sell' && totalQty > 0 && (
+                  <button
+                    onClick={fillClearAll}
+                    className="ml-2 text-[11px] px-2 py-0.5 rounded-full bg-red-50 text-red-500 border border-red-200 active:scale-95 transition-transform"
+                  >
+                    全部清仓
+                  </button>
+                )}
               </div>
               <input
                 className={`w-full bg-bg rounded-xl px-3 py-2.5 text-sm text-ink outline-none border transition-colors ${isSellOver ? 'border-red-400 bg-red-50' : 'border-brand-tint'}`}
-                placeholder={tradeDirection === 'sell' ? `最大可卖 ${fmt(totalQty, 4)} 份` : '请输入买入份额'}
+                placeholder={tradeDirection === 'sell' ? `最大可卖 ${fmt(totalQty, 2)} 份` : '请输入买入份额（最多2位小数）'}
                 inputMode="decimal"
                 value={tradeQty}
-                onChange={e => { setTradeQty(e.target.value); setConfirmClear(false) }}
+                onChange={e => handleQtyInput(e.target.value)}
               />
               {isSellOver && (
                 <div className="text-[11px] text-red-400 mt-1">
-                  持仓不足，最大可卖 {fmt(totalQty, 4)} 份
+                  持仓不足，最大可卖 {fmt(totalQty, 2)} 份
                 </div>
               )}
-              {isNearClear && !isSellOver && (
+              {isExactClear && !isSellOver && (
                 <div className="text-[11px] text-amber-500 mt-1">
-                  接近清仓，提交时需二次确认
+                  将清空该持仓，提交时需二次确认
                 </div>
               )}
             </div>
@@ -547,7 +667,7 @@ export function WealthDetail() {
             {/* 清仓二次确认提示 */}
             {confirmClear && (
               <div className="text-center text-[11px] text-amber-500 mt-2">
-                当前卖出份额将清空该持仓，再次点击确认
+                清仓后成本价将重置，历史记录保留但不再参与持仓计算，再次点击确认
               </div>
             )}
           </div>

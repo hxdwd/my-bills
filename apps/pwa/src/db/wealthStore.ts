@@ -69,7 +69,7 @@ export async function getAllTransactions(): Promise<HoldingTransactionRecord[]> 
 // 单笔更新流水（买入/卖出均可编辑）
 export async function updateHoldingTransaction(
   id: string,
-  patch: Partial<Pick<HoldingTransactionRecord, 'symbol' | 'market' | 'name' | 'direction' | 'quantity' | 'price' | 'date' | 'note'>>,
+  patch: Partial<Pick<HoldingTransactionRecord, 'symbol' | 'market' | 'name' | 'direction' | 'quantity' | 'price' | 'date' | 'note' | 'account_id' | 'asset_currency' | 'is_active'>>,
 ): Promise<void> {
   const userId = await getCurrentUserId()
   const now = new Date().toISOString()
@@ -108,11 +108,61 @@ export async function deleteHolding(symbol: string, market: Market): Promise<voi
   }
 }
 
-// 聚合：当前持仓
+// 获取指定标的的活跃持仓流水（is_active=true 且非 pending_delete）
+export async function getActiveTransactions(symbol: string, market: Market): Promise<HoldingTransactionRecord[]> {
+  const userId = await getCurrentUserId()
+  const all = await db.holdings_transactions
+    .where('user_id').equals(userId)
+    .filter(r => r.symbol === symbol && r.market === market && r._sync_status !== 'pending_delete' && r.is_active !== false)
+    .toArray()
+  return all
+}
+
+// 清仓归档：将指定标的的全部活跃流水标记为 is_active=false
+// 并插入一条清仓节点记录（quantity=0, price=0, note='已清仓'）
+export async function archiveHolding(symbol: string, market: Market): Promise<void> {
+  const userId = await getCurrentUserId()
+  const now = new Date().toISOString()
+  const active = await db.holdings_transactions
+    .where('user_id').equals(userId)
+    .filter(r => r.symbol === symbol && r.market === market && r.is_active !== false)
+    .toArray()
+
+  // 批量标记 is_active=false
+  for (const r of active) {
+    await db.holdings_transactions.update(r.id, {
+      is_active: false,
+      _updated_at_local: now,
+    })
+  }
+
+  // 插入清仓节点记录
+  const node: HoldingTransactionRecord = {
+    ...newRecordBase(userId),
+    symbol,
+    market: market as HoldingTransactionRecord['market'],
+    name: active[0]?.name || symbol,
+    direction: 'sell',
+    quantity: 0,
+    price: 0,
+    date: new Date().toISOString().slice(0, 10),
+    note: '已清仓',
+    is_active: false,
+  } as HoldingTransactionRecord
+  await db.holdings_transactions.put(node)
+
+  if (active.length > 0) {
+    syncEngine.syncAfterWrite('holdings_transactions', userId).catch(e => console.error('[Wealth] 同步清仓归档失败', e))
+  }
+}
+
+// 聚合：当前持仓（仅聚合 is_active=true 的记录，清仓归档的不参与）
 export async function aggregateHoldings(): Promise<Holding[]> {
   const txs = await getAllTransactions()
+  // 仅聚合 is_active=true 的记录（清仓归档的不参与当前持仓计算）
+  const active = txs.filter(t => t.is_active !== false)
   const map = new Map<string, Holding>()
-  for (const t of txs) {
+  for (const t of active) {
     const key = `${t.market}:${t.symbol}`
     let h = map.get(key)
     if (!h) {

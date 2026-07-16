@@ -54,6 +54,7 @@ CREATE TABLE public.accounts (
   name TEXT NOT NULL,
   type account_type NOT NULL DEFAULT 'bank',
   balance DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+  currency TEXT NOT NULL DEFAULT 'CNY' CHECK (currency IN ('CNY', 'USD', 'HKD')),
   icon TEXT DEFAULT '💳',
   color TEXT DEFAULT '#1e88e5',
   sort_order INT DEFAULT 0,

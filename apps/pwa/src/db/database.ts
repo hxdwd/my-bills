@@ -19,6 +19,7 @@ export interface AccountRecord {
   name: string
   type: 'cash' | 'bank' | 'credit' | 'wechat' | 'alipay' | 'crypto' | 'investment' | 'debt'
   balance: number
+  currency: string
   icon: string
   color: string
   sort_order: number
@@ -119,6 +120,9 @@ export interface HoldingTransactionRecord {
   price: number
   date: string // YYYY-MM-DD
   note?: string | null
+  account_id?: string | null
+  asset_currency?: string | null
+  is_active?: boolean
   created_at: string
   updated_at: string
   _sync_status: SyncStatus
@@ -300,7 +304,7 @@ class BillsDatabase extends Dexie {
       tags: 'id, user_id, _sync_status',
       profiles: 'id, _sync_status',
       syncMeta: 'key',
-      holdings_transactions: 'id, user_id, _sync_status, symbol, market, direction, date',
+      holdings_transactions: 'id, user_id, _sync_status, symbol, market, direction, date, account_id, is_active',
     })
   }
 

@@ -22,6 +22,7 @@ export interface Account {
   name: string
   type: 'cash' | 'bank' | 'credit' | 'wechat' | 'alipay' | 'crypto' | 'investment' | 'debt'
   balance: number
+  currency?: string
   icon: string
   color: string
   isDefault: boolean
@@ -144,6 +145,7 @@ function mapAccount(record: AccountRecord): Account {
     name: record.name,
     type: record.type,
     balance: Number(record.balance),
+    currency: record.currency || 'CNY',
     icon: record.icon || '💳',
     color: record.color || '#1e88e5',
     isDefault: record.is_default ?? false,
