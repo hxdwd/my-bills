@@ -10,11 +10,16 @@ export interface ValuationWithHolding extends ValuationResult {
 
 // 本地同步缓存：避免从详情页返回时 results 回退为 [] 导致先闪 0 再加载
 const CACHE_KEY = 'wealth-valuation-cache'
+// 缓存版本：结构变更时递增，旧版本缓存自动丢弃避免字段缺失
+const CACHE_VERSION = 2
+const CACHE_VERSION_KEY = 'wealth-cache-version'
 // 本位币偏好（顶层汇总折算目标），默认人民币
 const BASE_KEY = 'wealth-base-currency'
 
 function loadCache(): ValuationWithHolding[] {
   try {
+    const ver = localStorage.getItem(CACHE_VERSION_KEY)
+    if (ver !== String(CACHE_VERSION)) return []
     const raw = localStorage.getItem(CACHE_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw) as ValuationWithHolding[]
@@ -24,12 +29,11 @@ function loadCache(): ValuationWithHolding[] {
   }
 }
 
-function saveCache(rows: ValuationWithHolding[]) {
+function saveCache(data: ValuationWithHolding[]) {
   try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify(rows))
-  } catch {
-    /* 忽略写入失败（如隐私模式） */
-  }
+    localStorage.setItem(CACHE_KEY, JSON.stringify(data))
+    localStorage.setItem(CACHE_VERSION_KEY, String(CACHE_VERSION))
+  } catch { /* 忽略配额错误 */ }
 }
 
 function loadBaseCurrency(): Currency {
