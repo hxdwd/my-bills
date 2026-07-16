@@ -69,6 +69,7 @@ export function useWealthValuation(intervalMs = 60000) {
         quantity: h.quantity,
         cost_price: h.cost_price,
         total_cost: h.total_cost,
+        account_currency: h.accountCurrency,
       }))
       // 后端按资产自身币种返回市值/盈亏，汇率随响应带回前端本地折算
       const data = await fetchBatchValuation(items)
@@ -106,9 +107,11 @@ export function useWealthValuation(intervalMs = 60000) {
     let basePL = 0
     for (const r of results) {
       const cur = (r.currency ?? 'CNY') as Currency
+      // 港股通：Worker 已折算为 CNY，直接用 converted_value
+      const mv = r.converted_value ?? r.market_value
       if (r.market_value != null) byCurrency[cur].market_value += r.market_value
       if (r.profit_loss != null) byCurrency[cur].profit_loss += r.profit_loss
-      if (r.market_value != null) baseMV += toBase(r.market_value, cur, baseCurrency, rates)
+      if (mv != null) baseMV += toBase(mv, (r.converted_currency ?? cur) as Currency, baseCurrency, rates)
       if (r.profit_loss != null) basePL += toBase(r.profit_loss, cur, baseCurrency, rates)
     }
     return { byCurrency, baseMV, basePL }

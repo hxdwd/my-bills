@@ -141,18 +141,19 @@ export function WealthHome() {
   const { baseMV, basePL } = summary()
   const todayTotal = useMemo(
     () => results.reduce((s, r) => {
-      const cur = (r.currency ?? 'CNY') as Currency
+      const cur = (r.converted_currency ?? r.currency ?? 'CNY') as Currency
       return s + toBaseCurrency(todayProfit(r), cur, baseCurrency, rates)
     }, 0),
     [results, baseCurrency, rates],
   )
 
-  // 按大类聚合（用于分布图）—— 折算到本位币
+  // 按大类聚合（用于分布图）—— 折算到本位币，港股通用 Worker 折算值
   const byCat = useMemo(() => {
     const acc: Record<AssetCategory, number> = { stock: 0, fund: 0, gold: 0 }
     results.forEach(r => {
-      const cur = (r.currency ?? 'CNY') as Currency
-      acc[marketToCategory(r.market)] += toBaseCurrency(r.market_value || 0, cur, baseCurrency, rates)
+      const cur = (r.converted_currency ?? r.currency ?? 'CNY') as Currency
+      const mv = r.converted_value ?? r.market_value ?? 0
+      acc[marketToCategory(r.market)] += toBaseCurrency(mv, cur, baseCurrency, rates)
     })
     return acc
   }, [results, baseCurrency, rates])
@@ -484,10 +485,11 @@ export function WealthHome() {
       ) : (
         <div className="space-y-2">
           {list.map(r => {
-            const cur = (r.currency ?? 'CNY') as Currency
+            const cur = (r.converted_currency ?? r.currency ?? 'CNY') as Currency
             // 列表主数字统一按本位币折算，与上方卡片/分布图口径一致；
             // 资产自身币种的具体数值可在详情页查看，互不冲突。
-            const mv = toBaseCurrency(r.market_value ?? 0, cur, baseCurrency, rates)
+            // 港股通：Worker 已折算为 CNY，优先用 converted_value
+            const mv = toBaseCurrency(r.converted_value ?? r.market_value ?? 0, cur, baseCurrency, rates)
             const pl = r.profit_loss != null ? toBaseCurrency(r.profit_loss, cur, baseCurrency, rates) : null
             const pr = r.profit_rate ?? null
             // 当日收益（本位币折算）

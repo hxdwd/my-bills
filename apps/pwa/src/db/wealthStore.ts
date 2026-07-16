@@ -16,6 +16,8 @@ export interface Holding {
   sellQuantity: number
   firstBuyDate?: string
   lastTxDate?: string
+  /** 买入账户币种（来自 asset_currency），用于港股通 CNY 折算 */
+  accountCurrency?: string
 }
 
 // 资产大类：股票 / 基金 / 黄金
@@ -179,6 +181,10 @@ export async function aggregateHoldings(): Promise<Holding[]> {
       map.set(key, h)
     }
     h.name = t.name || h.name
+    // 记录资产币种（从 asset_currency 字段取，用于港股通 CNY 折算）
+    if (t.asset_currency && !h.accountCurrency) {
+      h.accountCurrency = t.asset_currency
+    }
     if (t.direction === 'buy') {
       h.buyQuantity += t.quantity
       // 加权成本：总成本累加买入金额

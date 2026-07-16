@@ -204,7 +204,6 @@ export async function runValuation(
     const costPrice = it.cost_price ?? (it.quantity > 0 ? it.total_cost! / it.quantity : 0)
 
     if (!cached || cached === '__FAIL__') {
-      // 拉取失败（包括 KV 中缓存的失败标志）
       return {
         symbol: it.symbol,
         market,
@@ -229,8 +228,16 @@ export async function runValuation(
     const profitLoss = marketValue - totalCost
     const profitRate = totalCost > 0 ? profitLoss / totalCost : 0
 
-    // 市值/盈亏均以资产自身真实币种返回（currency 字段标记），
-    // 不再折算到本位币，避免前端混用币种。顶层汇总由前端按汇率本地折算。
+    // 港股通折算：market=HK 且买入账户为 CNY → 将 HKD 市值折算为 CNY
+    // 注意：港股通用户以人民币买入港股，资产实际价值应折人民币展示
+    let convertedValue: number | null = null
+    let convertedCurrency: Currency | undefined
+    if (market === 'HK' && it.account_currency === 'CNY' && currency === 'HKD') {
+      const hkdToCny = fx.rates.HKD ?? 1
+      convertedValue = round2(marketValue * hkdToCny)
+      convertedCurrency = 'CNY'
+    }
+
     return {
       symbol: it.symbol,
       market,
@@ -245,6 +252,8 @@ export async function runValuation(
       profit_rate: round4(profitRate),
       change_percent: typeof cached.changePercent === 'number' ? round4(cached.changePercent) : null,
       quote_time: new Date(cached.timestamp).toISOString(),
+      converted_value: convertedValue,
+      converted_currency: convertedCurrency,
     }
   })
 

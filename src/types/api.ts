@@ -12,6 +12,8 @@ export interface ValuationItem {
   quantity: number
   cost_price?: number
   total_cost?: number
+  /** 买入账户的币种（CNY/USD/HKD），用于港股通折算 */
+  account_currency?: Currency
 }
 
 export interface BatchRequest {
@@ -28,6 +30,7 @@ export interface ValuationResult {
   cost_price: number
   total_cost: number
   current_price: number | null
+  /** 资产原始计价币种 */
   currency: Currency
   market_value: number | null
   profit_loss: number | null
@@ -35,6 +38,10 @@ export interface ValuationResult {
   change_percent?: number | null // 当日涨跌幅（来自数据源，缓存命中也有真实值）
   quote_time: string | null
   error?: string
+  /** 港股通折算后市值（当 market=HK 且 account_currency=CNY 时，HKD 市价×汇率后的 CNY 值） */
+  converted_value?: number | null
+  /** 折算目标币种（存在 converted_value 时为 'CNY'） */
+  converted_currency?: Currency
 }
 
 export interface BatchResponseData {

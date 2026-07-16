@@ -30,6 +30,9 @@ export interface ValuationResult {
   change_percent?: number | null
   quote_time: string | null
   error?: string
+  /** 港股通折算后市值（market=HK 且 account_currency=CNY 时，Worker 折 CNY 后返回） */
+  converted_value?: number | null
+  converted_currency?: 'CNY' | 'USD' | 'HKD'
 }
 
 // 资产搜索结果
