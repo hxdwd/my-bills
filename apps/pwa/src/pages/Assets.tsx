@@ -465,7 +465,6 @@ export default function AssetsPage() {
                       </div>
                     )}
                   </div>
-                  <ChevronRight size={18} className={theme === 'dark' ? 'text-ink-2' : 'text-ink-2'} />
                 </div>
               )
             })}
