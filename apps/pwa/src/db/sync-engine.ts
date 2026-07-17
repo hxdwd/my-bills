@@ -58,14 +58,27 @@ async function setLastSync(tableName: TableName, time: string): Promise<void> {
 
 const PAGE_SIZE = 1000
 
+export type PullProgress = {
+  /** 当前进度 0-100 */
+  percent: number
+  /** 当前状态描述 */
+  status: 'counting' | 'pulling' | 'done' | 'error'
+}
+
 /**
  * 从 Supabase 分页全量拉取单表数据并合并到 IndexedDB。
  * 使用主键 id 游标分页（order=id.asc + id=gt.），避免：
  * - PostgREST 默认 1000 行截断
  * - updated_at 同时间戳导致增量卡死
  * bulkPut 按主键幂等合并，已存在记录会覆盖更新。
+ *
+ * @param onProgress 可选回调，每拉完一页后调用，传入进度对象
  */
-async function pullTable(tableName: TableName, userId: string): Promise<void> {
+async function pullTable(
+  tableName: TableName,
+  userId: string,
+  onProgress?: (p: PullProgress) => void,
+): Promise<number> {
   const table = (db as any)[tableName]
 
   const uid = getSupabaseUserId() || userId
@@ -87,9 +100,29 @@ async function pullTable(tableName: TableName, userId: string): Promise<void> {
     .toArray()
   deletedRecords.forEach((r: any) => localDeletedIds.add(r.id))
 
+  // 前置 COUNT 请求获取总条数
+  onProgress?.({ percent: 0, status: 'counting' })
+  let totalCount = 0
+  try {
+    const countUrl = `${supabaseUrl}/rest/v1/${remoteTable(tableName)}?select=id${profileFilter}&limit=1`
+    const countResp = await fetch(countUrl, { headers })
+    if (countResp.ok) {
+      // PostgREST 返回 Content-Range header: 0-0/3729
+      const contentRange = countResp.headers.get('content-range')
+      if (contentRange) {
+        const match = contentRange.match(/\/(\d+)$/)
+        if (match) totalCount = parseInt(match[1], 10)
+      }
+    }
+  } catch {
+    // COUNT 失败不阻塞，进度走乐观推进
+  }
+
   let lastId: string | null = null
   let totalPulled = 0
   let page = 0
+
+  onProgress?.({ percent: 0, status: 'pulling' })
 
   // 分页循环：用 id 游标逐页拉取直到返回行数 < PAGE_SIZE
   while (true) {
@@ -124,28 +157,75 @@ async function pullTable(tableName: TableName, userId: string): Promise<void> {
     totalPulled += data.length
     lastId = data[data.length - 1].id
 
+    // 通知进度
+    if (onProgress && totalCount > 0) {
+      const pct = Math.min(Math.round((totalPulled / totalCount) * 100), 100)
+      onProgress({ percent: pct, status: 'pulling' })
+    }
+
     // 不足一页 = 最后一页，退出
     if (data.length < PAGE_SIZE) break
   }
 
   if (totalPulled > 0) {
     console.log(`[Sync] 拉取 ${tableName}: ${totalPulled} 条记录 (${page} 页)`)
-    // 记录最后同步时间（仅用于显示，不再用于增量过滤）
     await setLastSync(tableName, new Date().toISOString())
   }
+
+  onProgress?.({ percent: 100, status: 'done' })
+  return totalPulled
 }
 
 /**
- * 从 Supabase 拉取所有表的变更
+ * 从 Supabase 拉取所有表的变更，返回总拉取条数。
+ * @param onProgress 可选回调，用于通知全局进度（按所有表汇总）
  */
-async function pullAll(userId: string): Promise<void> {
+async function pullAll(
+  userId: string,
+  onProgress?: (p: PullProgress) => void,
+): Promise<number> {
+  let totalCount = 0
+  let fetchedCount = 0
+
+  // 先做一轮 COUNT 获取所有表的总数
+  onProgress?.({ percent: 0, status: 'counting' })
+  const uid = getSupabaseUserId() || userId
+  const supabaseUrl = (supabase as any)['supabaseUrl']
+  const supabaseKey = (supabase as any)['supabaseKey']
+  const headers: Record<string, string> = { 'apikey': supabaseKey, 'x-user-id': uid }
+  for (const tn of TABLE_NAMES) {
+    try {
+      const pf = tn === 'profiles' ? `&id=eq.${userId}` : ''
+      const countUrl = `${supabaseUrl}/rest/v1/${remoteTable(tn)}?select=id${pf}&limit=1`
+      const resp = await fetch(countUrl, { headers })
+      if (resp.ok) {
+        const cr = resp.headers.get('content-range')
+        if (cr) {
+          const m = cr.match(/\/(\d+)$/)
+          if (m) totalCount += parseInt(m[1], 10)
+        }
+      }
+    } catch { /* 单表 COUNT 失败不影响其他 */ }
+  }
+
   for (const tableName of TABLE_NAMES) {
     try {
-      await pullTable(tableName, userId)
+      // 单表拉取时不传 onProgress（避免单表内部进度干扰全局汇总）
+      const n = await pullTable(tableName, userId)
+      fetchedCount += n
+      if (totalCount > 0 && onProgress) {
+        const pct = Math.min(Math.round((fetchedCount / totalCount) * 100), 100)
+        onProgress({ percent: pct, status: 'pulling' })
+      }
     } catch (err) {
       console.error(`[Sync] 拉取 ${tableName} 异常:`, err)
+      onProgress?.({ percent: 0, status: 'error' })
+      throw err
     }
   }
+
+  onProgress?.({ percent: 100, status: 'done' })
+  return fetchedCount
 }
 
 // ============================================================

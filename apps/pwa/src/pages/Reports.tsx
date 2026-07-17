@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useTheme } from '../context/ThemeContext'
 import { useApp } from '../context/AppContext'
 import Card from '../components/ui/Card'
 import CategoryDistributionSheet from '../components/CategoryDistributionSheet'
 import CategoryDetailSheet from '../components/CategoryDetailSheet'
+import Toast from '../components/ui/Toast'
 import { DonutChart } from '../components/charts/DonutChart'
 import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown } from 'lucide-react'
 import { Bar, Line } from 'react-chartjs-2'
@@ -20,6 +21,8 @@ import {
   Legend,
 } from 'chart.js'
 import { formatCurrency } from '../utils/format'
+import { syncEngine } from '../db/sync-engine'
+import type { PullProgress } from '../db/sync-engine'
 
 ChartJS.register(
   CategoryScale,
@@ -40,9 +43,81 @@ export default function ReportsPage() {
   const {
     categories, subCategories, transactions, bigExpenseThreshold,
     getMonthSummary, getMonthWeekExpense, getYearMonthExpense, getYearMonthDetail,
-    getMonthExpenseByCategory, getMonthTopExpenses
+    getMonthExpenseByCategory, getMonthTopExpenses, refreshData,
   } = useApp()
   const [timeRange, setTimeRange] = useState<TimeRange>('month')
+
+  // 下拉同步
+  const [syncing, setSyncing] = useState(false)
+  const [syncProgress, setSyncProgress] = useState(0)
+  const [syncVisible, setSyncVisible] = useState(false)
+  const [syncToast, setSyncToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
+  const mainRef = useRef<HTMLDivElement>(null)
+  const pullStartY = useRef(0)
+  const pullThreshold = 60
+
+  const handlePullSync = useCallback(async () => {
+    if (syncing) return
+    setSyncing(true)
+    setSyncProgress(0)
+    setSyncVisible(true)
+
+    try {
+      const uid = (await import('../stores/useAuthStore')).useAuthStore.getState().user?.id
+      if (!uid) throw new Error('未登录')
+
+      const totalPulled = await syncEngine.pullAll(uid, (p: PullProgress) => {
+        if (p.status === 'error') {
+          setSyncProgress(0)
+          setSyncVisible(false)
+          setSyncToast({ msg: '数据加载失败，请检查网络', type: 'error' })
+          return
+        }
+        setSyncProgress(p.percent)
+      })
+
+      // 进度条 100% 停留 0.5s 后淡出
+      await new Promise(r => setTimeout(r, 500))
+      setSyncVisible(false)
+      setSyncing(false)
+      setSyncToast({ msg: `✅ 数据已更新，共同步 ${totalPulled} 条记录`, type: 'success' })
+
+      // 刷新报表数据
+      if (refreshData) await refreshData()
+    } catch {
+      setSyncVisible(false)
+      setSyncing(false)
+      setSyncToast({ msg: '❌ 数据加载失败，请检查网络', type: 'error' })
+    }
+  }, [syncing, refreshData])
+
+  // 下拉手势监听
+  useEffect(() => {
+    const el = mainRef.current
+    if (!el) return
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (el.scrollTop <= 0) {
+        pullStartY.current = e.touches[0].clientY
+      }
+    }
+
+    const onTouchEnd = (e: TouchEvent) => {
+      if (el.scrollTop <= 0) {
+        const dy = e.changedTouches[0].clientY - pullStartY.current
+        if (dy > pullThreshold && !syncing) {
+          handlePullSync()
+        }
+      }
+    }
+
+    el.addEventListener('touchstart', onTouchStart, { passive: true })
+    el.addEventListener('touchend', onTouchEnd, { passive: true })
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart)
+      el.removeEventListener('touchend', onTouchEnd)
+    }
+  }, [handlePullSync, syncing])
   
   // 当前选择的年月
   const now = new Date()
@@ -328,7 +403,15 @@ export default function ReportsPage() {
         </h1>
       </header>
 
-      <main className="px-5 tabbar-safe space-y-4 animate-page-fade">
+      {/* 同步进度条（3px，品牌色，淡入淡出） */}
+      <div className={`sticky top-[52px] z-50 transition-opacity duration-300 ${syncVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+        <div
+          className="h-[3px] bg-brand rounded-full transition-all duration-300 ease-out"
+          style={{ width: `${syncProgress}%` }}
+        />
+      </div>
+
+      <main ref={mainRef} className="px-5 tabbar-safe space-y-4 animate-page-fade" style={{ overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
         {/* Time Range Tabs */}
         <div className={`flex p-1 rounded-xl ${theme === 'dark' ? 'bg-surface' : 'bg-brand-tint'}`}>
           {(['month', 'year'] as TimeRange[]).map((range) => (
@@ -741,6 +824,14 @@ export default function ReportsPage() {
           onClose={() => setDetailSheet(null)}
         />
       )}
+
+      {/* 同步反馈 Toast */}
+      <Toast
+        message={syncToast?.msg || ''}
+        type={syncToast?.type || 'success'}
+        visible={!!syncToast}
+        onClose={() => setSyncToast(null)}
+      />
     </div>
   )
 }
