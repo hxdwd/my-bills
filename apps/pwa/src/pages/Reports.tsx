@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useTheme } from '../context/ThemeContext'
 import { useApp } from '../context/AppContext'
 import Card from '../components/ui/Card'
@@ -240,21 +240,22 @@ export default function ReportsPage() {
   // 支出按分类分布
   const expenseByCategory = timeRange === 'month'
     ? getMonthExpenseByCategory(selectedYear, selectedMonth)
-    : (() => {
-        // 按年：汇总 selectedYear 全年各分类支出（必须按年份过滤，否则会混入其他年份）
+    : useMemo(() => {
+        // 按年：汇总 selectedYear 全年各分类支出
         const catMap = new Map<string, { id: string; name: string; icon: string; color: string; total: number }>()
         for (const cat of categories.expense) {
           catMap.set(cat.id, { ...cat, total: 0 })
         }
         for (const t of transactions) {
           if (t.type !== 'expense' || !t.transactionDate) continue
-          const d = new Date(t.transactionDate)
+          const d = new Date(t.transactionDate.replace(/-/g, '/')) // 用 / 格式避免 UTC 解析问题
+          if (isNaN(d.getTime())) continue
           if (d.getFullYear() !== selectedYear) continue
           const entry = catMap.get(t.categoryId)
           if (entry) entry.total += t.amount
         }
         return Array.from(catMap.values()).filter(c => c.total > 0).sort((a, b) => b.total - a.total)
-      })()
+      }, [transactions, categories.expense, selectedYear])
 
   const totalExpense = expenseByCategory.reduce((sum, c) => sum + c.total, 0)
 

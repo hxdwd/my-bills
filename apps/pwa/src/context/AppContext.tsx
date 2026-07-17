@@ -1026,7 +1026,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .filter(t => {
         if (t.type !== 'income') return false
         if (!t.transactionDate) return false
-        const d = new Date(t.transactionDate)
+        const d = new Date(t.transactionDate.replace(/-/g, '/'))
         return d.getFullYear() === currentYear && d.getMonth() + 1 === currentMonth
       })
       .reduce((sum, t) => sum + t.amount, 0)
@@ -1040,7 +1040,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .filter(t => {
         if (t.type !== 'expense') return false
         if (!t.transactionDate) return false
-        const d = new Date(t.transactionDate)
+        const d = new Date(t.transactionDate.replace(/-/g, '/'))
         return d.getFullYear() === currentYear && d.getMonth() + 1 === currentMonth
       })
       .reduce((sum, t) => sum + t.amount, 0)
@@ -1096,7 +1096,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       let netChange = 0
       transactions.forEach(t => {
         if (!t.transactionDate) return
-        const tDate = new Date(t.transactionDate)
+        const tDate = new Date(t.transactionDate.replace(/-/g, '/'))
         if (tDate.getFullYear() < targetYear || (tDate.getFullYear() === targetYear && tDate.getMonth() + 1 < targetMonth)) {
           return
         }
@@ -1124,7 +1124,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       let monthExpense = 0
       transactions.forEach(t => {
         if (!t.transactionDate) return
-        const tDate = new Date(t.transactionDate)
+        const tDate = new Date(t.transactionDate.replace(/-/g, '/'))
         if (tDate.getFullYear() !== targetYear || tDate.getMonth() + 1 !== targetMonth) return
         if (t.type === 'income') monthIncome += t.amount
         else if (t.type === 'expense') monthExpense += t.amount
@@ -1161,7 +1161,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     transactions.forEach(t => {
       if (!t.transactionDate) return
-      const d = new Date(t.transactionDate)
+      const d = new Date(t.transactionDate.replace(/-/g, '/'))
       if (d.getFullYear() !== year || d.getMonth() + 1 !== month) return
 
       if (t.type === 'income') income += t.amount
@@ -1214,7 +1214,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       let expTotal = 0
       transactions.forEach(t => {
         if (!t.transactionDate) return
-        const d = new Date(t.transactionDate)
+        const d = new Date(t.transactionDate.replace(/-/g, '/'))
         if (d.getFullYear() !== year || d.getMonth() + 1 !== m) return
         if (t.type === 'income') incTotal += t.amount
         else if (t.type === 'expense') expTotal += t.amount
@@ -1233,7 +1233,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       let exp = 0
       transactions.forEach(t => {
         if (!t.transactionDate) return
-        const d = new Date(t.transactionDate)
+        // 用 / 格式避免 new Date('YYYY-MM-DD') 被解析为 UTC 导致的时区偏移
+        const d = new Date(t.transactionDate.replace(/-/g, '/'))
+        if (isNaN(d.getTime())) return
         if (d.getFullYear() !== year || d.getMonth() + 1 !== m) return
         if (t.type === 'income') inc += t.amount
         else if (t.type === 'expense') exp += t.amount
@@ -1249,7 +1251,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         .filter(t => {
           if (t.type !== 'expense' || t.categoryId !== cat.id) return false
           if (!t.transactionDate) return false
-          const d = new Date(t.transactionDate)
+          const d = new Date(t.transactionDate.replace(/-/g, '/'))
+          if (isNaN(d.getTime())) return false
           return d.getFullYear() === year && d.getMonth() + 1 === month
         })
         .reduce((sum, t) => sum + t.amount, 0)
@@ -1262,7 +1265,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .filter(t => {
         if (t.type !== 'expense' || t.amount < threshold) return false
         if (!t.transactionDate) return false
-        const d = new Date(t.transactionDate)
+        const d = new Date(t.transactionDate.replace(/-/g, '/'))
+        if (isNaN(d.getTime())) return false
         return d.getFullYear() === year && d.getMonth() + 1 === month
       })
       .sort((a, b) => b.amount - a.amount)
