@@ -4,6 +4,78 @@
 
 ---
 
+## 2026-07-17（续）：报表页优化 + 导入逻辑增强 + 密钥泄露应急
+
+### 一、报表页下拉刷新优化
+
+#### usePullToRefresh Hook 抽离
+- 封装 Touch 手势监听（start/move/end）、阻尼曲线、阈值判断
+- 返回 `{ pullDistance, syncing, progress, isPulling, reportProgress }`
+- 5s `minInterval` 防频繁下拉
+- `totalPulled === 0` 时不弹 Toast，进度条静默淡出
+
+#### 下拉动效
+- `touchmove` 实时跟随手指 `translateY`
+- 进度条移入 main 内部顶部，随下拉同步移动
+- 松手回弹 `transition: transform 0.3s ease-out`
+
+### 二、报表页数据修复
+
+#### new Date('YYYY-MM-DD') UTC 解析问题
+- 全局替换为 `new Date(transactionDate.replace(/-/g, '/'))` 本地时间解析
+- 波及 AppContext 中 `getYearMonthDetail`、`getMonthExpenseByCategory`、`getMonthTopExpenses`
+- Reports 页 `expenseByCategory` 按年计算改为 `useMemo` 包裹
+
+#### useMemo 条件分支崩溃
+- `useMemo` 从三元表达式内移到外层（始终调用），内部根据 `timeRange` 分支
+
+### 三、报表页 UI 优化
+
+#### 金额卡片防溢出
+- 月/年收入/支出/结余 六个金额卡片添加 `truncate` + `clamp(14px, 3.5vw, 20px)`
+- 长数字不换行不溢出，短数字不跟着缩成小不点
+
+### 四、批量导入逻辑增强
+
+#### 防合并 + 日期兜底
+- System Prompt：严禁合并同名记录
+- `HoldingItem` 新增 `date` 字段，AI 提取原文日期或返回 null
+- 前端 `processAIResult` 兜底当日日期
+
+#### market 统一 + symbol 提取
+- Prompt 中 `market` 示例值 `'A股'` → `'CN'`
+- `HoldingItem` / `ParsedHolding` 新增 `symbol` 字段
+- `resolveRow` 搜索优先级：`symbol`（代码精确匹配）> `name`（模糊搜索）
+- Prompt 强化表格代码列识别（券商交易确认格式）
+
+#### 去重缓存
+- `resolveCache` Map：相同 `market:symbol` 只查一次行情
+
+### 五、🔴 密钥泄露事件
+
+**严重错误**：commit `75eb60a` 中 `wrangler.toml` 包含明文密钥（百度 OCR AK/SK、DeepSeek API Key），已被 push 到 GitHub。
+
+**处理步骤**：
+1. 已手动注释 `wrangler.toml` 中的密钥（commit `2300c02` 修复）
+2. **必须立即去百度智能云 + DeepSeek 控制台吊销这些密钥**
+3. 需要用 `git filter-branch` 清理历史
+
+### 六、提交流水
+
+| commit | 内容 |
+|---|---|
+| `53e041b` | 报表下拉增加 touchmove 跟随动画 + 进度条跟手联动 + 回弹 |
+| `7a54bb3` | 抽离 usePullToRefresh Hook + 5s防抖 + totalPulled=0不弹Toast |
+| `ac4f4c7` | 修复 new Date('YYYY-MM-DD') UTC 解析 + useMemo 包裹 |
+| `d4db3db` | useMemo 移到条件分支外层，修复 Rendered more hooks 崩溃 |
+| `e0272d0` | 报表页金额卡片添加 truncate + clamp 防溢出 |
+| `75eb60a` | 批量导入支持多行同名资产 + 日期自动兜底 ⚠️ 含密钥 |
+| `2300c02` | 统一 market 枚举 + 新增 symbol 字段 + 日期兜底撤回 |
+| `c071b84` | 强化 symbol 提取 Prompt |
+| `5ea4d40` | 批量导入相同 symbol 去重缓存 |
+
+---
+
 ## 2026-07-17：同步引擎分页修复 + 报表页下拉刷新 + 历史数据全量同步
 
 ### 一、同步引擎 id 游标分页修复（历史数据截断问题）
