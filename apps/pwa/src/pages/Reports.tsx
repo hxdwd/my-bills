@@ -538,19 +538,19 @@ export default function ReportsPage() {
           <div className="grid grid-cols-3 gap-3">
             <Card className="!p-3 text-center">
               <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>收入</div>
-              <div className={`text-lg font-bold font-mono amount-fluid text-[#dc2626]`}>
+              <div className="font-bold font-mono truncate text-[#dc2626]" style={{ fontSize: 'clamp(14px, 3.5vw, 20px)' }}>
                 {formatCurrency(monthSummary.income)}
               </div>
             </Card>
             <Card className="!p-3 text-center">
               <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>支出</div>
-              <div className={`text-lg font-bold font-mono text-[#16a34a]`}>
+              <div className="font-bold font-mono truncate text-[#16a34a]" style={{ fontSize: 'clamp(14px, 3.5vw, 20px)' }}>
                 {formatCurrency(monthSummary.expense)}
               </div>
             </Card>
             <Card className="!p-3 text-center">
               <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>结余</div>
-              <div className={`text-lg font-bold font-mono amount-fluid ${(monthSummary.income - monthSummary.expense) >= 0 ? 'text-[#dc2626]' : 'text-[#16a34a]'}`}>
+              <div className={`font-bold font-mono truncate ${(monthSummary.income - monthSummary.expense) >= 0 ? 'text-[#dc2626]' : 'text-[#16a34a]'}`} style={{ fontSize: 'clamp(14px, 3.5vw, 20px)' }}>
                 {formatCurrency(monthSummary.income - monthSummary.expense, false, true)}
               </div>
             </Card>
@@ -564,19 +564,19 @@ export default function ReportsPage() {
               <div className="grid grid-cols-3 gap-3">
                 <Card className="!p-3 text-center">
                   <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>年收入</div>
-                  <div className={`text-lg font-bold font-mono amount-fluid text-[#dc2626]`}>
+                  <div className="font-bold font-mono truncate text-[#dc2626]" style={{ fontSize: 'clamp(14px, 3.5vw, 20px)' }}>
                     {formatCurrency(totalIncome, false, true)}
                   </div>
                 </Card>
                 <Card className="!p-3 text-center">
                   <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>年支出</div>
-                  <div className={`text-lg font-bold font-mono amount-fluid text-[#16a34a]`}>
+                  <div className="font-bold font-mono truncate text-[#16a34a]" style={{ fontSize: 'clamp(14px, 3.5vw, 20px)' }}>
                     {formatCurrency(totalExpense2, false, true)}
                   </div>
                 </Card>
                 <Card className="!p-3 text-center">
                   <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>年结余</div>
-                  <div className={`text-lg font-bold font-mono amount-fluid ${totalBalance >= 0 ? 'text-[#dc2626]' : 'text-[#16a34a]'}`}>
+                  <div className={`font-bold font-mono truncate ${totalBalance >= 0 ? 'text-[#dc2626]' : 'text-[#16a34a]'}`} style={{ fontSize: 'clamp(14px, 3.5vw, 20px)' }}>
                     {formatCurrency(totalBalance, false, true)}
                   </div>
                 </Card>
