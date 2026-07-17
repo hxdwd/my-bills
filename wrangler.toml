@@ -32,3 +32,9 @@ id = "a025d8ed33bf444c9ec7df45993aae92"
 [vars]
 LOG_LEVEL = "1"
 # ALLOWED_ORIGINS = "https://your-domain.com"
+
+# 百度 OCR 通用文字识别（截图导入持仓功能）
+BAIDU_OCR_API_KEY = ""
+BAIDU_OCR_SECRET_KEY = ""
+# DeepSeek AI 结构化提取
+DEEPSEEK_API_KEY = ""
