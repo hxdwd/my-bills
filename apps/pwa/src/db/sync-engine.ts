@@ -48,11 +48,6 @@ function remoteTable(tableName: TableName): string {
 // 同步元数据
 // ============================================================
 
-async function getLastSync(tableName: TableName): Promise<string | null> {
-  const meta = await db.syncMeta.get(`${LAST_SYNC_KEY_PREFIX}:${tableName}`)
-  return meta?.value || null
-}
-
 async function setLastSync(tableName: TableName, time: string): Promise<void> {
   await db.syncMeta.put({ key: `${LAST_SYNC_KEY_PREFIX}:${tableName}`, value: time })
 }
@@ -61,54 +56,30 @@ async function setLastSync(tableName: TableName, time: string): Promise<void> {
 // Pull: 从 Supabase 拉取变更
 // ============================================================
 
+const PAGE_SIZE = 1000
+
 /**
- * 从 Supabase 拉取单表的变更数据并合并到 IndexedDB
+ * 从 Supabase 分页全量拉取单表数据并合并到 IndexedDB。
+ * 使用主键 id 游标分页（order=id.asc + id=gt.），避免：
+ * - PostgREST 默认 1000 行截断
+ * - updated_at 同时间戳导致增量卡死
+ * bulkPut 按主键幂等合并，已存在记录会覆盖更新。
  */
 async function pullTable(tableName: TableName, userId: string): Promise<void> {
   const table = (db as any)[tableName]
-  const lastSync = await getLastSync(tableName)
 
-  // 构建 URL，通过 x-user-id header 传递 user_id 用于 RLS
   const uid = getSupabaseUserId() || userId
   const supabaseUrl = (supabase as any)['supabaseUrl']
   const supabaseKey = (supabase as any)['supabaseKey']
-
-  let url = `${supabaseUrl}/rest/v1/${remoteTable(tableName)}?select=*`
-  if (tableName === 'profiles') {
-    url += `&id=eq.${userId}`
-  }
-  // tags 表数据量小且用户期望本地与远程始终一致，跳过增量过滤做全量拉取，
-  // 否则 old 标签在 lastSync 之前创建、之后无更新时永远拉不回来。
-  if (lastSync && tableName !== 'tags') {
-    url += `&updated_at=gt.${encodeURIComponent(lastSync)}`
-  }
-
   const headers: Record<string, string> = {
     'apikey': supabaseKey,
     'x-user-id': uid,
   }
 
-  const resp = await fetch(url, { headers })
-  if (!resp.ok) {
-    const errBody = await resp.text()
-    throw new Error(`[Sync] 拉取 ${tableName} 失败: ${resp.status} ${errBody}`)
-  }
+  // profiles 表按 user_id 精确过滤
+  const profileFilter = tableName === 'profiles' ? `&id=eq.${userId}` : ''
 
-  const data = await resp.json() as any[]
-
-  if (!data || data.length === 0) {
-    if (!lastSync) {
-      await setLastSync(tableName, new Date().toISOString())
-    }
-    // 远程返回空集合时，一律不清理本地数据。tags 表也与其他表一致：
-    // 增量拉取窗口内无变更返回空数组是常态，绝不能据此删本地，否则会
-    // 误删用户在远程正常存在的标签（远程有数据但 lastSync 之后无更新时）。
-    return
-  }
-
-  console.log(`[Sync] 拉取 ${tableName}: ${data.length} 条记录`)
-
-  // 检查哪些记录是本地已删除的（不覆盖本地删除操作）
+  // 检查本地已删除的记录（不覆盖本地删除操作）
   const localDeletedIds = new Set<string>()
   const deletedRecords = await table
     .where('_sync_status')
@@ -116,25 +87,52 @@ async function pullTable(tableName: TableName, userId: string): Promise<void> {
     .toArray()
   deletedRecords.forEach((r: any) => localDeletedIds.add(r.id))
 
-  // 批量 upsert 到 IndexedDB
-  const records = data
-    .filter((row: any) => !localDeletedIds.has(row.id))
-    .map((row: any) => ({
-      ...row,
-      _sync_status: 'synced' as SyncStatus,
-      _updated_at_local: new Date().toISOString(),
-    }))
+  let lastId: string | null = null
+  let totalPulled = 0
+  let page = 0
 
-  if (records.length > 0) {
-    await table.bulkPut(records)
+  // 分页循环：用 id 游标逐页拉取直到返回行数 < PAGE_SIZE
+  while (true) {
+    page++
+    let url = `${supabaseUrl}/rest/v1/${remoteTable(tableName)}?select=*&order=id.asc&limit=${PAGE_SIZE}${profileFilter}`
+    if (lastId) {
+      url += `&id=gt.${encodeURIComponent(lastId)}`
+    }
+
+    const resp = await fetch(url, { headers })
+    if (!resp.ok) {
+      const errBody = await resp.text()
+      throw new Error(`[Sync] 拉取 ${tableName} 第${page}页失败: ${resp.status} ${errBody}`)
+    }
+
+    const data = await resp.json() as any[]
+    if (!data || data.length === 0) break
+
+    // 过滤本地已删除 + 标记 synced
+    const records = data
+      .filter((row: any) => !localDeletedIds.has(row.id))
+      .map((row: any) => ({
+        ...row,
+        _sync_status: 'synced' as SyncStatus,
+        _updated_at_local: new Date().toISOString(),
+      }))
+
+    if (records.length > 0) {
+      await table.bulkPut(records)
+    }
+
+    totalPulled += data.length
+    lastId = data[data.length - 1].id
+
+    // 不足一页 = 最后一页，退出
+    if (data.length < PAGE_SIZE) break
   }
 
-  // 更新 lastSync 时间
-  const maxUpdatedAt = data.reduce((max: string, row: any) => {
-    return row.updated_at > max ? row.updated_at : max
-  }, lastSync || '')
-
-  await setLastSync(tableName, maxUpdatedAt || new Date().toISOString())
+  if (totalPulled > 0) {
+    console.log(`[Sync] 拉取 ${tableName}: ${totalPulled} 条记录 (${page} 页)`)
+    // 记录最后同步时间（仅用于显示，不再用于增量过滤）
+    await setLastSync(tableName, new Date().toISOString())
+  }
 }
 
 /**
@@ -261,7 +259,7 @@ async function pushAll(userId: string): Promise<void> {
  * 2. 已有数据 → 先推送本地变更，再增量拉取
  */
 async function syncOnStartup(userId: string): Promise<void> {
-  // 检查是否首次使用
+  // 检查是否首次使用（本地无数据则跳过 push）
   const hasData = await db.accounts.count() > 0
 
   if (!hasData) {
@@ -271,12 +269,12 @@ async function syncOnStartup(userId: string): Promise<void> {
     return
   }
 
-  console.log('[Sync] 增量同步...')
+  console.log('[Sync] 同步中...')
 
   // 1. 先推送本地未同步的变更
   await pushAll(userId)
 
-  // 2. 再拉取远程变更
+  // 2. 拉取远程数据（id 游标分页全量，bulkPut 幂等合并）
   await pullAll(userId)
 
   console.log('[Sync] ✅ 同步完成')

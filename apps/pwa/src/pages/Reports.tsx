@@ -5,7 +5,7 @@ import Card from '../components/ui/Card'
 import CategoryDistributionSheet from '../components/CategoryDistributionSheet'
 import CategoryDetailSheet from '../components/CategoryDetailSheet'
 import { DonutChart } from '../components/charts/DonutChart'
-import { ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown } from 'lucide-react'
 import { Bar, Line } from 'react-chartjs-2'
 import {
   Chart as ChartJS,
@@ -49,15 +49,14 @@ export default function ReportsPage() {
   const [selectedYear, setSelectedYear] = useState(now.getFullYear())
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1)
 
-  // 长按快速选择年/月
+  // 点击或长按中间时间快速选择年/月
   const [showTimePicker, setShowTimePicker] = useState(false)
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const timeDisplayRef = useRef<HTMLDivElement>(null)
+  const timeDisplayRef = useRef<HTMLButtonElement>(null)
 
+  const openTimePicker = () => setShowTimePicker(true)
   const startLongPress = () => {
-    longPressTimer.current = setTimeout(() => {
-      setShowTimePicker(true)
-    }, 500)
+    longPressTimer.current = setTimeout(() => setShowTimePicker(true), 500)
   }
   const cancelLongPress = () => {
     if (longPressTimer.current) {
@@ -67,6 +66,30 @@ export default function ReportsPage() {
   }
   useEffect(() => {
     return () => { if (longPressTimer.current) clearTimeout(longPressTimer.current) }
+  }, [])
+
+  // 交互模型（明确分开，避免双发）：
+  //  - 箭头按钮：只做 onClick 单步 ±1，绝不参与长按。
+  //  - 年份/月份数字：长按才进入连续步进（大跨度快速修改）。
+  const repeatTimer = useRef<ReturnType<typeof setInterval> | null>(null)
+  const repeatDelay = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const startLongStep = (step: () => void) => {
+    step() // 立即触发一次
+    if (repeatTimer.current) clearInterval(repeatTimer.current)
+    if (repeatDelay.current) clearTimeout(repeatDelay.current)
+    repeatDelay.current = setTimeout(() => {
+      repeatTimer.current = setInterval(step, 110)
+    }, 450)
+  }
+  const stopLongStep = () => {
+    if (repeatTimer.current) { clearInterval(repeatTimer.current); repeatTimer.current = null }
+    if (repeatDelay.current) { clearTimeout(repeatDelay.current); repeatDelay.current = null }
+  }
+  useEffect(() => {
+    return () => {
+      if (repeatTimer.current) clearInterval(repeatTimer.current)
+      if (repeatDelay.current) clearTimeout(repeatDelay.current)
+    }
   }, [])
 
   const [drillCategoryId, setDrillCategoryId] = useState<string | null>(null)
@@ -130,14 +153,23 @@ export default function ReportsPage() {
     }
   }
 
-  // 快速选择年月
-  const quickSelectYear = (y: number) => {
-    setSelectedYear(y)
-    setShowTimePicker(false)
+  // 步进调整：年份/月份上下箭头切换，保持面板打开
+  const yearStart = 2015
+  const stepYear = (delta: number) => {
+    setSelectedYear(y => {
+      const next = y + delta
+      if (next > currentYear) return currentYear
+      if (next < yearStart) return yearStart
+      return next
+    })
   }
-  const quickSelectMonth = (m: number) => {
-    setSelectedMonth(m)
-    setShowTimePicker(false)
+  const stepMonth = (delta: number) => {
+    setSelectedMonth(m => {
+      let next = m + delta
+      if (next > 12) next = 1
+      if (next < 1) next = 12
+      return next
+    })
   }
 
   // 获取当前选择时间范围的数据
@@ -284,9 +316,8 @@ export default function ReportsPage() {
     : selectedYear === now.getFullYear()
 
   // 快速选择面板里的年份和月份列表
+  // 年份上限为当前年（不显示未来），下限 2015 起可一直往前滚；月份 1-12
   const currentYear = now.getFullYear()
-  const yearOptions = Array.from({ length: 11 }, (_, i) => currentYear - 5 + i) // 前后5年
-  const monthOptions = Array.from({ length: 12 }, (_, i) => i + 1)
 
   return (
     <div className={`min-h-screen bg-bg`}>
@@ -316,29 +347,31 @@ export default function ReportsPage() {
         </div>
 
         {/* Time Navigator */}
-        <div className="flex items-center justify-between">
+        <div className="relative flex items-center justify-between">
           <button
             onClick={goPrev}
             className={`p-2 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-surface text-ink-2' : 'hover:bg-brand-tint text-ink-2'}`}
           >
             <ChevronLeft size={22} />
           </button>
-          <div
+          <button
             ref={timeDisplayRef}
+            onClick={openTimePicker}
             onTouchStart={startLongPress}
             onTouchEnd={cancelLongPress}
             onTouchMove={cancelLongPress}
             onMouseDown={startLongPress}
             onMouseUp={cancelLongPress}
             onMouseLeave={cancelLongPress}
-            className={`cursor-pointer select-none px-3 py-1 rounded-lg transition-colors ${
-              theme === 'dark' ? 'hover:bg-surface' : 'hover:bg-brand-tint'
+            className={`cursor-pointer select-none flex items-center gap-1 px-3 py-1.5 rounded-lg transition-colors ${
+              theme === 'dark' ? 'hover:bg-surface text-ink' : 'hover:bg-brand-tint text-ink'
             }`}
           >
-            <h2 className={`text-base font-semibold ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
+            <h2 className="text-base font-semibold">
               {timeDisplay}
             </h2>
-          </div>
+            <ChevronDown size={18} className={`opacity-60 transition-transform ${showTimePicker ? 'rotate-180' : ''}`} />
+          </button>
           <button
             onClick={goNext}
             disabled={isCurrent}
@@ -350,6 +383,87 @@ export default function ReportsPage() {
           >
             <ChevronRight size={22} />
           </button>
+
+          {/* 快速选择年月下拉面板（跟随中间时间区域自然展开） */}
+          {showTimePicker && (
+            <>
+              {/* 透明遮罩：点击外部关闭 */}
+              <div className="fixed inset-0 z-40" onClick={() => setShowTimePicker(false)} />
+              <div
+                className={`absolute left-1/2 -translate-x-1/2 top-full mt-2 z-50 w-72 max-w-[86%] rounded-3xl p-4 origin-top shadow-soft-lg animate-drop-down bg-surface`}
+                onClick={e => e.stopPropagation()}
+              >
+                {/* 年份 + 月份 同一行（与全站 rounded-3xl / bg-surface 风格统一） */}
+                <div className="flex items-center">
+                  {/* 年份：标签 + 数字(长按连发) + 箭头(点击单步) */}
+                  <div className="flex flex-1 items-center justify-center gap-2">
+                    <span className="text-sm font-medium text-ink-2">年份</span>
+                    <button
+                      disabled={false}
+                      onMouseDown={() => startLongStep(() => stepYear(1))}
+                      onMouseUp={stopLongStep}
+                      onMouseLeave={stopLongStep}
+                      onTouchStart={(e) => { e.preventDefault(); startLongStep(() => stepYear(1)) }}
+                      onTouchEnd={stopLongStep}
+                      className="text-lg font-semibold font-mono tabular-nums text-ink w-14 text-center cursor-pointer select-none active:bg-brand-tint rounded-lg"
+                    >
+                      {selectedYear}
+                    </button>
+                    <div className="flex flex-col">
+                      <button
+                        onClick={() => stepYear(1)}
+                        disabled={selectedYear >= currentYear}
+                        className={`p-1 leading-none rounded-full ${selectedYear >= currentYear ? 'opacity-30 cursor-not-allowed' : 'hover:bg-brand-tint text-ink-2 active:bg-brand-tint'}`}
+                      >
+                        <ChevronUp size={16} />
+                      </button>
+                      <button
+                        onClick={() => stepYear(-1)}
+                        disabled={selectedYear <= 2015}
+                        className={`p-1 leading-none rounded-full ${selectedYear <= 2015 ? 'opacity-30 cursor-not-allowed' : 'hover:bg-brand-tint text-ink-2 active:bg-brand-tint'}`}
+                      >
+                        <ChevronDown size={16} />
+                      </button>
+                    </div>
+                  </div>
+                  {/* 分隔线 */}
+                  {timeRange === 'month' && (
+                    <div className="h-7 w-px bg-brand-tint" />
+                  )}
+                  {/* 月份（仅按月视图）：标签 + 数字(长按连发) + 箭头(点击单步) */}
+                  {timeRange === 'month' && (
+                    <div className="flex flex-1 items-center justify-center gap-2">
+                      <span className="text-sm font-medium text-ink-2">月份</span>
+                      <button
+                        onMouseDown={() => startLongStep(() => stepMonth(1))}
+                        onMouseUp={stopLongStep}
+                        onMouseLeave={stopLongStep}
+                        onTouchStart={(e) => { e.preventDefault(); startLongStep(() => stepMonth(1)) }}
+                        onTouchEnd={stopLongStep}
+                        className="text-lg font-semibold font-mono tabular-nums text-ink w-10 text-center cursor-pointer select-none active:bg-brand-tint rounded-lg"
+                      >
+                        {selectedMonth}
+                      </button>
+                      <div className="flex flex-col">
+                        <button
+                          onClick={() => stepMonth(1)}
+                          className="p-1 leading-none rounded-full hover:bg-brand-tint text-ink-2 active:bg-brand-tint"
+                        >
+                          <ChevronUp size={16} />
+                        </button>
+                        <button
+                          onClick={() => stepMonth(-1)}
+                          className="p-1 leading-none rounded-full hover:bg-brand-tint text-ink-2 active:bg-brand-tint"
+                        >
+                          <ChevronDown size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Income/Expense Summary */}
@@ -598,68 +712,6 @@ export default function ReportsPage() {
           </Card>
         )}
       </main>
-
-      {/* 快速选择年月弹窗 */}
-      {showTimePicker && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={() => setShowTimePicker(false)}>
-          <div
-            className="w-full max-w-lg bg-[var(--bg-primary)] rounded-t-3xl animate-slide-up max-h-[60vh] flex flex-col"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-warm)]">
-              <button onClick={() => setShowTimePicker(false)} className="p-2 -ml-2">
-                <X size={20} className="text-[var(--text-secondary)]" />
-              </button>
-              <h2 className="text-lg font-semibold text-[var(--text-primary)]">
-                快速选择
-              </h2>
-              <div className="w-10" />
-            </div>
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {/* 年份选择 */}
-              <div>
-                <h3 className={`text-sm font-medium mb-2 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>选择年份</h3>
-                <div className="grid grid-cols-4 gap-2">
-                  {yearOptions.map(y => (
-                    <button
-                      key={y}
-                      onClick={() => quickSelectYear(y)}
-                      className={`py-2.5 rounded-lg text-sm font-medium transition-all ${
-                        selectedYear === y
-                          ? 'bg-brand text-white'
-                          : theme === 'dark' ? 'bg-surface text-ink hover:bg-surface' : 'bg-bg text-ink hover:bg-brand-tint'
-                      }`}
-                    >
-                      {y}年
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {/* 月份选择 */}
-              {timeRange === 'month' && (
-                <div>
-                  <h3 className={`text-sm font-medium mb-2 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>选择月份</h3>
-                  <div className="grid grid-cols-4 gap-2">
-                    {monthOptions.map(m => (
-                      <button
-                        key={m}
-                        onClick={() => quickSelectMonth(m)}
-                        className={`py-2.5 rounded-lg text-sm font-medium transition-all ${
-                          selectedMonth === m
-                            ? 'bg-brand text-white'
-                            : theme === 'dark' ? 'bg-surface text-ink hover:bg-surface' : 'bg-bg text-ink hover:bg-brand-tint'
-                        }`}
-                      >
-                        {m}月
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* 子分类分布下钻 */}
       {drillCategoryId && (
