@@ -4,6 +4,45 @@
 
 ---
 
+## 2026-07-17：同步引擎分页修复 + 报表页下拉刷新 + 历史数据全量同步
+
+### 一、同步引擎 id 游标分页修复（历史数据截断问题）
+
+#### 问题
+- 远程 transactions 表 3729 条，PostgREST 默认上限 1000 行/请求 → 本地只拉到 1000 条
+- 旧逻辑用 `updated_at` 做增量过滤，历史数据同时间戳 → 增量永远返回 0 条 → 剩余数据永久丢失
+- 报表页选早期年份看不到数据
+
+#### 修复
+- `pullTable` 废弃 `updated_at` 增量逻辑，统一走 `order=id.asc + id=gt.{lastId} + limit=1000` 游标分页
+- 循环直到返回行数 < 1000，每页 `bulkPut` 幂等合并
+- 首次同步和增量同步走同一逻辑，不再区分
+- 3729 条分 4 页（1000+1000+1000+729）完整拉取
+
+### 二、报表页下拉刷新 + 0-100% 顶部进度条
+
+#### 同步引擎改造
+- `pullTable` 新增前置 COUNT 请求（`Content-Range` header）获取远程总条数
+- `pullTable`/`pullAll` 新增 `onProgress` 回调（`{ percent, status }`）
+- `pullAll` 返回总拉取条数
+- 导出 `PullProgress` 类型
+
+#### 报表页实现
+- 下拉手势：`touchstart`/`touchend`，阈值 60px，仅报表页生效
+- 进度条：3px `bg-brand` 品牌色，header 下方 sticky，`opacity` 淡入淡出
+- 进度计算：`(fetchedCount / totalCount) * 100`，每表拉完后更新
+- 同步完成：100% 停留 0.5s 淡出 → Toast `✅ 共同步 X 条` → `refreshData()` 刷新报表
+- 同步失败：进度条消失 → Toast `❌ 数据加载失败`
+
+### 三、提交流水
+
+| commit | 内容 |
+|---|---|
+| `63e4348` | pullTable 改为 id 游标分页全量拉取 |
+| `e29b0da` | 报表页下拉刷新 + 0-100% 进度条 + COUNT 进度
+
+---
+
 ## 2026-07-16：财富多币种架构 V1-V3 + 资产页重构 + 大改动失误复盘
 
 ### 一、财富持仓多币种架构（V1-V3）
