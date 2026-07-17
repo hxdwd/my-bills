@@ -195,9 +195,18 @@ export function WealthImport() {
     setParsed(true)
     setSaveMsg(null)
 
+    // 去重缓存：相同 symbol 只查一次行情，避免批量同名资产反复调 API
+    const resolveCache = new Map<string, Awaited<ReturnType<typeof resolveRow>>>()
+    const getCacheKey = (raw: ParsedHolding) => `${raw.market}:${raw.symbol || raw.name}`
+
     const settled = await Promise.all(
       base.map(async r => {
-        const res = await resolveRow(r.raw)
+        const key = getCacheKey(r.raw)
+        let res = resolveCache.get(key)
+        if (!res) {
+          res = await resolveRow(r.raw)
+          resolveCache.set(key, res)
+        }
         return {
           ...r,
           matched: res.matched,
