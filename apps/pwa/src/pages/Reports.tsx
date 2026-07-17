@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useTheme } from '../context/ThemeContext'
 import { useApp } from '../context/AppContext'
 import Card from '../components/ui/Card'
@@ -23,6 +23,7 @@ import {
 import { formatCurrency } from '../utils/format'
 import { syncEngine } from '../db/sync-engine'
 import type { PullProgress } from '../db/sync-engine'
+import { usePullToRefresh } from '../hooks/usePullToRefresh'
 
 ChartJS.register(
   CategoryScale,
@@ -48,98 +49,48 @@ export default function ReportsPage() {
   const [timeRange, setTimeRange] = useState<TimeRange>('month')
 
   // 下拉同步
-  const [syncing, setSyncing] = useState(false)
-  const [syncProgress, setSyncProgress] = useState(0)
-  const [syncVisible, setSyncVisible] = useState(false)
-  const [syncToast, setSyncToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
+  const [syncToast, setSyncToast] = useState<{ msg: string; type: 'success' | 'error' | 'info' } | null>(null)
   const mainRef = useRef<HTMLDivElement>(null)
-  const [pullDistance, setPullDistance] = useState(0) // 手指下拉位移 (px)
-  const pullStartY = useRef(0)
-  const pullThreshold = 60
-  const MAX_PULL = 120
 
-  const handlePullSync = useCallback(async () => {
-    if (syncing) return
-    setSyncing(true)
-    setSyncProgress(0)
-    setSyncVisible(true)
-
-    try {
+  const {
+    pullDistance,
+    syncing,
+    progress: syncProgress,
+    isPulling,
+    reportProgress,
+  } = usePullToRefresh(mainRef, {
+    threshold: 60,
+    maxPull: 120,
+    minInterval: 5000,
+    onRefresh: async () => {
       const uid = (await import('../stores/useAuthStore')).useAuthStore.getState().user?.id
       if (!uid) throw new Error('未登录')
 
-      const totalPulled = await syncEngine.pullAll(uid, (p: PullProgress) => {
-        if (p.status === 'error') {
-          setSyncProgress(0)
-          setSyncVisible(false)
-          setSyncToast({ msg: '数据加载失败，请检查网络', type: 'error' })
-          return
+      try {
+        const totalPulled = await syncEngine.pullAll(uid, (p: PullProgress) => {
+          if (p.status === 'error') {
+            reportProgress(0)
+            setSyncToast({ msg: '❌ 数据加载失败，请检查网络', type: 'error' })
+            return
+          }
+          reportProgress(p.percent)
+        })
+
+        // 刷新报表数据
+        if (refreshData) await refreshData()
+
+        // 只有拉取到新数据时才弹 Toast，0 条不弹
+        if (totalPulled > 0) {
+          setSyncToast({ msg: `✅ 数据已更新，共同步 ${totalPulled} 条记录`, type: 'success' })
         }
-        setSyncProgress(p.percent)
-      })
 
-      // 进度条 100% 停留 0.5s 后淡出 + 回弹
-      await new Promise(r => setTimeout(r, 500))
-      setPullDistance(0)
-      setSyncVisible(false)
-      setSyncing(false)
-      setSyncToast({ msg: `✅ 数据已更新，共同步 ${totalPulled} 条记录`, type: 'success' })
-
-      // 刷新报表数据
-      if (refreshData) await refreshData()
-    } catch {
-      setPullDistance(0)
-      setSyncVisible(false)
-      setSyncing(false)
-      setSyncToast({ msg: '❌ 数据加载失败，请检查网络', type: 'error' })
-    }
-  }, [syncing, refreshData])
-
-  // 下拉手势监听（touchmove 跟随 + touchend 回弹/触发）
-  useEffect(() => {
-    const el = mainRef.current
-    if (!el) return
-
-    const onTouchStart = (e: TouchEvent) => {
-      if (el.scrollTop <= 0 && !syncing) {
-        pullStartY.current = e.touches[0].clientY
+        return totalPulled
+      } catch {
+        setSyncToast({ msg: '❌ 数据加载失败，请检查网络', type: 'error' })
+        throw new Error('同步失败')
       }
-    }
-
-    const onTouchMove = (e: TouchEvent) => {
-      if (syncing) return
-      const dy = e.touches[0].clientY - pullStartY.current
-      if (dy > 0 && el.scrollTop <= 0) {
-        // 阻尼曲线：越拉越重，最大 MAX_PULL
-        const damped = Math.min(dy * 0.5, MAX_PULL)
-        setPullDistance(damped)
-      }
-    }
-
-    const onTouchEnd = (e: TouchEvent) => {
-      if (syncing) return
-      const dy = e.changedTouches[0].clientY - pullStartY.current
-      if (dy > 0 && el.scrollTop <= 0) {
-        if (dy > pullThreshold) {
-          // 触发同步：保持拉下位置展示进度条
-          setPullDistance(MAX_PULL * 0.5) // 缩到一半高度展示进度条
-          handlePullSync()
-        } else {
-          // 未达阈值：回弹
-          setPullDistance(0)
-        }
-      }
-    }
-
-    el.addEventListener('touchstart', onTouchStart, { passive: true })
-    el.addEventListener('touchmove', onTouchMove, { passive: true })
-    el.addEventListener('touchend', onTouchEnd, { passive: true })
-    return () => {
-      el.removeEventListener('touchstart', onTouchStart)
-      el.removeEventListener('touchmove', onTouchMove)
-      el.removeEventListener('touchend', onTouchEnd)
-    }
-  }, [handlePullSync, syncing])
+    },
+  })
   
   // 当前选择的年月
   const now = new Date()
@@ -435,16 +386,8 @@ export default function ReportsPage() {
           transition: pullDistance === 0 && !syncing ? 'transform 0.3s ease-out' : 'none',
         }}
       >
-        {/* 同步进度条（跟随下拉位移，在 main 内部顶部） */}
-        {pullDistance > 0 && (
-          <div className={`transition-opacity duration-200 ${syncVisible ? 'opacity-100' : 'opacity-70'}`}>
-            <div
-              className="h-[3px] bg-brand rounded-full transition-all duration-300 ease-out"
-              style={{ width: `${syncProgress}%` }}
-            />
-          </div>
-        )}
-        {pullDistance === 0 && syncVisible && (
+        {/* 同步进度条（isPulling 统一控制可见性） */}
+        {isPulling && (
           <div className="transition-opacity duration-200 opacity-100">
             <div
               className="h-[3px] bg-brand rounded-full transition-all duration-300 ease-out"
