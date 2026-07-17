@@ -89,7 +89,9 @@ async function resolveRow(raw: ParsedHolding): Promise<{
     return { matched: null, quantity: '', price: '', curPrice: null, error: '未解析到市值，请手动填写' }
   }
   try {
-    const nameCandidates = buildNameCandidates(raw.name)
+    // 搜索优先级：symbol（代码精确匹配）> name（名称模糊搜索）
+    const searchQuery = raw.symbol || raw.name
+    const nameCandidates = buildNameCandidates(searchQuery)
     let found: QuoteSearchResult[] = []
     let best: QuoteSearchResult | null = null
     for (const q of nameCandidates) {
@@ -164,6 +166,7 @@ export function WealthImport() {
         name: item.name || '',
         market: item.market === 'A股' ? 'CN' : item.market || 'CN',
         marketLabel: item.market,
+        symbol: item.symbol || null,
         marketValue: item.market_value ?? 0,
         holdProfit: item.profit_loss ?? null,
         costPrice: item.cost_price ?? null,
@@ -177,7 +180,7 @@ export function WealthImport() {
         raw,
         matched: null as QuoteSearchResult | null,
         name: raw.name,
-        symbol: raw.name,
+        symbol: item.symbol || raw.name,
         market: raw.market as ImportRow['market'],
         quantity: '',
         price: '',

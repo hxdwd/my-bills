@@ -9,6 +9,8 @@ interface ImportScreenshotRequest {
 interface HoldingItem {
   name: string
   market: string
+  /** 证券代码/交易代码，优先用 symbol 搜索；没有则为 null */
+  symbol?: string | null
   quantity: number
   cost_price: number
   current_price: number
@@ -98,7 +100,8 @@ async function callDeepSeek(text: string, env: any): Promise<HoldingItem[]> {
 
 **字段**：
 - name: 名称
-- market: 'A股'|'FUND'|'HK'|'US'|'GOLD'。股票代码6位且60/68/00/30开头→A股；5位→HK；含字母→US；基金名称含"混合/债券/指数/ETF联接"→FUND
+- market: 'CN'|'FUND'|'HK'|'US'|'GOLD'。股票代码6位且60/68/00/30开头→CN；5位→HK；含字母→US；基金名称含"混合/债券/指数/ETF联接"→FUND
+- symbol: 证券代码/交易代码。股票类资产优先提取简短的交易代码（如美股 AAPL，港股 00700，A股 600519）。如果文本中没有代码，设为 null。
 - quantity: 持仓份额。原文有"股"或"份"或"克"且带数量就填；无则填0
 - cost_price: 成本价。原文有"成本"或"均价"相关数字就填；无则填0
 - current_price: 现价/净值。原文有就填；无则填0
@@ -183,21 +186,11 @@ export const onRequestPost = async (context: any) => {
     }
 
     const _ai0 = Date.now()
-    const rawItems = await callDeepSeek(text, env)
-    console.log(`[import-screenshot] AI OK ${Date.now() - _ai0}ms items=${rawItems.length}`)
-
-    // 日期兜底：AI 返回 null 或非法格式 → 替换为当日日期
-    const now = new Date()
-    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-    const items = rawItems.map(item => {
-      if (!item.date || !/^\d{4}-\d{2}-\d{2}$/.test(item.date)) {
-        item.date = today
-      }
-      return item
-    })
+    const items = await callDeepSeek(text, env)
+    console.log(`[import-screenshot] AI OK ${Date.now() - _ai0}ms items=${items.length}`)
 
     items.forEach((item, i) => {
-      console.log(`[import-screenshot]   [${i}] ${item.name} | market=${item.market} qty=${item.quantity} cost=${item.cost_price} cur=${item.current_price} mv=${item.market_value} pl=${item.profit_loss} rate=${item.profit_rate} date=${item.date}`)
+      console.log(`[import-screenshot]   [${i}] ${item.name} | symbol=${item.symbol ?? '-'} market=${item.market} qty=${item.quantity} cost=${item.cost_price} cur=${item.current_price} mv=${item.market_value} pl=${item.profit_loss} rate=${item.profit_rate} date=${item.date ?? '-'}`)
     })
 
     console.log(`[import-screenshot] TOTAL ${Date.now() - _t0}ms`)

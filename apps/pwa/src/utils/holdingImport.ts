@@ -28,6 +28,8 @@ export interface ParsedHolding {
   name: string
   market: Market
   marketLabel: string
+  /** 证券代码/交易代码，优先用 symbol 搜索；没有则为 null */
+  symbol?: string | null
   marketValue: number | null   // 持有金额（市值）——反推模式必需
   holdProfit: number | null    // 持有收益（反推模式用）——解析不到为 null
   quantity: number | null      // 数量（股/份/手）——精确模式用
