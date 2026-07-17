@@ -35,6 +35,8 @@ export interface ParsedHolding {
   currentPrice: number | null  // 现价/最新价——精确模式优先用（校验/反推现价）
   // 来源标记：true=文本已给精确值（不查行情），false=需反推
   precise: boolean
+  /** 交易日期 YYYY-MM-DD，后端已兜底为当日 */
+  date?: string
 }
 
 // 类型关键词（用于市场推断 + 类型行判定）

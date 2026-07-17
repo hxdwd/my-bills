@@ -166,11 +166,11 @@ export function WealthImport() {
         marketLabel: item.market,
         marketValue: item.market_value ?? 0,
         holdProfit: item.profit_loss ?? null,
-        profitRate: item.profit_rate ?? null,
         costPrice: item.cost_price ?? null,
         currentPrice: item.current_price ?? null,
         quantity: item.quantity ?? null,
         precise: (item.quantity > 0 && item.cost_price > 0),
+        date: item.date || undefined,
       }
       return {
         id: `${Date.now()}-${i}`,
@@ -182,7 +182,7 @@ export function WealthImport() {
         quantity: '',
         price: '',
         curPrice: null,
-        date: new Date().toISOString().slice(0, 10),
+        date: item.date || new Date().toISOString().slice(0, 10),
         resolving: true,
         resolveError: null,
         drop: false,

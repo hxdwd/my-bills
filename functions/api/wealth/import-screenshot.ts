@@ -15,6 +15,8 @@ interface HoldingItem {
   market_value: number
   profit_loss: number
   profit_rate: number
+  /** 交易日期 YYYY-MM-DD，原文有就提取，没有则为 null */
+  date?: string | null
 }
 
 // 百度 OCR：获取 access_token（缓存 30 天）
@@ -92,6 +94,7 @@ async function callDeepSeek(text: string, env: any): Promise<HoldingItem[]> {
 1. 只输出纯JSON数组，无Markdown、无解释。
 2. 所有数字字段为Number，不带单位。
 3. 只从原文提取，绝不编造。原文没有的字段填0。
+4. **严禁合并同名记录**：如果原文中出现多次相同的资产名称，必须输出对应数量的独立JSON对象，分别保留各自的数量、成本价等信息。
 
 **字段**：
 - name: 名称
@@ -102,6 +105,7 @@ async function callDeepSeek(text: string, env: any): Promise<HoldingItem[]> {
 - market_value: 总市值/持有金额（通常最大的数字）
 - profit_loss: 盈亏金额。正=盈利，负=亏损。原文带"+"就是盈利，带"-"或绿色就是亏损
 - profit_rate: 收益率。百分比÷100转小数（如51.71%→0.5171，-10.93%→-0.1093）
+- date: 交易日期。原文有明确日期(YYYY-MM-DD/YYYY年MM月DD日等)就提取为"YYYY-MM-DD"格式；无则填null。**绝对禁止编造日期**。
 
 **常见OCR布局识别**：
 - 支付宝/天天基金格式：名称 → 持有金额(市值) → 日收益 → 持有收益 → 累计收益/收益率
@@ -179,10 +183,21 @@ export const onRequestPost = async (context: any) => {
     }
 
     const _ai0 = Date.now()
-    const items = await callDeepSeek(text, env)
-    console.log(`[import-screenshot] AI OK ${Date.now() - _ai0}ms items=${items.length}`)
+    const rawItems = await callDeepSeek(text, env)
+    console.log(`[import-screenshot] AI OK ${Date.now() - _ai0}ms items=${rawItems.length}`)
+
+    // 日期兜底：AI 返回 null 或非法格式 → 替换为当日日期
+    const now = new Date()
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    const items = rawItems.map(item => {
+      if (!item.date || !/^\d{4}-\d{2}-\d{2}$/.test(item.date)) {
+        item.date = today
+      }
+      return item
+    })
+
     items.forEach((item, i) => {
-      console.log(`[import-screenshot]   [${i}] ${item.name} | market=${item.market} qty=${item.quantity} cost=${item.cost_price} cur=${item.current_price} mv=${item.market_value} pl=${item.profit_loss} rate=${item.profit_rate}`)
+      console.log(`[import-screenshot]   [${i}] ${item.name} | market=${item.market} qty=${item.quantity} cost=${item.cost_price} cur=${item.current_price} mv=${item.market_value} pl=${item.profit_loss} rate=${item.profit_rate} date=${item.date}`)
     })
 
     console.log(`[import-screenshot] TOTAL ${Date.now() - _t0}ms`)
