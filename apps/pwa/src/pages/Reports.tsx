@@ -53,8 +53,10 @@ export default function ReportsPage() {
   const [syncVisible, setSyncVisible] = useState(false)
   const [syncToast, setSyncToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
   const mainRef = useRef<HTMLDivElement>(null)
+  const [pullDistance, setPullDistance] = useState(0) // 手指下拉位移 (px)
   const pullStartY = useRef(0)
   const pullThreshold = 60
+  const MAX_PULL = 120
 
   const handlePullSync = useCallback(async () => {
     if (syncing) return
@@ -76,8 +78,9 @@ export default function ReportsPage() {
         setSyncProgress(p.percent)
       })
 
-      // 进度条 100% 停留 0.5s 后淡出
+      // 进度条 100% 停留 0.5s 后淡出 + 回弹
       await new Promise(r => setTimeout(r, 500))
+      setPullDistance(0)
       setSyncVisible(false)
       setSyncing(false)
       setSyncToast({ msg: `✅ 数据已更新，共同步 ${totalPulled} 条记录`, type: 'success' })
@@ -85,36 +88,55 @@ export default function ReportsPage() {
       // 刷新报表数据
       if (refreshData) await refreshData()
     } catch {
+      setPullDistance(0)
       setSyncVisible(false)
       setSyncing(false)
       setSyncToast({ msg: '❌ 数据加载失败，请检查网络', type: 'error' })
     }
   }, [syncing, refreshData])
 
-  // 下拉手势监听
+  // 下拉手势监听（touchmove 跟随 + touchend 回弹/触发）
   useEffect(() => {
     const el = mainRef.current
     if (!el) return
 
     const onTouchStart = (e: TouchEvent) => {
-      if (el.scrollTop <= 0) {
+      if (el.scrollTop <= 0 && !syncing) {
         pullStartY.current = e.touches[0].clientY
       }
     }
 
+    const onTouchMove = (e: TouchEvent) => {
+      if (syncing) return
+      const dy = e.touches[0].clientY - pullStartY.current
+      if (dy > 0 && el.scrollTop <= 0) {
+        // 阻尼曲线：越拉越重，最大 MAX_PULL
+        const damped = Math.min(dy * 0.5, MAX_PULL)
+        setPullDistance(damped)
+      }
+    }
+
     const onTouchEnd = (e: TouchEvent) => {
-      if (el.scrollTop <= 0) {
-        const dy = e.changedTouches[0].clientY - pullStartY.current
-        if (dy > pullThreshold && !syncing) {
+      if (syncing) return
+      const dy = e.changedTouches[0].clientY - pullStartY.current
+      if (dy > 0 && el.scrollTop <= 0) {
+        if (dy > pullThreshold) {
+          // 触发同步：保持拉下位置展示进度条
+          setPullDistance(MAX_PULL * 0.5) // 缩到一半高度展示进度条
           handlePullSync()
+        } else {
+          // 未达阈值：回弹
+          setPullDistance(0)
         }
       }
     }
 
     el.addEventListener('touchstart', onTouchStart, { passive: true })
+    el.addEventListener('touchmove', onTouchMove, { passive: true })
     el.addEventListener('touchend', onTouchEnd, { passive: true })
     return () => {
       el.removeEventListener('touchstart', onTouchStart)
+      el.removeEventListener('touchmove', onTouchMove)
       el.removeEventListener('touchend', onTouchEnd)
     }
   }, [handlePullSync, syncing])
@@ -403,15 +425,33 @@ export default function ReportsPage() {
         </h1>
       </header>
 
-      {/* 同步进度条（3px，品牌色，淡入淡出） */}
-      <div className={`sticky top-[52px] z-50 transition-opacity duration-300 ${syncVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
-        <div
-          className="h-[3px] bg-brand rounded-full transition-all duration-300 ease-out"
-          style={{ width: `${syncProgress}%` }}
-        />
-      </div>
-
-      <main ref={mainRef} className="px-5 tabbar-safe space-y-4 animate-page-fade" style={{ overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+      <main
+        ref={mainRef}
+        className="px-5 tabbar-safe space-y-4 animate-page-fade"
+        style={{
+          overflowY: 'auto',
+          WebkitOverflowScrolling: 'touch',
+          transform: pullDistance > 0 ? `translateY(${pullDistance}px)` : 'translateY(0px)',
+          transition: pullDistance === 0 && !syncing ? 'transform 0.3s ease-out' : 'none',
+        }}
+      >
+        {/* 同步进度条（跟随下拉位移，在 main 内部顶部） */}
+        {pullDistance > 0 && (
+          <div className={`transition-opacity duration-200 ${syncVisible ? 'opacity-100' : 'opacity-70'}`}>
+            <div
+              className="h-[3px] bg-brand rounded-full transition-all duration-300 ease-out"
+              style={{ width: `${syncProgress}%` }}
+            />
+          </div>
+        )}
+        {pullDistance === 0 && syncVisible && (
+          <div className="transition-opacity duration-200 opacity-100">
+            <div
+              className="h-[3px] bg-brand rounded-full transition-all duration-300 ease-out"
+              style={{ width: `${syncProgress}%` }}
+            />
+          </div>
+        )}
         {/* Time Range Tabs */}
         <div className={`flex p-1 rounded-xl ${theme === 'dark' ? 'bg-surface' : 'bg-brand-tint'}`}>
           {(['month', 'year'] as TimeRange[]).map((range) => (
