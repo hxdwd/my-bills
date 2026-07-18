@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 
+export type SyncPhase = 'idle' | 'pulling' | 'release' | 'syncing' | 'done' | 'error'
+
 interface UsePullToRefreshOptions {
   onRefresh: () => Promise<number>
   threshold?: number
@@ -11,7 +13,7 @@ interface PullState {
   pullDistance: number
   syncing: boolean
   progress: number
-  progressVisible: boolean
+  phase: SyncPhase
 }
 
 export function usePullToRefresh(
@@ -24,15 +26,19 @@ export function usePullToRefresh(
     pullDistance: 0,
     syncing: false,
     progress: 0,
-    progressVisible: false,
+    phase: 'idle',
   })
 
   const pullStartY = useRef(0)
   const lastSyncTime = useRef(0)
 
   const setPullDistance = useCallback((d: number) => {
-    setState(prev => ({ ...prev, pullDistance: d }))
-  }, [])
+    setState(prev => ({
+      ...prev,
+      pullDistance: d,
+      phase: d >= threshold ? 'release' : d > 0 ? 'pulling' : 'idle',
+    }))
+  }, [threshold])
 
   const reportProgress = useCallback((percent: number) => {
     setState(prev => ({ ...prev, progress: percent }))
@@ -45,29 +51,46 @@ export function usePullToRefresh(
     }
     lastSyncTime.current = Date.now()
 
-    setState(prev => ({ ...prev, syncing: true, progress: 0, progressVisible: true }))
+    // 松手后保持半展位置，进度从 50 开始
+    setState(prev => ({
+      ...prev,
+      syncing: true,
+      progress: 50,
+      phase: 'syncing',
+      pullDistance: maxPull * 0.5,
+    }))
 
     try {
-      await onRefresh()
-      setState(prev => ({ ...prev, progress: 100 }))
-      await new Promise(r => setTimeout(r, 500))
+      const totalPulled = await onRefresh()
+
+      // 100% 停留 300ms
+      setState(prev => ({ ...prev, progress: 100, phase: 'done' }))
+      await new Promise(r => setTimeout(r, 300))
+
+      // 回弹
       setState(prev => ({
         ...prev,
         pullDistance: 0,
         syncing: false,
-        progressVisible: false,
         progress: 0,
+        phase: 'idle',
       }))
+
+      return totalPulled
     } catch {
+      // 失败：进度条变红，保持可见
+      setState(prev => ({ ...prev, phase: 'error' }))
+      await new Promise(r => setTimeout(r, 1500))
       setState(prev => ({
         ...prev,
         pullDistance: 0,
         syncing: false,
-        progressVisible: false,
         progress: 0,
+        phase: 'idle',
       }))
+      throw new Error('同步失败')
     }
-  }, [onRefresh, minInterval, setPullDistance])
+  }, [onRefresh, minInterval, maxPull, setPullDistance])
 
   useEffect(() => {
     const el = containerRef.current
@@ -94,7 +117,6 @@ export function usePullToRefresh(
       const dy = e.changedTouches[0].clientY - pullStartY.current
       if (dy > 0 && el.scrollTop <= 0) {
         if (dy > threshold) {
-          setPullDistance(maxPull * 0.5)
           handleSync()
         } else {
           setPullDistance(0)
@@ -116,8 +138,8 @@ export function usePullToRefresh(
     pullDistance: state.pullDistance,
     syncing: state.syncing,
     progress: state.progress,
-    progressVisible: state.progressVisible,
-    isPulling: state.pullDistance > 0 || state.progressVisible,
+    phase: state.phase,
+    isActive: state.pullDistance > 0 || state.syncing,
     reportProgress,
   }
 }

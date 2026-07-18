@@ -4,7 +4,8 @@ import { useApp } from '../context/AppContext'
 import Card from '../components/ui/Card'
 import CategoryDistributionSheet from '../components/CategoryDistributionSheet'
 import CategoryDetailSheet from '../components/CategoryDetailSheet'
-import Toast from '../components/ui/Toast'
+import { SyncIndicator } from '../components/ui/SyncIndicator'
+import { SyncToast, SyncToastData } from '../components/ui/SyncToast'
 import { DonutChart } from '../components/charts/DonutChart'
 import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown } from 'lucide-react'
 import { Bar, Line } from 'react-chartjs-2'
@@ -49,14 +50,15 @@ export default function ReportsPage() {
   const [timeRange, setTimeRange] = useState<TimeRange>('month')
 
   // 下拉同步
-  const [syncToast, setSyncToast] = useState<{ msg: string; type: 'success' | 'error' | 'info' } | null>(null)
+  const [syncToast, setSyncToast] = useState<SyncToastData | null>(null)
   const mainRef = useRef<HTMLDivElement>(null)
 
   const {
     pullDistance,
     syncing,
     progress: syncProgress,
-    isPulling,
+    phase: syncPhase,
+    isActive,
     reportProgress,
   } = usePullToRefresh(mainRef, {
     threshold: 60,
@@ -66,31 +68,38 @@ export default function ReportsPage() {
       const uid = (await import('../stores/useAuthStore')).useAuthStore.getState().user?.id
       if (!uid) throw new Error('未登录')
 
-      try {
-        const totalPulled = await syncEngine.pullAll(uid, (p: PullProgress) => {
-          if (p.status === 'error') {
-            reportProgress(0)
-            setSyncToast({ msg: '❌ 数据加载失败，请检查网络', type: 'error' })
-            return
-          }
-          reportProgress(p.percent)
-        })
+      const totalPulled = await syncEngine.pullAll(uid, (p: PullProgress) => {
+        if (p.status === 'error') return
+        reportProgress(p.percent)
+      })
 
-        // 刷新报表数据
-        if (refreshData) await refreshData()
+      // 刷新报表数据
+      if (refreshData) await refreshData()
 
-        // 只有拉取到新数据时才弹 Toast，0 条不弹
-        if (totalPulled > 0) {
-          setSyncToast({ msg: `✅ 数据已更新，共同步 ${totalPulled} 条记录`, type: 'success' })
-        }
-
-        return totalPulled
-      } catch {
-        setSyncToast({ msg: '❌ 数据加载失败，请检查网络', type: 'error' })
-        throw new Error('同步失败')
+      // 进度条动画完成后才显示 Toast
+      if (totalPulled > 0) {
+        setSyncToast({ message: `已同步 ${totalPulled} 条记录`, type: 'success' })
+      } else {
+        setSyncToast({ message: '已是最新数据', type: 'info' })
       }
+
+      return totalPulled
     },
   })
+
+  // 同步失败处理（在 usePullToRefresh catch 后设置 Toast）
+  useEffect(() => {
+    if (syncPhase === 'error') {
+      setSyncToast({ message: '同步失败，请检查网络', type: 'error' })
+    }
+  }, [syncPhase])
+
+  // Toast 自动消失（成功/信息 2.5s，失败不自动消失）
+  useEffect(() => {
+    if (!syncToast || syncToast.type === 'error') return
+    const t = setTimeout(() => setSyncToast(null), 2500)
+    return () => clearTimeout(t)
+  }, [syncToast])
   
   // 当前选择的年月
   const now = new Date()
@@ -388,15 +397,12 @@ export default function ReportsPage() {
           transition: pullDistance === 0 && !syncing ? 'transform 0.3s ease-out' : 'none',
         }}
       >
-        {/* 同步进度条（isPulling 统一控制可见性） */}
-        {isPulling && (
-          <div className="transition-opacity duration-200 opacity-100">
-            <div
-              className="h-[3px] bg-brand rounded-full transition-all duration-300 ease-out"
-              style={{ width: `${syncProgress}%` }}
-            />
-          </div>
-        )}
+        {/* 同步进度指示器 */}
+        <SyncIndicator
+          progress={syncProgress}
+          phase={syncPhase}
+          visible={isActive}
+        />
         {/* Time Range Tabs */}
         <div className={`flex p-1 rounded-xl ${theme === 'dark' ? 'bg-surface' : 'bg-brand-tint'}`}>
           {(['month', 'year'] as TimeRange[]).map((range) => (
@@ -811,11 +817,29 @@ export default function ReportsPage() {
       )}
 
       {/* 同步反馈 Toast */}
-      <Toast
-        message={syncToast?.msg || ''}
-        type={syncToast?.type || 'success'}
-        visible={!!syncToast}
+      <SyncToast
+        toast={syncToast}
         onClose={() => setSyncToast(null)}
+        onRetry={() => {
+          setSyncToast(null)
+          setSyncToast({ message: '正在同步数据...', type: 'info' })
+          ;(async () => {
+            const u = (await import('../stores/useAuthStore')).useAuthStore.getState().user?.id
+            if (!u) return
+            try {
+              const totalPulled = await syncEngine.pullAll(u, (p: PullProgress) => {
+                if (p.status === 'error') return
+                reportProgress(p.percent)
+              })
+              if (refreshData) await refreshData()
+              setSyncToast(totalPulled > 0
+                ? { message: `已同步 ${totalPulled} 条记录`, type: 'success' }
+                : { message: '已是最新数据', type: 'info' })
+            } catch {
+              setSyncToast({ message: '同步失败，请检查网络', type: 'error' })
+            }
+          })()
+        }}
       />
     </div>
   )
