@@ -296,29 +296,37 @@ export default function TransactionDetailSheet({
                 )}
 
                 {/* 标签 */}
-                <div className="flex items-start justify-between gap-3 px-4 py-3">
-                  <span className="text-sm text-ink-2 shrink-0 pt-0.5">标签</span>
-                  {editMode ? (
-                    <div className="flex gap-1 flex-wrap justify-end">
-                      {txTags.map(tag => (
-                        <button
-                          key={tag.id}
-                          onClick={() => removeEditTag(tag.id)}
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs text-ink"
-                          style={{ backgroundColor: tag.color ? tag.color + '33' : '#FFF7E6' }}
-                        >
-                          {tag.name} <X size={11} />
-                        </button>
-                      ))}
+                <div className="px-4 py-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-ink-2">标签</span>
+                    {editMode && (
                       <button
                         onClick={() => setShowTagSelect(true)}
-                        className="inline-flex items-center px-2 py-0.5 rounded-full text-xs border border-dashed border-[#cfc9ba] text-ink-2"
+                        className="inline-flex items-center px-2 py-0.5 rounded-full text-xs border border-dashed border-[#cfc9ba] text-ink-2 shrink-0"
                       >
                         + 添加
                       </button>
-                    </div>
+                    )}
+                  </div>
+                  {editMode ? (
+                    txTags.length > 0 ? (
+                      <div className="flex gap-1 flex-wrap">
+                        {txTags.map(tag => (
+                          <button
+                            key={tag.id}
+                            onClick={() => removeEditTag(tag.id)}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs text-ink"
+                            style={{ backgroundColor: tag.color ? tag.color + '33' : '#FFF7E6' }}
+                          >
+                            {tag.name} <X size={11} />
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-ink-2">—</span>
+                    )
                   ) : txTags.length > 0 ? (
-                    <div className="flex gap-1 flex-wrap justify-end">
+                    <div className="flex gap-1 flex-wrap">
                       {txTags.map(tag => (
                         <span
                           key={tag.id}
@@ -330,7 +338,7 @@ export default function TransactionDetailSheet({
                       ))}
                     </div>
                   ) : (
-                    <span className="text-sm text-ink-2">—</span>
+                    <span className="text-xs text-ink-2">—</span>
                   )}
                 </div>
 
@@ -354,18 +362,18 @@ export default function TransactionDetailSheet({
                 <div className="flex items-center justify-between gap-3 px-4 py-3">
                   <span className="text-sm text-ink-2 shrink-0">日期</span>
                   {editMode ? (
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 min-w-0 flex-1 justify-end">
                       <input
                         type="date"
                         value={editDate}
                         onChange={e => setEditDate(e.target.value)}
-                        className="px-3 py-1.5 rounded-xl bg-brand-tint border border-[#e6e3da] text-sm text-ink outline-none"
+                        className="flex-1 min-w-0 px-2 py-1.5 rounded-xl bg-brand-tint border border-[#e6e3da] text-sm text-ink outline-none"
                       />
                       <input
                         type="time"
                         value={editTime}
                         onChange={e => setEditTime(e.target.value)}
-                        className="px-3 py-1.5 rounded-xl bg-brand-tint border border-[#e6e3da] text-sm text-ink outline-none"
+                        className="flex-1 min-w-0 px-2 py-1.5 rounded-xl bg-brand-tint border border-[#e6e3da] text-sm text-ink outline-none"
                       />
                     </div>
                   ) : (

@@ -126,6 +126,18 @@ export const localCategories = {
 // Transactions
 // ============================================================
 
+/**
+ * 安全解析 transaction_date 字符串为时间戳。
+ * 优先用 YYYY/MM/DD 构造（避免 UTC 偏移），
+ * 失败则降级为 0，保证 sort 不崩溃。
+ */
+function parseTransactionDate(dateStr: string): number {
+  if (!dateStr) return 0
+  // 用 / 替换 - 避免 new Date('YYYY-MM-DD') 按 UTC 解析
+  const ts = new Date(dateStr.replace(/-/g, '/')).getTime()
+  return isNaN(ts) ? 0 : ts
+}
+
 export const localTransactions = {
   /** 获取所有有效交易，按日期倒序 */
   async getAll(userId: string): Promise<TransactionRecord[]> {
@@ -134,11 +146,16 @@ export const localTransactions = {
       .filter(r => r._sync_status !== 'pending_delete')
       .toArray()
     // 按日期+时间倒序排序 (IndexedDB 不保证复合排序，用 JS sort)
+    // 使用 Date 对象比较而非字符串 localeCompare，防止 YYYY-MM-DD 跨年边界
+    // 或非标准日期格式导致的排序错乱
     records.sort((a, b) => {
-      const dateCmp = b.transaction_date.localeCompare(a.transaction_date)
+      const da = parseTransactionDate(a.transaction_date)
+      const db = parseTransactionDate(b.transaction_date)
+      const dateCmp = db - da
       if (dateCmp !== 0) return dateCmp
       return (b.transaction_time || '').localeCompare(a.transaction_time || '')
     })
+    return records
     return records
   },
 

@@ -170,6 +170,7 @@ function mapTransaction(
   subCategoryMap: Map<string, string>
 ): Transaction {
   // 使用本地时间解析 transaction_date (YYYY-MM-DD 格式)
+  const currentYear = new Date().getFullYear()
   let dateDisplay = '未知日期'
   if (record.transaction_date) {
     const parts = record.transaction_date.split('-')
@@ -178,7 +179,8 @@ function mapTransaction(
       const m = parseInt(parts[1], 10)
       const d = parseInt(parts[2], 10)
       if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
-        dateDisplay = `${m}月${d}日`
+        // 非今年显示完整年月日，今年只显示月日
+        dateDisplay = y !== currentYear ? `${y}年${m}月${d}日` : `${m}月${d}日`
       }
     }
   }

@@ -7,7 +7,8 @@ import CategoryDetailSheet from '../components/CategoryDetailSheet'
 import { SyncIndicator } from '../components/ui/SyncIndicator'
 import { SyncToast, SyncToastData } from '../components/ui/SyncToast'
 import { DonutChart } from '../components/charts/DonutChart'
-import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react'
+import WheelPicker from '../components/ui/WheelPicker'
 import { Bar, Line } from 'react-chartjs-2'
 import {
   Chart as ChartJS,
@@ -125,30 +126,6 @@ export default function ReportsPage() {
     return () => { if (longPressTimer.current) clearTimeout(longPressTimer.current) }
   }, [])
 
-  // 交互模型（明确分开，避免双发）：
-  //  - 箭头按钮：只做 onClick 单步 ±1，绝不参与长按。
-  //  - 年份/月份数字：长按才进入连续步进（大跨度快速修改）。
-  const repeatTimer = useRef<ReturnType<typeof setInterval> | null>(null)
-  const repeatDelay = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const startLongStep = (step: () => void) => {
-    step() // 立即触发一次
-    if (repeatTimer.current) clearInterval(repeatTimer.current)
-    if (repeatDelay.current) clearTimeout(repeatDelay.current)
-    repeatDelay.current = setTimeout(() => {
-      repeatTimer.current = setInterval(step, 110)
-    }, 450)
-  }
-  const stopLongStep = () => {
-    if (repeatTimer.current) { clearInterval(repeatTimer.current); repeatTimer.current = null }
-    if (repeatDelay.current) { clearTimeout(repeatDelay.current); repeatDelay.current = null }
-  }
-  useEffect(() => {
-    return () => {
-      if (repeatTimer.current) clearInterval(repeatTimer.current)
-      if (repeatDelay.current) clearTimeout(repeatDelay.current)
-    }
-  }, [])
-
   const [drillCategoryId, setDrillCategoryId] = useState<string | null>(null)
   const [distExpanded, setDistExpanded] = useState(false)
 
@@ -208,25 +185,6 @@ export default function ReportsPage() {
     } else {
       setSelectedYear(selectedYear + 1)
     }
-  }
-
-  // 步进调整：年份/月份上下箭头切换，保持面板打开
-  const yearStart = 2015
-  const stepYear = (delta: number) => {
-    setSelectedYear(y => {
-      const next = y + delta
-      if (next > currentYear) return currentYear
-      if (next < yearStart) return yearStart
-      return next
-    })
-  }
-  const stepMonth = (delta: number) => {
-    setSelectedMonth(m => {
-      let next = m + delta
-      if (next > 12) next = 1
-      if (next < 1) next = 12
-      return next
-    })
   }
 
   // 获取当前选择时间范围的数据
@@ -375,8 +333,11 @@ export default function ReportsPage() {
     : selectedYear === now.getFullYear()
 
   // 快速选择面板里的年份和月份列表
-  // 年份上限为当前年（不显示未来），下限 2015 起可一直往前滚；月份 1-12
+  // 年份上限为当前年（不显示未来），下限 2015 起
   const currentYear = now.getFullYear()
+  const yearStart = 2015
+  const years = useMemo(() => Array.from({ length: currentYear - yearStart + 1 }, (_, i) => yearStart + i), [currentYear])
+  const months = useMemo(() => ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'], [])
 
   return (
     <div className={`min-h-screen bg-bg`}>
@@ -411,7 +372,7 @@ export default function ReportsPage() {
               onClick={() => setTimeRange(range)}
               className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all
                 ${timeRange === range
-                  ? 'bg-brand text-white'
+                  ? 'bg-white border border-gray-200 text-ink'
                   : theme === 'dark' ? 'text-ink-2' : 'text-ink-2'
                 }`}
             >
@@ -458,83 +419,49 @@ export default function ReportsPage() {
             <ChevronRight size={22} />
           </button>
 
-          {/* 快速选择年月下拉面板（跟随中间时间区域自然展开） */}
+          {/* iOS 风格滚轮选择器 */}
           {showTimePicker && (
             <>
               {/* 透明遮罩：点击外部关闭 */}
               <div className="fixed inset-0 z-40" onClick={() => setShowTimePicker(false)} />
               <div
-                className={`absolute left-1/2 -translate-x-1/2 top-full mt-2 z-50 w-72 max-w-[86%] rounded-3xl p-4 origin-top shadow-soft-lg animate-drop-down bg-surface`}
+                className="absolute left-1/2 -translate-x-1/2 top-full mt-1 z-50 rounded-3xl bg-white shadow-lg border border-gray-100 p-4 pb-5 animate-drop-down min-w-[140px] w-auto"
                 onClick={e => e.stopPropagation()}
               >
-                {/* 年份 + 月份 同一行（与全站 rounded-3xl / bg-surface 风格统一） */}
-                <div className="flex items-center">
-                  {/* 年份：标签 + 数字(长按连发) + 箭头(点击单步) */}
-                  <div className="flex flex-1 items-center justify-center gap-2">
-                    <span className="text-sm font-medium text-ink-2">年份</span>
-                    <button
-                      disabled={false}
-                      onMouseDown={() => startLongStep(() => stepYear(1))}
-                      onMouseUp={stopLongStep}
-                      onMouseLeave={stopLongStep}
-                      onTouchStart={(e) => { e.preventDefault(); startLongStep(() => stepYear(1)) }}
-                      onTouchEnd={stopLongStep}
-                      className="text-lg font-semibold font-mono tabular-nums text-ink w-14 text-center cursor-pointer select-none active:bg-brand-tint rounded-lg"
-                    >
-                      {selectedYear}
-                    </button>
-                    <div className="flex flex-col">
-                      <button
-                        onClick={() => stepYear(1)}
-                        disabled={selectedYear >= currentYear}
-                        className={`p-1 leading-none rounded-full ${selectedYear >= currentYear ? 'opacity-30 cursor-not-allowed' : 'hover:bg-brand-tint text-ink-2 active:bg-brand-tint'}`}
-                      >
-                        <ChevronUp size={16} />
-                      </button>
-                      <button
-                        onClick={() => stepYear(-1)}
-                        disabled={selectedYear <= 2015}
-                        className={`p-1 leading-none rounded-full ${selectedYear <= 2015 ? 'opacity-30 cursor-not-allowed' : 'hover:bg-brand-tint text-ink-2 active:bg-brand-tint'}`}
-                      >
-                        <ChevronDown size={16} />
-                      </button>
+                {timeRange === 'month' ? (
+                  <div className="flex gap-6 justify-center items-start">
+                    {/* 列 1：年份 */}
+                    <div className="flex flex-col items-center w-[80px]">
+                      <WheelPicker
+                        items={years}
+                        value={years.indexOf(selectedYear)}
+                        onChange={(i) => setSelectedYear(years[i])}
+                        itemHeight={32}
+                        visibleCount={5}
+                      />
+                    </div>
+                    {/* 列 2：月份 */}
+                    <div className="flex flex-col items-center w-[80px]">
+                      <WheelPicker
+                        items={months}
+                        value={selectedMonth - 1}
+                        onChange={(i) => setSelectedMonth(i + 1)}
+                        itemHeight={32}
+                        visibleCount={5}
+                      />
                     </div>
                   </div>
-                  {/* 分隔线 */}
-                  {timeRange === 'month' && (
-                    <div className="h-7 w-px bg-brand-tint" />
-                  )}
-                  {/* 月份（仅按月视图）：标签 + 数字(长按连发) + 箭头(点击单步) */}
-                  {timeRange === 'month' && (
-                    <div className="flex flex-1 items-center justify-center gap-2">
-                      <span className="text-sm font-medium text-ink-2">月份</span>
-                      <button
-                        onMouseDown={() => startLongStep(() => stepMonth(1))}
-                        onMouseUp={stopLongStep}
-                        onMouseLeave={stopLongStep}
-                        onTouchStart={(e) => { e.preventDefault(); startLongStep(() => stepMonth(1)) }}
-                        onTouchEnd={stopLongStep}
-                        className="text-lg font-semibold font-mono tabular-nums text-ink w-10 text-center cursor-pointer select-none active:bg-brand-tint rounded-lg"
-                      >
-                        {selectedMonth}
-                      </button>
-                      <div className="flex flex-col">
-                        <button
-                          onClick={() => stepMonth(1)}
-                          className="p-1 leading-none rounded-full hover:bg-brand-tint text-ink-2 active:bg-brand-tint"
-                        >
-                          <ChevronUp size={16} />
-                        </button>
-                        <button
-                          onClick={() => stepMonth(-1)}
-                          className="p-1 leading-none rounded-full hover:bg-brand-tint text-ink-2 active:bg-brand-tint"
-                        >
-                          <ChevronDown size={16} />
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                ) : (
+                  <div className="flex flex-col items-center w-[80px] mx-auto">
+                    <WheelPicker
+                      items={years}
+                      value={years.indexOf(selectedYear)}
+                      onChange={(i) => setSelectedYear(years[i])}
+                      itemHeight={32}
+                      visibleCount={5}
+                    />
+                  </div>
+                )}
               </div>
             </>
           )}
