@@ -90,6 +90,10 @@ export default function TransactionDetailSheet({
     setEditMode(true)
   }
 
+  // 当前类型对应的分类列表
+  const categoryListKey = editType === 'income' ? 'income' : 'expense'
+  const categoryList = categories[categoryListKey]
+
   const editSubcats = useMemo(
     () => subCategories.filter(s => s.categoryId === editCategoryId),
     [subCategories, editCategoryId]
@@ -212,7 +216,15 @@ export default function TransactionDetailSheet({
                   {([['expense', '支出'], ['income', '收入'], ['transfer', '转账']] as const).map(([val, label]) => (
                     <button
                       key={val}
-                      onClick={() => setEditType(val)}
+                      onClick={() => {
+                        setEditType(val)
+                        // 切换类型后，如果当前分类不在新类型中，重置为第一个
+                        const newList = val === 'income' ? categories.income : categories.expense
+                        if (!newList.find(c => c.id === editCategoryId)) {
+                          setEditCategoryId(newList[0]?.id || '')
+                          setEditSubcategoryId(undefined)
+                        }
+                      }}
                       className={`flex-1 py-2 rounded-full text-sm font-medium border transition-colors ${
                         editType === val
                           ? 'bg-brand text-ink border-brand-strong'
@@ -227,7 +239,7 @@ export default function TransactionDetailSheet({
 
               {/* 字段 */}
               <div className="rounded-2xl bg-surface shadow-soft divide-y divide-[#f0eee6] overflow-hidden">
-                {/* 分类 */}
+                {/* 分类（只显示当前类型对应的分类） */}
                 {editType !== 'transfer' && (
                   <div className="flex items-center justify-between gap-3 px-4 py-3">
                     <span className="text-sm text-ink-2 shrink-0">分类</span>
@@ -236,7 +248,7 @@ export default function TransactionDetailSheet({
                         onClick={() => setEditPicker('category')}
                         className="flex items-center gap-1 text-sm text-ink"
                       >
-                        {categories.expense.concat(categories.income).find(c => c.id === editCategoryId)?.icon} {categories.expense.concat(categories.income).find(c => c.id === editCategoryId)?.name}
+                        {categories[categoryListKey].find(c => c.id === editCategoryId)?.icon} {categories[categoryListKey].find(c => c.id === editCategoryId)?.name}
                         <span className="text-ink-2">›</span>
                       </button>
                     ) : (
@@ -245,23 +257,41 @@ export default function TransactionDetailSheet({
                   </div>
                 )}
 
-                {/* 子分类 */}
-                {editType !== 'transfer' && (
+                {/* 子分类（标签形式，单选/不选） */}
+                {editType !== 'transfer' && editMode && editSubcats.length > 0 && (
+                  <div className="px-4 py-3">
+                    <span className="text-sm text-ink-2 block mb-2">子分类</span>
+                    <div className="flex gap-1.5 flex-wrap">
+                      <button
+                        onClick={() => setEditSubcategoryId(undefined)}
+                        className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                          !editSubcategoryId
+                            ? 'bg-brand text-ink'
+                            : 'bg-surface text-ink-2 border border-[#e6e3da] hover:bg-brand-tint'
+                        }`}
+                      >
+                        无
+                      </button>
+                      {editSubcats.map(s => (
+                        <button
+                          key={s.id}
+                          onClick={() => setEditSubcategoryId(s.id)}
+                          className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                            editSubcategoryId === s.id
+                              ? 'bg-brand text-ink'
+                              : 'bg-surface text-ink-2 border border-[#e6e3da] hover:bg-brand-tint'
+                          }`}
+                        >
+                          {s.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {editType !== 'transfer' && !editMode && selectedTx.subcategoryName && (
                   <div className="flex items-center justify-between gap-3 px-4 py-3">
                     <span className="text-sm text-ink-2 shrink-0">子分类</span>
-                    {editMode ? (
-                      <button
-                        onClick={() => setEditPicker('subcategory')}
-                        className="flex items-center gap-1 text-sm text-ink"
-                      >
-                        {editSubcategoryId ? (subCategories.find(s => s.id === editSubcategoryId)?.name || '无') : '无'}
-                        <span className="text-ink-2">›</span>
-                      </button>
-                    ) : selectedTx.subcategoryName ? (
-                      <span className="text-sm text-ink">{selectedTx.subcategoryName}</span>
-                    ) : (
-                      <span className="text-sm text-ink-2">—</span>
-                    )}
+                    <span className="text-sm text-ink">{selectedTx.subcategoryName}</span>
                   </div>
                 )}
 
@@ -448,10 +478,10 @@ export default function TransactionDetailSheet({
       <BottomSheet
         isOpen={editPicker !== null}
         onClose={() => setEditPicker(null)}
-        title={editPicker === 'category' ? '选择分类' : editPicker === 'subcategory' ? '选择子分类' : '选择账户'}
+        title={editPicker === 'category' ? '选择分类' : '选择账户'}
       >
         <div className="p-4 space-y-2">
-          {editPicker === 'category' && categories.expense.concat(categories.income).map(c => (
+          {editPicker === 'category' && categoryList.map(c => (
             <button
               key={c.id}
               onClick={() => { setEditCategoryId(c.id); setEditSubcategoryId(undefined); setEditPicker(null) }}
@@ -463,31 +493,6 @@ export default function TransactionDetailSheet({
               {editCategoryId === c.id && <Check size={16} />}
             </button>
           ))}
-          {editPicker === 'subcategory' && (
-            <>
-              <button
-                onClick={() => { setEditSubcategoryId(undefined); setEditPicker(null) }}
-                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm ${
-                  !editSubcategoryId ? 'bg-brand text-ink' : 'bg-surface text-ink hover:bg-brand-tint'
-                }`}
-              >
-                <span>无</span>
-                {!editSubcategoryId && <Check size={16} />}
-              </button>
-              {editSubcats.map(s => (
-                <button
-                  key={s.id}
-                  onClick={() => { setEditSubcategoryId(s.id); setEditPicker(null) }}
-                  className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm ${
-                    editSubcategoryId === s.id ? 'bg-brand text-ink' : 'bg-surface text-ink hover:bg-brand-tint'
-                  }`}
-                >
-                  <span>{s.name}</span>
-                  {editSubcategoryId === s.id && <Check size={16} />}
-                </button>
-              ))}
-            </>
-          )}
           {editPicker === 'account' && accounts.map(a => (
             <button
               key={a.id}
