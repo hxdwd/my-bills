@@ -62,7 +62,7 @@ export default function TransactionItem({
         <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
           <span className="font-medium text-ink truncate shrink-0">{title}</span>
           {subcategory && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-md font-medium shrink-0 leading-relaxed bg-surface text-ink-2 border border-[#e6e3da] dark:border-[#4a4a47]">
+            <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold shrink-0 leading-relaxed bg-brand-tint text-ink">
               {subcategory}
             </span>
           )}
@@ -71,7 +71,8 @@ export default function TransactionItem({
               {tags.map(tag => (
                 <span
                   key={tag.id}
-                  className="text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0 leading-relaxed bg-brand-tint text-ink"
+                  className={`text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0 leading-relaxed text-ink ${tag.color ? '' : 'bg-brand-tint'}`}
+                  style={tag.color ? { backgroundColor: tag.color + '33' } : undefined}
                 >
                   {tag.name}
                 </span>

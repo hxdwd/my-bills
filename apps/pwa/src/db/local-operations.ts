@@ -292,7 +292,7 @@ export const localSubCategories = {
     const existingMap = new Map<string, SubCategoryRecord>()
     const all = await this.getAll(userId)
     all.forEach(r => existingMap.set(r.id, r))
-    await db.subCategories.transaction('rw', db.subCategories, async () => {
+    await db.transaction('rw', db.subCategories, async () => {
       for (let i = 0; i < orderedIds.length; i++) {
         const rec = existingMap.get(orderedIds[i])
         if (rec) {

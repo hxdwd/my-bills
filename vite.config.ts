@@ -2,6 +2,14 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'path'
+import fs from 'fs'
+import { fileURLToPath } from 'url'
+
+// 读取真实应用版本（package.json 的 version），构建时注入前端，
+// 使"关于"/页脚版本号随发布自动更新。
+const pkg = JSON.parse(
+  fs.readFileSync(fileURLToPath(new URL('./package.json', import.meta.url)), 'utf-8')
+)
 
 export default defineConfig({
   root: 'apps/pwa',
@@ -65,6 +73,9 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './apps/pwa/src'),
     },
+  },
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
   },
   server: {
     port: 5173,

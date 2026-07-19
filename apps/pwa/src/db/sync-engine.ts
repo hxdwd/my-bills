@@ -89,8 +89,10 @@ async function pullTable(
     'x-user-id': uid,
   }
 
-  // profiles 表按 user_id 精确过滤
-  const profileFilter = tableName === 'profiles' ? `&id=eq.${userId}` : ''
+  // 显式按用户过滤（profiles 用 id，其余用 user_id），不再单纯依赖 RLS，
+  // 让 PostgREST 走 user_id 索引，计数/拉取更准更快
+  const filterCol = tableName === 'profiles' ? 'id' : 'user_id'
+  const profileFilter = `&${filterCol}=eq.${uid}`
 
   // 检查本地已删除的记录（不覆盖本地删除操作）
   const localDeletedIds = new Set<string>()
@@ -187,26 +189,11 @@ async function pullAll(
   let totalCount = 0
   let fetchedCount = 0
 
-  // 先做一轮 COUNT 获取所有表的总数
+  // 先做一轮计数获取所有表的总数（合并为一次 RPC，失败回退逐表 COUNT）
   onProgress?.({ percent: 0, status: 'counting' })
   const uid = getSupabaseUserId() || userId
-  const supabaseUrl = (supabase as any)['supabaseUrl']
-  const supabaseKey = (supabase as any)['supabaseKey']
-  const headers: Record<string, string> = { 'apikey': supabaseKey, 'x-user-id': uid }
-  for (const tn of TABLE_NAMES) {
-    try {
-      const pf = tn === 'profiles' ? `&id=eq.${userId}` : ''
-      const countUrl = `${supabaseUrl}/rest/v1/${remoteTable(tn)}?select=id${pf}&limit=1`
-      const resp = await fetch(countUrl, { headers })
-      if (resp.ok) {
-        const cr = resp.headers.get('content-range')
-        if (cr) {
-          const m = cr.match(/\/(\d+)$/)
-          if (m) totalCount += parseInt(m[1], 10)
-        }
-      }
-    } catch { /* 单表 COUNT 失败不影响其他 */ }
-  }
+  const countMap = await getTableCountMap(uid)
+  totalCount = TABLE_NAMES.reduce((s, tn) => s + (countMap[tn] ?? 0), 0)
 
   for (const tableName of TABLE_NAMES) {
     try {
@@ -226,6 +213,85 @@ async function pullAll(
 
   onProgress?.({ percent: 100, status: 'done' })
   return fetchedCount
+}
+
+// ============================================================
+// 合并计数（一次 RPC 返回所有表用户行数，替代逐表 8 次 COUNT）
+// ============================================================
+
+type TableCountMap = Partial<Record<TableName, number>>
+
+// 失败兜底：逐表 COUNT（旧逻辑，按用户过滤）
+async function fetchTableCountsLegacy(uid: string): Promise<TableCountMap> {
+  const supabaseUrl = (supabase as any)['supabaseUrl']
+  const supabaseKey = (supabase as any)['supabaseKey']
+  const headers: Record<string, string> = { 'apikey': supabaseKey, 'x-user-id': uid }
+  const map: TableCountMap = {}
+  await Promise.all(
+    TABLE_NAMES.map(async (tn) => {
+      const col = tn === 'profiles' ? 'id' : 'user_id'
+      try {
+        const resp = await fetch(
+          `${supabaseUrl}/rest/v1/${remoteTable(tn)}?select=id&${col}=eq.${uid}&limit=1`,
+          { headers },
+        )
+        if (resp.ok) {
+          const cr = resp.headers.get('content-range')
+          if (cr) {
+            const m = cr.match(/\/(\d+)$/)
+            if (m) map[tn] = parseInt(m[1], 10)
+          }
+        }
+      } catch { /* 忽略单表失败 */ }
+    }),
+  )
+  return map
+}
+
+// 合并计数：通过 RPC get_sync_counts 一次拿到所有表行数（已按用户隔离）
+async function fetchTableCounts(uid: string): Promise<TableCountMap> {
+  const supabaseUrl = (supabase as any)['supabaseUrl']
+  const supabaseKey = (supabase as any)['supabaseKey']
+  const headers: Record<string, string> = {
+    'apikey': supabaseKey,
+    'x-user-id': uid,
+    'Content-Type': 'application/json',
+  }
+  const resp = await fetch(`${supabaseUrl}/rest/v1/rpc/get_sync_counts`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ p_user_id: uid }),
+  })
+  if (!resp.ok) throw new Error(`[Sync] get_sync_counts 失败: ${resp.status}`)
+  const rows = (await resp.json()) as Array<{ tbl: string; cnt: number }>
+  const map: TableCountMap = {}
+  for (const r of rows) {
+    if ((TABLE_NAMES as readonly string[]).includes(r.tbl)) {
+      map[r.tbl as TableName] = Number(r.cnt)
+    }
+  }
+  return map
+}
+
+// 优先用合并 RPC，失败回退逐表 COUNT
+async function getTableCountMap(uid: string): Promise<TableCountMap> {
+  try {
+    return await fetchTableCounts(uid)
+  } catch (e) {
+    console.warn('[Sync] 合并计数 RPC 失败，回退逐表 COUNT', e)
+    return fetchTableCountsLegacy(uid)
+  }
+}
+
+/**
+ * 后台轻量检查：仅做一次合并计数请求（RPC get_sync_counts），返回远程总行数。
+ * 用于判断自上次同步以来是否有新增数据，不拉取全量，节省流量。
+ * 返回值与 pullAll 的 fetchedCount 口径一致（均为远程总行数，且已按用户隔离）。
+ */
+async function checkForUpdates(userId: string): Promise<number> {
+  const uid = getSupabaseUserId() || userId
+  const map = await getTableCountMap(uid)
+  return TABLE_NAMES.reduce((s, tn) => s + (map[tn] ?? 0), 0)
 }
 
 // ============================================================
@@ -457,6 +523,7 @@ function stopPeriodicSync(): void {
 
 export const syncEngine = {
   pullAll,
+  checkForUpdates,
   pushAll,
   syncOnStartup,
   syncAfterWrite,

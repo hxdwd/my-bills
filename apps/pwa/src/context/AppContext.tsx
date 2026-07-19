@@ -126,6 +126,7 @@ interface AppContextType {
   getYearMonthExpense: (year: number) => { labels: string[]; income: number[]; expense: number[] }
   getYearMonthDetail: (year: number) => { month: string; income: number; expense: number; balance: number }[]
   getMonthExpenseByCategory: (year: number, month: number) => (Category & { total: number })[]
+  getMonthTopExpenses: (year: number, month: number, threshold?: number) => Transaction[]
   loading: boolean
   bigExpenseThreshold: number
   setBigExpenseThreshold: (threshold: number) => Promise<void>
@@ -922,12 +923,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setSubCategories(prev => {
       const inCat = prev.filter(s => s.categoryId === categoryId)
       const others = prev.filter(s => s.categoryId !== categoryId)
-      const orderMap = new Map(orderedIds.map((id, i) => [id, i]))
-      const sorted = [...inCat].sort((a, b) => {
-        const ia = orderMap.has(a.id) ? orderMap.get(a.id)! : 999
-        const ib = orderMap.has(b.id) ? orderMap.get(b.id)! : 999
-        return ia - ib
-      })
+      const byId = new Map(inCat.map(s => [s.id, s]))
+      const sorted = orderedIds
+        .map((id, i) => {
+          const item = byId.get(id)
+          return item ? { ...item, order: i } : undefined
+        })
+        .filter((s): s is NonNullable<typeof s> => s !== undefined)
       return [...others, ...sorted]
     })
 
@@ -1327,7 +1329,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setBigExpenseThreshold,
       refreshData,
       resetAndReload,
-      loading,
     }}>
       {children}
     </AppContext.Provider>

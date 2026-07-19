@@ -1,13 +1,12 @@
-import { useState, useRef, useEffect, useMemo } from 'react'
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { useTheme } from '../context/ThemeContext'
 import { useApp } from '../context/AppContext'
 import Card from '../components/ui/Card'
 import CategoryDistributionSheet from '../components/CategoryDistributionSheet'
 import CategoryDetailSheet from '../components/CategoryDetailSheet'
-import { SyncIndicator } from '../components/ui/SyncIndicator'
 import { SyncToast, SyncToastData } from '../components/ui/SyncToast'
 import { DonutChart } from '../components/charts/DonutChart'
-import { ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, RefreshCw, AlertCircle } from 'lucide-react'
 import WheelPicker from '../components/ui/WheelPicker'
 import { Bar, Line } from 'react-chartjs-2'
 import {
@@ -24,8 +23,6 @@ import {
 } from 'chart.js'
 import { formatCurrency } from '../utils/format'
 import { syncEngine } from '../db/sync-engine'
-import type { PullProgress } from '../db/sync-engine'
-import { usePullToRefresh } from '../hooks/usePullToRefresh'
 
 ChartJS.register(
   CategoryScale,
@@ -50,57 +47,115 @@ export default function ReportsPage() {
   } = useApp()
   const [timeRange, setTimeRange] = useState<TimeRange>('month')
 
-  // 下拉同步
+  // 右上角同步胶囊按钮的状态机
+  const [syncState, setSyncState] = useState<'idle' | 'checking' | 'syncing' | 'success' | 'error'>('idle')
+  const [successText, setSuccessText] = useState('')
   const [syncToast, setSyncToast] = useState<SyncToastData | null>(null)
-  const mainRef = useRef<HTMLDivElement>(null)
+  // 上次已知远程总行数（用于后台 COUNT 增量判断）
+  const lastCountRef = useRef<number | null>(null)
+  // 拉取锁：防止并发 / 连点
+  const pullingRef = useRef(false)
 
-  const {
-    pullDistance,
-    syncing,
-    progress: syncProgress,
-    phase: syncPhase,
-    isActive,
-    reportProgress,
-  } = usePullToRefresh(mainRef, {
-    threshold: 60,
-    maxPull: 120,
-    minInterval: 5000,
-    onRefresh: async () => {
+  // 主动拉取全量并刷新
+  const runPull = useCallback(async () => {
+    if (pullingRef.current) return
+    pullingRef.current = true
+    setSyncState('syncing')
+    try {
       const uid = (await import('../stores/useAuthStore')).useAuthStore.getState().user?.id
       if (!uid) throw new Error('未登录')
-
-      const totalPulled = await syncEngine.pullAll(uid, (p: PullProgress) => {
-        if (p.status === 'error') return
-        reportProgress(p.percent)
-      })
-
-      // 刷新报表数据
+      const total = await syncEngine.pullAll(uid)
       if (refreshData) await refreshData()
-
-      // 进度条动画完成后才显示 Toast
-      if (totalPulled > 0) {
-        setSyncToast({ message: `已同步 ${totalPulled} 条记录`, type: 'success' })
-      } else {
-        setSyncToast({ message: '已是最新数据', type: 'info' })
-      }
-
-      return totalPulled
-    },
-  })
-
-  // 同步失败处理（在 usePullToRefresh catch 后设置 Toast）
-  useEffect(() => {
-    if (syncPhase === 'error') {
+      lastCountRef.current = total
+      setSuccessText(total > 0 ? `已同步 ${total} 条` : '已是最新数据')
+      setSyncState('success')
+    } catch {
+      setSyncState('error')
       setSyncToast({ message: '同步失败，请检查网络', type: 'error' })
+    } finally {
+      pullingRef.current = false
     }
-  }, [syncPhase])
+  }, [refreshData])
 
-  // Toast 自动消失（成功/信息 2.5s，失败不自动消失）
+  // 用户点击：加锁防连点
+  const handleSync = useCallback(() => {
+    if (pullingRef.current) return
+    void runPull()
+  }, [runPull])
+
+  // 后台轻量 COUNT 检查：有增量则自动同步
+  const checkUpdates = useCallback(async () => {
+    if (pullingRef.current) return
+    setSyncState('checking')
+    try {
+      const uid = (await import('../stores/useAuthStore')).useAuthStore.getState().user?.id
+      if (!uid) { setSyncState('idle'); return }
+      const total = await syncEngine.checkForUpdates(uid)
+      if (lastCountRef.current === null) {
+        lastCountRef.current = total
+        setSuccessText('已是最新数据')
+        setSyncState('success')
+      } else if (total > lastCountRef.current) {
+        await runPull()
+      } else {
+        lastCountRef.current = total
+        setSuccessText('已是最新数据')
+        setSyncState('success')
+      }
+    } catch {
+      setSyncState('idle')
+    }
+  }, [runPull])
+
+  // 成功 1.5s / 失败 2s 后回到空闲
   useEffect(() => {
-    if (!syncToast || syncToast.type === 'error') return
-    const t = setTimeout(() => setSyncToast(null), 2500)
-    return () => clearTimeout(t)
-  }, [syncToast])
+    if (syncState === 'success') {
+      const t = setTimeout(() => setSyncState('idle'), 1500)
+      return () => clearTimeout(t)
+    }
+    if (syncState === 'error') {
+      const t = setTimeout(() => setSyncState('idle'), 2000)
+      return () => clearTimeout(t)
+    }
+  }, [syncState])
+
+  // 首次挂载静默检查 + 60 秒可见性轮询
+  useEffect(() => {
+    let timer: ReturnType<typeof setInterval> | null = null
+    let cleanupIdle: (() => void) | null = null
+    const start = () => {
+      if (timer) return
+      timer = setInterval(() => { void checkUpdates() }, 60000)
+    }
+    const stop = () => {
+      if (timer) { clearInterval(timer); timer = null }
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        void checkUpdates()
+        start()
+      } else {
+        stop()
+      }
+    }
+    // 挂载时的计数检查延迟到浏览器空闲时执行，避免阻塞首屏渲染；
+    // 若用户在空闲前离开报表页，取消本次请求（节省一次 RPC）
+    const w = window as any
+    if (typeof w.requestIdleCallback === 'function') {
+      const idleId = w.requestIdleCallback(() => { void checkUpdates() }, { timeout: 2000 })
+      cleanupIdle = () => w.cancelIdleCallback(idleId)
+    } else {
+      const t = window.setTimeout(() => { void checkUpdates() }, 500)
+      cleanupIdle = () => clearTimeout(t)
+    }
+    start()
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      cleanupIdle?.()
+      stop()
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [checkUpdates])
   
   // 当前选择的年月
   const now = new Date()
@@ -132,7 +187,7 @@ export default function ReportsPage() {
   // 明细抽屉：点击子类行时携带的分类+子类信息
   const [detailSheet, setDetailSheet] = useState<{
     categoryId: string
-    subcategoryId: string
+    subcategoryId: string | null
     name: string
   } | null>(null)
 
@@ -342,28 +397,27 @@ export default function ReportsPage() {
   return (
     <div className={`min-h-screen bg-bg`}>
       {/* Header */}
-      <header className={`sticky top-0 z-40 bg-bg/80 backdrop-blur-md safe-area-top px-5 pt-3 pb-2 `}>
-        <h1 className={`text-lg font-semibold ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
-          报表
-        </h1>
+      <header className="sticky top-0 z-40 bg-bg/80 backdrop-blur-md safe-area-top px-5 pt-3 pb-2">
+        <div className="flex items-center justify-between">
+          <h1 className="text-lg font-semibold text-ink">报表</h1>
+          <button
+            onClick={handleSync}
+            className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-colors
+              ${theme === 'dark' ? 'bg-surface' : 'bg-brand-tint'}
+              ${syncState === 'success' ? 'text-[#16a34a]' : syncState === 'error' ? 'text-[#ef4444]' : 'text-ink-2'}
+              ${(syncState === 'syncing' || syncState === 'checking') ? 'opacity-60 pointer-events-none' : ''}
+            `}
+          >
+            {syncState === 'idle' && (<><RefreshCw size={13} /> 同步</>)}
+            {syncState === 'checking' && (<><RefreshCw size={13} className="animate-spin" /> 检查中...</>)}
+            {syncState === 'syncing' && (<><RefreshCw size={13} className="animate-spin" /> 同步中...</>)}
+            {syncState === 'success' && (<><RefreshCw size={13} /> {successText}</>)}
+            {syncState === 'error' && (<><AlertCircle size={13} /> 同步失败</>)}
+          </button>
+        </div>
       </header>
 
-      <main
-        ref={mainRef}
-        className="px-5 tabbar-safe space-y-4 animate-page-fade"
-        style={{
-          overflowY: 'auto',
-          WebkitOverflowScrolling: 'touch',
-          transform: pullDistance > 0 ? `translateY(${pullDistance}px)` : 'translateY(0px)',
-          transition: pullDistance === 0 && !syncing ? 'transform 0.3s ease-out' : 'none',
-        }}
-      >
-        {/* 同步进度指示器 */}
-        <SyncIndicator
-          progress={syncProgress}
-          phase={syncPhase}
-          visible={isActive}
-        />
+      <main className="px-5 tabbar-safe space-y-4 animate-page-fade">
         {/* Time Range Tabs */}
         <div className={`flex p-1 rounded-xl ${theme === 'dark' ? 'bg-surface' : 'bg-brand-tint'}`}>
           {(['month', 'year'] as TimeRange[]).map((range) => (
@@ -419,7 +473,7 @@ export default function ReportsPage() {
             <ChevronRight size={22} />
           </button>
 
-          {/* iOS 风格滚轮选择器 */}
+          {/* 滚轮选择器 */}
           {showTimePicker && (
             <>
               {/* 透明遮罩：点击外部关闭 */}
@@ -430,24 +484,22 @@ export default function ReportsPage() {
               >
                 {timeRange === 'month' ? (
                   <div className="flex gap-6 justify-center items-start">
-                    {/* 列 1：年份 */}
-                    <div className="flex flex-col items-center w-[80px]">
+                    <div className="w-[80px]">
                       <WheelPicker
                         items={years}
                         value={years.indexOf(selectedYear)}
                         onChange={(i) => setSelectedYear(years[i])}
                         itemHeight={32}
-                        visibleCount={5}
+                        visibleCount={3}
                       />
                     </div>
-                    {/* 列 2：月份 */}
-                    <div className="flex flex-col items-center w-[80px]">
+                    <div className="w-[80px]">
                       <WheelPicker
                         items={months}
                         value={selectedMonth - 1}
                         onChange={(i) => setSelectedMonth(i + 1)}
                         itemHeight={32}
-                        visibleCount={5}
+                        visibleCount={3}
                       />
                     </div>
                   </div>
@@ -458,7 +510,7 @@ export default function ReportsPage() {
                       value={years.indexOf(selectedYear)}
                       onChange={(i) => setSelectedYear(years[i])}
                       itemHeight={32}
-                      visibleCount={5}
+                      visibleCount={3}
                     />
                   </div>
                 )}
@@ -743,29 +795,13 @@ export default function ReportsPage() {
         />
       )}
 
-      {/* 同步反馈 Toast */}
+      {/* 同步反馈 Toast（仅失败时弹出） */}
       <SyncToast
         toast={syncToast}
         onClose={() => setSyncToast(null)}
         onRetry={() => {
           setSyncToast(null)
-          setSyncToast({ message: '正在同步数据...', type: 'info' })
-          ;(async () => {
-            const u = (await import('../stores/useAuthStore')).useAuthStore.getState().user?.id
-            if (!u) return
-            try {
-              const totalPulled = await syncEngine.pullAll(u, (p: PullProgress) => {
-                if (p.status === 'error') return
-                reportProgress(p.percent)
-              })
-              if (refreshData) await refreshData()
-              setSyncToast(totalPulled > 0
-                ? { message: `已同步 ${totalPulled} 条记录`, type: 'success' }
-                : { message: '已是最新数据', type: 'info' })
-            } catch {
-              setSyncToast({ message: '同步失败，请检查网络', type: 'error' })
-            }
-          })()
+          void runPull()
         }}
       />
     </div>

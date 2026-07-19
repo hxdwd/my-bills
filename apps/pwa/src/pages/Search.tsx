@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect, ReactNode } from 'react'
+﻿﻿﻿import { useState, useMemo, useRef, useEffect, ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../context/ThemeContext'
 import { useApp } from '../context/AppContext'
@@ -220,9 +220,11 @@ export default function SearchPage() {
     setEditTagIds(t.tags || [])
     setEditMode(true)
   }
-  // 当前编辑分类下的子分类列表
+  // 当前编辑分类下的子分类列表（按 order 排序）
   const editSubcats = useMemo(
-    () => subCategories.filter(s => s.categoryId === editCategoryId),
+    () => subCategories
+      .filter(s => s.categoryId === editCategoryId)
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
     [subCategories, editCategoryId]
   )
   const saveEdit = async () => {
@@ -318,6 +320,11 @@ export default function SearchPage() {
   const tagMap = useMemo(() => {
     const m = new Map<string, { id: string; name: string }>()
     tags.forEach(t => m.set(t.id, t))
+    return m
+  }, [tags])
+  const tagColorMap = useMemo(() => {
+    const m = new Map<string, string>()
+    tags.forEach(t => m.set(t.id, t.color))
     return m
   }, [tags])
 
@@ -599,8 +606,8 @@ export default function SearchPage() {
   const tagInfoFor = (t: any) =>
     (t.tags || []).map((id: string) => {
       const tg = tagMap.get(id)
-      return tg ? { id, name: tg.name } : null
-    }).filter(Boolean) as { id: string; name: string }[]
+      return tg ? { id, name: tg.name, color: tagColorMap.get(id) || '' } : null
+    }).filter(Boolean) as { id: string; name: string; color: string }[]
 
   const showResults = query.trim().length > 0 || chips.length > 0 || filters.type !== 'all' || filters.accountId !== 'all' || filters.dateRange !== 'all' || filters.dateStart !== '' || filters.dateEnd !== '' || filters.amountMin !== '' || filters.amountMax !== ''
 
@@ -738,12 +745,12 @@ export default function SearchPage() {
                         icon={cat.icon}
                         iconBg={`${cat.color}15`}
                         title={t.categoryName}
-                        subtitle={`${t.transactionDate ? formatDateFull(t.transactionDate) : t.date} ${t.time} · ${t.accountName}${t.subcategoryName ? ' · ' + t.subcategoryName : ''}`}
+                        subtitle={`${t.transactionDate ? formatDateFull(t.transactionDate) : t.date} ${t.time} · ${t.accountName}`}
                         amount={t.amount}
                         type={t.type}
                         account={undefined}
-                        subcategory={undefined}
-                        tags={tagInfoFor(t).map(tg => ({ id: tg.id, name: tg.name, color: '' }))}
+                        subcategory={t.subcategoryName}
+                        tags={tagInfoFor(t)}
                         onClick={() => openDetail(t)}
                       />
                     )
@@ -818,6 +825,8 @@ export default function SearchPage() {
                       subtitle={`${t.transactionDate ? formatDateFull(t.transactionDate) : t.date} ${t.time} · ${t.accountName}`}
                       amount={t.amount}
                       type={t.type}
+                      subcategory={t.subcategoryName}
+                      tags={tagInfoFor(t)}
                       onClick={() => openDetail(t)}
                     />
                   )
@@ -1313,3 +1322,5 @@ export default function SearchPage() {
     </div>
   )
 }
+
+

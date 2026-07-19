@@ -55,6 +55,8 @@ export interface TransactionRecord {
   amount: number
   category_id: string | null
   subcategory_id: string | null
+  subcategory_name?: string | null
+  subcategory_color?: string | null
   account_id: string
   to_account_id: string | null
   transaction_date: string  // YYYY-MM-DD
@@ -358,3 +360,4 @@ export function markDeleted(record: { _sync_status: SyncStatus; _updated_at_loca
   record._updated_at_local = new Date().toISOString()
   return record
 }
+

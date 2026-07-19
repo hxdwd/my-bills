@@ -1,4 +1,4 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../context/ThemeContext'
 import { useApp } from '../context/AppContext'
@@ -20,7 +20,116 @@ import {
   Trash2,
   LogOut,
   Crown,
+  ScrollText,
 } from 'lucide-react'
+
+// ============================================================
+// 版本更新说明（CHANGELOG）
+// 规则：每次发布(push)在数组【头部】追加一条，版本号递增。
+// 内容只面向用户说明"新增/优化/修复了什么功能"，不暴露任何开发细节。
+// 数组首条即当前版本，应与 package.json 的 version 保持一致
+// （"关于"与页脚的版本号取自 package.json，由构建注入，随发布自动更新）。
+// ============================================================
+const VERSION_LOGS: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: '1.1.1',
+    date: '2026-07-19',
+    changes: [
+      '修复搜索页"最近交易"列表未展示子分类与标签的问题，现已与搜索结果一致',
+    ],
+  },
+  {
+    version: '1.1.0',
+    date: '2026-07-18',
+    changes: [
+      '交易时间选择改为更顺手的滚轮式选择器',
+      '优化交易编辑页布局',
+      '修复交易列表按日期排序不准确的问题',
+    ],
+  },
+  {
+    version: '1.0.9',
+    date: '2026-07-17',
+    changes: [
+      '报表页支持下拉刷新，可手动更新数据',
+      '修复大量历史账单无法完整同步的问题（此前最多显示约 1000 条）',
+      '报表收入/支出配色优化，更直观',
+    ],
+  },
+  {
+    version: '1.0.8',
+    date: '2026-07-16',
+    changes: [
+      '财富支持多币种资产，美股、港股可按原币种记录与展示',
+      '财富页支持切换本位币，统一查看总资产',
+      '投资账户卡片拆分展示可用现金与持仓市值',
+    ],
+  },
+  {
+    version: '1.0.7',
+    date: '2026-07-14',
+    changes: [
+      '新增截图识别导入账单（OCR + AI 解析）',
+      '支持粘贴文本由 AI 自动识别为账单',
+    ],
+  },
+  {
+    version: '1.0.6',
+    date: '2026-07-13',
+    changes: [
+      '财富页新增视角切换',
+      '重构资产详情页',
+      '新增资产变动日志',
+    ],
+  },
+  {
+    version: '1.0.5',
+    date: '2026-07-12',
+    changes: [
+      '财富首页支持多币种计价',
+      '资产估值刷新更快更稳定',
+    ],
+  },
+  {
+    version: '1.0.4',
+    date: '2026-07-09',
+    changes: [
+      '搜索页支持删除、编辑交易与无限滚动',
+      '搜索支持自定义时间段筛选',
+      '新增 PWA 桌面端更新可用提示',
+    ],
+  },
+  {
+    version: '1.0.3',
+    date: '2026-07-08',
+    changes: [
+      '标签拆分为"子分类"与"全局标签"，分类管理更清晰',
+    ],
+  },
+  {
+    version: '1.0.2',
+    date: '2026-07-07',
+    changes: [
+      '底部导航改为悬浮圆角样式',
+      '首页问候语显示用户名',
+      '日历标注今天日期',
+    ],
+  },
+  {
+    version: '1.0.1',
+    date: '2026-07-06',
+    changes: [
+      '钱盒子 PWA 首发：支持安装到桌面与离线使用',
+      '设置页新增清除缓存、退出登录',
+      '移动端适配与数字键盘交互优化',
+    ],
+  },
+]
+
+// 当前版本号取自 package.json，由 Vite 在构建时注入（import.meta.env.VITE_APP_VERSION）。
+// 每次发布(push)只需在 package.json 递增 version，并同步在 VERSION_LOGS 头部追加一条说明，
+// "关于"与页脚的版本号便会自动更新，无需手改此处。
+const APP_VERSION: string = __APP_VERSION__
 
 interface SettingItemProps {
   icon: React.ReactNode
@@ -70,6 +179,7 @@ export default function SettingsPage() {
   const [thresholdInput, setThresholdInput] = useState(bigExpenseThreshold.toString())
   const [showClearCache, setShowClearCache] = useState(false)
   const [showLogout, setShowLogout] = useState(false)
+  const [showChangelog, setShowChangelog] = useState(false)
   const [clearing, setClearing] = useState(false)
   const [toast, setToast] = useState<{ visible: boolean; message: string; type: 'success' | 'error' | 'info' }>({
     visible: false,
@@ -258,12 +368,18 @@ export default function SettingsPage() {
     },
     {
       title: '其他',
-      items: [
+          items: [
         {
           icon: <Info size={20} className="text-ink-2" />,
           title: '关于',
-          subtitle: '版本 1.0.0',
-          onClick: () => {},
+          subtitle: `版本 ${APP_VERSION}`,
+          onClick: () => setShowChangelog(true),
+        },
+        {
+          icon: <ScrollText size={20} className="text-[#5b8dee]" />,
+          title: '版本更新',
+          subtitle: '查看历史更新内容',
+          onClick: () => setShowChangelog(true),
         },
       ],
     },
@@ -298,7 +414,7 @@ export default function SettingsPage() {
 
         {/* Footer */}
         <div className={`text-center py-6 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
-          <p className="text-sm">钱盒子 v1.0.0</p>
+          <p className="text-sm">钱盒子 v{APP_VERSION}</p>
           <p className="text-xs mt-1">温暖的个人财务管家</p>
         </div>
       </main>
@@ -437,6 +553,33 @@ export default function SettingsPage() {
               确认退出
             </button>
           </div>
+        </div>
+      </BottomSheet>
+
+      <BottomSheet
+        isOpen={showChangelog}
+        onClose={() => setShowChangelog(false)}
+        title="版本更新"
+      >
+        <div className="px-4 pb-6 pt-2 space-y-6">
+          {VERSION_LOGS.map((log) => (
+            <div key={log.version}>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="px-2 py-0.5 rounded-md bg-brand/10 text-brand text-xs font-medium">
+                  v{log.version}
+                </span>
+                <span className="text-xs text-ink-2">{log.date}</span>
+              </div>
+              <ul className="space-y-1.5">
+                {log.changes.map((c, i) => (
+                  <li key={i} className="flex gap-2 text-sm text-ink leading-relaxed">
+                    <span className="text-brand mt-0.5 shrink-0">·</span>
+                    <span>{c}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </div>
       </BottomSheet>
 

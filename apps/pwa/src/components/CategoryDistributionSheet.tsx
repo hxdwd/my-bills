@@ -12,6 +12,7 @@ export interface CategoryDistributionSheetProps {
   endDate: Date
   type: 'expense'
   onClose: () => void
+  onSubcategoryClick?: (sub: SubItem) => void
 }
 
 // 未分类固定灰色
