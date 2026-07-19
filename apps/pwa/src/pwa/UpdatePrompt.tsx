@@ -1,16 +1,14 @@
 import { useRegisterSW } from 'virtual:pwa-register/react'
-import { useState, useRef, useCallback } from 'react'
+import { useCallback } from 'react'
 
 /**
  * PWA 新版本提示。
  * - registerType='prompt'，SW 检测到新版本时置 needRefresh=true
- * - skipWaiting + clientsClaim 已在 vite.config.ts workbox 中启用
+ * - skipWaiting + clientsClaim + cleanupOutdatedCaches 已在 vite.config.ts workbox 中启用
  * - 挂载后 8s 主动 update() 对抗 Android 独立模式后台节流
- * - iOS 独立模式更新后 4s 未刷新给出降级引导
+ * - 点击"更新"后无论 iOS 独立模式是否正常刷新，3s 内强制 reload 兜底，杜绝页面僵死
  */
 export function UpdatePrompt() {
-  const [iosFallback, setIosFallback] = useState(false)
-  const iosTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const {
     needRefresh: [needRefresh, setNeedRefresh],
@@ -36,19 +34,17 @@ export function UpdatePrompt() {
     },
   })
 
-  const handleUpdate = useCallback(async () => {
-    await updateServiceWorker()
-    // iOS standalone 模式下 SW 更新后页面可能不自动刷新，4s 兜底引导
-    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent)
-    if (isIOS && window.matchMedia('(display-mode: standalone)').matches) {
-      iosTimer.current = setTimeout(() => setIosFallback(true), 4000)
-    }
-    window.location.reload()
+  const handleUpdate = useCallback(() => {
+    // 触发 SW skipWaiting，让新版本立即激活
+    updateServiceWorker()
+    // 无死角兜底：iOS 独立模式下 SW 更新后页面常僵死、不自动刷新，
+    // 点击更新后 3 秒内强制 reload，确保新版本必然生效（无需删桌面图标重装）
+    setTimeout(() => window.location.reload(), 3000)
   }, [updateServiceWorker])
 
   if (import.meta.env.DEV) return null
 
-  if (!needRefresh && !iosFallback) return null
+  if (!needRefresh) return null
 
   return (
     <div
@@ -59,37 +55,26 @@ export function UpdatePrompt() {
       <div className="flex items-center gap-3 px-4 py-3">
         <div className="flex-1 min-w-0">
           <p className="text-ink font-medium leading-tight">
-            {iosFallback ? '更新可能未生效' : '发现新版本'}
+            发现新版本
           </p>
           <p className="text-ink-2 text-sm leading-tight mt-0.5 truncate">
-            {iosFallback
-              ? '请先在 Safari 中打开该网站，再切换回桌面 App'
-              : '点击立即刷新以获取最新功能'}
+            点击立即刷新以获取最新功能
           </p>
         </div>
-        {iosFallback ? (
+        <>
           <button
-            onClick={() => setIosFallback(false)}
+            onClick={handleUpdate}
+            className="shrink-0 rounded-xl bg-brand px-4 py-2 text-ink font-medium active:bg-brand-strong"
+          >
+            更新
+          </button>
+          <button
+            onClick={() => setNeedRefresh(false)}
             className="shrink-0 rounded-xl bg-brand-tint px-3 py-2 text-ink-2 active:bg-[#f0eee6]"
           >
-            知道了
+            稍后
           </button>
-        ) : (
-          <>
-            <button
-              onClick={handleUpdate}
-              className="shrink-0 rounded-xl bg-brand px-4 py-2 text-ink font-medium active:bg-brand-strong"
-            >
-              更新
-            </button>
-            <button
-              onClick={() => setNeedRefresh(false)}
-              className="shrink-0 rounded-xl bg-brand-tint px-3 py-2 text-ink-2 active:bg-[#f0eee6]"
-            >
-              稍后
-            </button>
-          </>
-        )}
+        </>
       </div>
     </div>
   )

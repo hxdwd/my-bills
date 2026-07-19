@@ -32,6 +32,13 @@ import {
 // ============================================================
 const VERSION_LOGS: { version: string; date: string; changes: string[] }[] = [
   {
+    version: '1.1.2',
+    date: '2026-07-19',
+    changes: [
+      '优化 App 更新机制，修复 iOS 桌面版更新后页面卡死/无反应的问题',
+    ],
+  },
+  {
     version: '1.1.1',
     date: '2026-07-19',
     changes: [

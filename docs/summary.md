@@ -4,6 +4,38 @@
 
 ---
 
+## 2026-07-19（续）：PWA 更新机制修复（iOS 桌面版更新卡死）
+
+### 一、问题现象
+
+将记账 App 添加到 iOS 主屏幕作为独立桌面 App 后，发布新版本时要么不弹更新提示、要么点击更新后页面直接卡死/白屏，最终只能删掉桌面图标重装才能用上新版本。
+
+### 二、根因
+
+- `vite.config.ts` 的 workbox 配置**缺失 `cleanupOutdatedCaches: true`**：旧版本 precache 未被清理，新 Service Worker 接管后仍加载过期资源，导致白屏/僵死。
+- 原 `registerType: 'prompt'` 依赖"弹窗 + 用户点击更新 + 页面 reload"，而 iOS 独立模式下该链路的 reload 常常不生效，造成"更新无反应"。
+- `UpdatePrompt.tsx` 的 `handleUpdate` 原为点击后立即 `window.location.reload()`，正是该环境下失效的环节。
+
+### 三、修复
+
+- `vite.config.ts`：补上 `cleanupOutdatedCaches: true`，每次发布自动清理旧 precache，杜绝过期资源导致白屏。
+- 将 `registerType` 由 `'prompt'` 改为 `'autoUpdate'`：检测到新版本后 Service Worker 自动 skipWaiting 并静默刷新页面，绕过 iOS 独立模式"弹窗不生效/点击不刷新"的 Bug，用户无需手动点击、更无需删图标重装。
+- `UpdatePrompt.tsx`：在保留 prompt 兜底思路的基础上，给"更新"按钮增加点击后 3 秒内强制 `window.location.reload()` 的兜底（autoUpdate 模式下该组件默认不触发，作为冗余保护保留）。
+
+### 四、验证
+
+- `vite build`：`✓ built in 8.38s`，PWA 正常生成 `sw.js` + `workbox-*.js`（含 cleanup 逻辑）。
+- `tsc --noEmit`：本次改动零新增类型错误（全量输出仅余项目预存的 `interval`/`swUrl` 等旧问题，非本次引入）。
+- 版本号同步：package.json 1.1.1 → 1.1.2，VERSION_LOGS 头部追加对应说明。
+
+### 五、提交流水
+
+| commit | 内容 |
+|--------|------|
+| 待 push | PWA 更新机制修复：autoUpdate + cleanupOutdatedCaches + 更新兜底；版本号升至 1.1.2 |
+
+---
+
 ## 2026-07-19：搜索页"最近交易"缺失子分类/标签修复
 
 ### 一、问题现象
