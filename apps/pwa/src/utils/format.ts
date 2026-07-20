@@ -95,3 +95,30 @@ export function getMonthRange(month: string): { start: Date; end: Date } {
 export function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
+
+// 币种符号映射
+export const CURRENCY_SYMBOLS: Record<string, string> = {
+  CNY: '¥',
+  USD: '$',
+  HKD: 'HK$',
+};
+
+export function currencySymbol(currency?: string): string {
+  return CURRENCY_SYMBOLS[currency || 'CNY'] || '¥';
+}
+
+// 转账金额展示：同币种只显示一笔（带币种符号）；跨币种显示 转出 → 到账。
+export function formatTransferAmount(t: {
+  fromAmount?: number;
+  toAmount?: number;
+  fromCurrency?: string;
+  toCurrency?: string;
+}): string {
+  const sym = currencySymbol;
+  const fmt = (n?: number) =>
+    (n ?? 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (t.fromCurrency && t.toCurrency && t.fromCurrency !== t.toCurrency) {
+    return `${sym(t.fromCurrency)}${fmt(t.fromAmount)} → ${sym(t.toCurrency)}${fmt(t.toAmount)}`;
+  }
+  return `${sym(t.fromCurrency)}${fmt(t.fromAmount ?? t.toAmount)}`;
+}

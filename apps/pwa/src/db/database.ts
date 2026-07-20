@@ -145,11 +145,33 @@ export interface ProfileRecord {
   _updated_at_local: string
 }
 
+// 账户间转账（独立表，不计入消费，支持多币种）
+export interface TransferRecord {
+  id: string
+  user_id: string
+  from_account_id: string
+  from_currency: string
+  from_amount: number
+  to_account_id: string
+  to_currency: string
+  to_amount: number
+  exchange_rate: number
+  fee: number
+  transaction_date: string
+  transaction_time: string
+  note?: string | null
+  created_at: string
+  updated_at: string
+  _sync_status: SyncStatus
+  _updated_at_local: string
+}
+
 // Dexie 数据库定义
 class BillsDatabase extends Dexie {
   accounts!: Table<AccountRecord, string>
   categories!: Table<CategoryRecord, string>
   transactions!: Table<TransactionRecord, string>
+  transfers!: Table<TransferRecord, string>
   budgets!: Table<BudgetRecord, string>
   subCategories!: Table<SubCategoryRecord, string>
   tags!: Table<TagRecord, string>
@@ -307,6 +329,11 @@ class BillsDatabase extends Dexie {
       profiles: 'id, _sync_status',
       syncMeta: 'key',
       holdings_transactions: 'id, user_id, _sync_status, symbol, market, direction, date, account_id, is_active',
+    })
+
+    // v10: 新增 transfers 独立表（账户间转账，不计入消费，支持多币种）
+    this.version(10).stores({
+      transfers: 'id, user_id, _sync_status, transaction_date, from_account_id, to_account_id',
     })
   }
 

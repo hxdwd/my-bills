@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../context/ThemeContext'
 import { useApp } from '../context/AppContext'
@@ -40,6 +40,14 @@ export default function TransactionListPage() {
   const [filterMode, setFilterMode] = useState<FilterMode>('all')
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1)
+  
+  // 分页：按日期分组懒加载，首屏只渲染前若干组，避免整表一次性挂载卡顿
+  const PAGE_SIZE = 10
+  const [visibleGroups, setVisibleGroups] = useState(PAGE_SIZE)
+  // 切换筛选条件时重置分页
+  useEffect(() => {
+    setVisibleGroups(PAGE_SIZE)
+  }, [filterMode, selectedMonth])
   
   // 查看/编辑详情
   const [selectedTransaction, setSelectedTransaction] = useState<typeof transactions[0] | null>(null)
@@ -89,18 +97,38 @@ export default function TransactionListPage() {
     return groups
   }, [filteredTransactions])
 
+  // 仅取当前分页可见的日期分组（懒加载，避免整表渲染）
+  const allGroupEntries = useMemo(
+    () => Object.entries(groupedTransactions),
+    [groupedTransactions]
+  )
+  const visibleGroupEntries = allGroupEntries.slice(0, visibleGroups)
+  const hasMoreGroups = visibleGroups < allGroupEntries.length
+
+  // 分类字典（O(1) 查找，避免逐条 .find）
+  const categoryMap = useMemo(() => {
+    const m = new Map<string, any>()
+    ;[...(categories.expense as any[]), ...(categories.income as any[])].forEach(c => m.set(c.id, c))
+    return m
+  }, [categories])
+
   // 获取分类信息
   const getCategory = (t: typeof transactions[0]) => {
-    if (t.type === 'transfer') return { icon: '↔️', color: '#5b8dee', name: '转账' }
-    const list = categories[t.type === 'expense' ? 'expense' : 'income'] as any[]
-    return list.find(c => c.id === t.categoryId) || { icon: '📝', color: '#87867f', name: '未分类' }
+    return categoryMap.get(t.categoryId) || { icon: '📝', color: '#87867f', name: '未分类' }
   }
 
   // 当前交易分类下的子分类列表
   const currentSubCategories = useMemo(() => {
-    if (!selectedTransaction || selectedTransaction.type === 'transfer') return []
+    if (!selectedTransaction) return []
     return subCategories.filter(s => s.categoryId === selectedTransaction.categoryId)
   }, [selectedTransaction, subCategories])
+
+  // 标签字典（O(1) 查找，避免逐条 .find）
+  const tagMap = useMemo(() => {
+    const m = new Map<string, { id: string; name: string; color: string }>()
+    ;(tags as any[]).forEach(t => m.set(t.id, t))
+    return m
+  }, [tags])
 
   // 点击交易
   const handleTransactionClick = (t: typeof transactions[0]) => {
@@ -243,7 +271,7 @@ export default function TransactionListPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            {Object.entries(groupedTransactions).map(([date, dateTransactions]) => {
+            {visibleGroupEntries.map(([date, dateTransactions]) => {
               const { income, expense } = getDateTotal(dateTransactions)
               return (
                 <div key={date}>
@@ -261,7 +289,7 @@ export default function TransactionListPage() {
                     {dateTransactions.map(t => {
                       const cat = getCategory(t)
                       const transactionTags = t.tags
-                        ? t.tags.map(tagId => tags.find(tg => tg.id === tagId)).filter(Boolean) as { id: string; name: string; color: string }[]
+                        ? (t.tags.map(id => tagMap.get(id)).filter(Boolean) as { id: string; name: string; color: string }[])
                         : undefined
                       return (
                         <TransactionItem
@@ -269,7 +297,7 @@ export default function TransactionListPage() {
                           icon={cat.icon}
                           iconBg={`${cat.color}15`}
                           title={t.categoryName}
-                          subcategory={t.type === 'transfer' ? undefined : t.subcategoryName}
+                          subcategory={t.subcategoryName}
                           subtitle={`${t.time} · ${t.accountName}`}
                           amount={t.amount}
                           type={t.type}
@@ -282,6 +310,20 @@ export default function TransactionListPage() {
                 </div>
               )
             })}
+          </div>
+        )}
+
+        {/* 加载更多 */}
+        {hasMoreGroups && (
+          <div className="flex justify-center pt-2 pb-6">
+            <button
+              onClick={() => setVisibleGroups(v => v + PAGE_SIZE)}
+              className={`px-6 py-2.5 rounded-full text-sm font-medium transition-colors ${
+                theme === 'dark' ? 'bg-surface text-ink-2 hover:text-ink' : 'bg-white text-ink-2 hover:text-ink'
+              }`}
+            >
+              加载更多（已显示 {visibleGroupEntries.length} / {allGroupEntries.length} 天）
+            </button>
           </div>
         )}
       </main>

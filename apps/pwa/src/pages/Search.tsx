@@ -7,8 +7,9 @@ import { recordTagUsage } from '../utils/tagUsage'
 import Card from '../components/ui/Card'
 import TransactionItem from '../components/ui/TransactionItem'
 import BottomSheet from '../components/ui/BottomSheet'
-import { Search, X, Filter, MessageCircle, Trash2, Pencil, Check } from 'lucide-react'
-import { formatCurrency } from '../utils/format'
+import TransferItem from '../components/ui/TransferItem'
+import { Search, X, Filter, MessageCircle, Trash2, Pencil, Check, ChevronDown, ArrowUp } from 'lucide-react'
+import { formatCurrency, formatTransferAmount } from '../utils/format'
 
 // ============================================================
 // 类型定义
@@ -26,7 +27,7 @@ interface FilterChip {
 }
 
 // 筛选抽屉中的条件
-type TxnType = 'all' | 'expense' | 'income'
+type TxnType = 'all' | 'expense' | 'income' | 'transfer'
 // all=不限；today/week/month/year=快捷（内部会换算成起止日期）；custom=自定义时间段
 type DateRange = 'all' | 'today' | 'week' | 'month' | 'year' | 'custom'
 type SortBy = 'newest' | 'oldest' | 'amount_desc' | 'amount_asc'
@@ -40,6 +41,9 @@ interface FilterState {
   amountMin: string
   amountMax: string
   sort: SortBy
+  fromAccounts: string[] // 转账：转出账户
+  toAccounts: string[] // 转账：转入账户
+  currencies: string[] // 转账：币种
 }
 
 // 最近搜索记录（带类型标识）
@@ -144,6 +148,28 @@ function dateInRange(dateStr: string, range: DateRange, start: string, end: stri
   return true
 }
 
+// 可折叠筛选区块：标题 + 右侧箭头，点击展开/收起，默认收起
+function FilterSection({ title, open, onToggle, children }: {
+  title: string
+  open: boolean
+  onToggle: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full flex items-center justify-between py-1"
+      >
+        <span className="text-sm font-medium text-ink">{title}</span>
+        <ChevronDown size={16} className={`text-ink-2 transition-transform ${open ? '' : '-rotate-90'}`} />
+      </button>
+      {open && <div className="mt-2">{children}</div>}
+    </div>
+  )
+}
+
 // ============================================================
 // 主组件
 // ============================================================
@@ -151,7 +177,7 @@ function dateInRange(dateStr: string, range: DateRange, start: string, end: stri
 export default function SearchPage() {
   const navigate = useNavigate()
   const { theme } = useTheme()
-  const { transactions, categories, subCategories, tags, accounts, updateTransaction, deleteTransaction } = useApp()
+  const { transactions, transfers, categories, subCategories, tags, accounts, updateTransaction, deleteTransaction } = useApp()
   const authUser = useAuthStore(state => state.user)
 
   const [query, setQuery] = useState('')
@@ -166,10 +192,33 @@ export default function SearchPage() {
     amountMin: '',
     amountMax: '',
     sort: 'newest',
+    fromAccounts: [],
+    toAccounts: [],
+    currencies: [],
   })
   const [showFilterModal, setShowFilterModal] = useState(false)
   // Modal 内的临时状态
   const [draftFilters, setDraftFilters] = useState<FilterState>(filters)
+
+  // 筛选区块折叠状态：分类/子分类/标签/账户默认收起
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+    category: false,
+    subcategory: false,
+    tag: false,
+    account: false,
+  })
+  const toggleSection = (key: string) =>
+    setOpenSections(s => ({ ...s, [key]: !s[key] }))
+
+  // 滚动返回顶部：下拉超过一屏后显示悬浮按钮
+  const [showBackToTop, setShowBackToTop] = useState(false)
+  useEffect(() => {
+    const onScroll = () => setShowBackToTop(window.scrollY > 400)
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
 
   // 分页（无限滚动）
   const PAGE_SIZE = 20
@@ -187,6 +236,7 @@ export default function SearchPage() {
   const [selectedTx, setSelectedTx] = useState<typeof transactions[0] | null>(null)
   const openDetail = (t: any) => {
     setSelectedTx(t)
+    setEditType(t.type)
     setEditMode(false)
     setShowDeleteConfirm(false)
   }
@@ -311,6 +361,9 @@ export default function SearchPage() {
     return m
   }, [categories])
 
+  // 支出分类 id 集合（用于按类型收敛子分类列表）
+  const expenseCatSet = useMemo(() => new Set(categories.expense.map(c => c.id)), [categories])
+
   const subCategoryMap = useMemo(() => {
     const m = new Map<string, { id: string; name: string }>()
     subCategories.forEach(s => m.set(s.id, s))
@@ -354,6 +407,9 @@ export default function SearchPage() {
       t.subcategoryId ? (subCategoryMap.get(t.subcategoryId)?.name || '') : '',
       t.note || '',
       t.accountName || '',
+      t.toAccountName || '',
+      t.fromCurrency || '',
+      t.toCurrency || '',
       tagNames,
       String(t.amount),
       t.transactionDate,
@@ -368,7 +424,7 @@ export default function SearchPage() {
     // 类型
     if (filters.type !== 'all' && t.type !== filters.type) return false
     // 账户
-    if (filters.accountId !== 'all' && t.accountId !== filters.accountId) return false
+    if (filters.accountId !== 'all' && t.type !== 'transfer' && t.accountId !== filters.accountId) return false
     // 日期
     if (!dateInRange(t.transactionDate, filters.dateRange, filters.dateStart, filters.dateEnd)) return false
     // 金额区间
@@ -389,6 +445,16 @@ export default function SearchPage() {
         if ((accountMap.get(t.accountId)?.name || '') !== chip.label) return false
       } else if (chip.kind === 'note') {
         if (!t.note || !t.note.toLowerCase().includes(chip.label.toLowerCase())) return false
+      }
+    }
+    // 转账专属筛选（仅对转账生效，避免影响收支流水）—— 走出分类/子分类/标签逻辑
+    if (t.type === 'transfer') {
+      if (filters.fromAccounts.length > 0 && !filters.fromAccounts.includes(t.accountId)) return false
+      if (filters.toAccounts.length > 0 && (!t.toAccountId || !filters.toAccounts.includes(t.toAccountId))) return false
+      if (filters.currencies.length > 0) {
+        const fc = t.fromCurrency || ''
+        const tc = t.toCurrency || ''
+        if (!filters.currencies.includes(fc) && !filters.currencies.includes(tc)) return false
       }
     }
     return true
@@ -422,6 +488,21 @@ export default function SearchPage() {
     return sortTransactions(list)
   }, [transactions, debouncedQuery, filters, chips, categoryMap, subCategoryMap, tagMap])
 
+  // 转账结果（独立 transfers 流，仅在筛选类型为"转账"时参与）
+  const filteredTransfers = useMemo(() => {
+    const q = debouncedQuery.trim().toLowerCase()
+    const list = transfers.filter(t => applyFilters(t) && matchQuery(t, q))
+    return sortTransactions(list)
+  }, [transfers, debouncedQuery, filters, chips, categoryMap, subCategoryMap, tagMap])
+
+  const isTransferMode = filters.type === 'transfer'
+  const resultList = useMemo(() => {
+    if (filters.type === 'transfer') return filteredTransfers
+    if (filters.type === 'expense' || filters.type === 'income') return filteredTransactions
+    // 全部：交易 + 转账合并展示
+    return [...filteredTransactions, ...filteredTransfers]
+  }, [filters.type, filteredTransactions, filteredTransfers])
+
   // 结果区合计（收入为正、支出为负，转账不计净额）
   const resultTotals = useMemo(() => {
     let income = 0
@@ -440,12 +521,12 @@ export default function SearchPage() {
     if (!el) return
     const io = new IntersectionObserver(entries => {
       if (entries[0].isIntersecting) {
-        setVisibleCount(c => Math.min(c + PAGE_SIZE, filteredTransactions.length))
+        setVisibleCount(c => Math.min(c + PAGE_SIZE, resultList.length))
       }
     }, { rootMargin: '120px' })
     io.observe(el)
     return () => io.disconnect()
-  }, [filteredTransactions.length])
+  }, [resultList.length])
 
 
   // ============================================================
@@ -580,6 +661,37 @@ export default function SearchPage() {
     setChips(prev => prev.filter(c => !(c.kind === chip.kind && c.id === chip.id)))
   }
 
+  // 在筛选面板中点选分类/子分类/标签：存在则移除、不存在则追加（复用现有 chips 过滤逻辑）
+  const toggleChip = (kind: FilterChip['kind'], id: string, label: string, icon: string) => {
+    const exists = chips.some(c => c.kind === kind && c.label === label)
+    if (exists) {
+      setChips(prev => prev.filter(c => !(c.kind === kind && c.label === label)))
+    } else {
+      setChips(prev => [...prev, { kind, id, label, icon }])
+    }
+  }
+
+  // 筛选面板中点选转账专属条件（转出/转入账户、币种）：存在则移除、不存在则追加
+  const toggleDraftArray = (key: 'fromAccounts' | 'toAccounts' | 'currencies', id: string) => {
+    setDraftFilters(f => {
+      const arr = (f[key] as string[]) || []
+      const exists = arr.includes(id)
+      return { ...f, [key]: exists ? arr.filter(x => x !== id) : [...arr, id] }
+    })
+  }
+
+  // 转账可选币种：从转账流水与账户币种聚合
+  const currencyOptions = useMemo(() => {
+    const set = new Set<string>()
+    transfers.forEach((t: any) => {
+      if (t.fromCurrency) set.add(t.fromCurrency)
+      if (t.toCurrency) set.add(t.toCurrency)
+    })
+    accounts.forEach(a => { if ((a as any).currency) set.add((a as any).currency) })
+    if (!set.has('CNY')) set.add('CNY')
+    return [...set].sort()
+  }, [transfers, accounts])
+
   // ============================================================
   // 关键词高亮
   // ============================================================
@@ -609,7 +721,7 @@ export default function SearchPage() {
       return tg ? { id, name: tg.name, color: tagColorMap.get(id) || '' } : null
     }).filter(Boolean) as { id: string; name: string; color: string }[]
 
-  const showResults = query.trim().length > 0 || chips.length > 0 || filters.type !== 'all' || filters.accountId !== 'all' || filters.dateRange !== 'all' || filters.dateStart !== '' || filters.dateEnd !== '' || filters.amountMin !== '' || filters.amountMax !== ''
+  const showResults = query.trim().length > 0 || chips.length > 0 || filters.type !== 'all' || filters.accountId !== 'all' || filters.fromAccounts.length > 0 || filters.toAccounts.length > 0 || filters.currencies.length > 0 || filters.dateRange !== 'all' || filters.dateStart !== '' || filters.dateEnd !== '' || filters.amountMin !== '' || filters.amountMax !== ''
 
   return (
     <div className={`min-h-screen bg-bg`}>
@@ -645,15 +757,45 @@ export default function SearchPage() {
         </div>
 
         {/* 筛选 Chips 区 */}
-        {chips.length > 0 && (
+        {(chips.length > 0 || filters.type !== 'all' || filters.fromAccounts.length > 0 || filters.toAccounts.length > 0 || filters.currencies.length > 0) && (
           <div className="flex flex-wrap gap-2 mt-3">
+            {/* 类型本身即筛选条件，作为可见 chip，点击移除 */}
+            {filters.type !== 'all' && (
+              <button
+                onClick={() => setFilters(f => ({ ...f, type: 'all' }))}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-full text-sm bg-brand-tint text-ink border border-brand-soft"
+              >
+                <span className="opacity-70">类型</span>
+                <span className="font-medium">{filters.type === 'expense' ? '支出' : filters.type === 'income' ? '收入' : '转账'}</span>
+                <X size={14} className="opacity-60" />
+              </button>
+            )}
+            {/* 转账专属筛选 chip */}
+            {filters.fromAccounts.map(id => (
+              <button key={`from-${id}`} onClick={() => setFilters(f => ({ ...f, fromAccounts: f.fromAccounts.filter(x => x !== id) }))}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-full text-sm bg-brand-tint text-ink border border-brand-soft">
+                <span>转出 {accountMap.get(id)?.name || id}</span><X size={14} className="opacity-60" />
+              </button>
+            ))}
+            {filters.toAccounts.map(id => (
+              <button key={`to-${id}`} onClick={() => setFilters(f => ({ ...f, toAccounts: f.toAccounts.filter(x => x !== id) }))}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-full text-sm bg-brand-tint text-ink border border-brand-soft">
+                <span>转入 {accountMap.get(id)?.name || id}</span><X size={14} className="opacity-60" />
+              </button>
+            ))}
+            {filters.currencies.map(c => (
+              <button key={`cur-${c}`} onClick={() => setFilters(f => ({ ...f, currencies: f.currencies.filter(x => x !== c) }))}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-full text-sm bg-brand-tint text-ink border border-brand-soft">
+                <span>币种 {c}</span><X size={14} className="opacity-60" />
+              </button>
+            ))}
             {chips.map((chip, i) => (
               <button
                 key={`${chip.kind}-${chip.id}-${i}`}
                 onClick={() => removeChip(chip)}
                 className="flex items-center gap-1 px-3 py-1.5 rounded-full text-sm bg-brand-tint text-ink border border-brand-soft"
               >
-                <span>{chip.icon || KIND_EMOJI[chip.kind as SuggestionKind]}</span>
+                {chip.kind === 'subcategory' ? null : <span>{chip.icon || KIND_EMOJI[chip.kind as SuggestionKind]}</span>}
                 <span>{chip.label}</span>
                 <X size={14} className="opacity-60" />
               </button>
@@ -698,7 +840,7 @@ export default function SearchPage() {
                         style={s.color ? { boxShadow: `inset 3px 0 0 ${s.color}` } : undefined}
                         className="w-full flex items-center gap-3 p-2.5 pl-3 rounded-xl bg-surface shadow-soft hover:bg-brand-tint transition-colors text-left"
                       >
-                        <span className="text-lg">{s.icon || KIND_EMOJI[s.kind]}</span>
+                        {s.kind === 'subcategory' ? null : <span className="text-lg">{s.icon || KIND_EMOJI[s.kind]}</span>}
                         <span className="flex-1 text-sm text-ink truncate">{s.kind === 'note' ? highlightMatch(s.label, query) : s.label}</span>
                         {s.amount !== undefined && (
                           <span className="text-sm font-mono font-medium text-ink">{formatCurrency(s.amount, false, false)}</span>
@@ -726,18 +868,21 @@ export default function SearchPage() {
         {showResults ? (
           <div className="mt-3">
             <div className="flex items-center justify-between text-sm text-ink-2 mb-3">
-              <span>找到 {filteredTransactions.length} 条结果</span>
-              {filteredTransactions.length > 0 && (
+              <span>找到 {resultList.length} 条结果</span>
+              {!isTransferMode && resultList.length > 0 && (
                 <span className="font-mono font-medium text-ink">
                   合计 {formatCurrency(resultTotals.net, true)}
                 </span>
               )}
             </div>
 
-            {filteredTransactions.length > 0 ? (
+            {resultList.length > 0 ? (
               <>
                 <Card className="!p-0 divide-y divide-[#f0eee6]">
-                  {filteredTransactions.slice(0, visibleCount).map(t => {
+                  {resultList.slice(0, visibleCount).map(t => {
+                    if (t.type === 'transfer') {
+                      return <TransferItem key={t.id} transfer={t} onClick={() => openDetail(t)} />
+                    }
                     const cat = getCategory(t)
                     return (
                       <TransactionItem
@@ -757,12 +902,12 @@ export default function SearchPage() {
                   })}
                 </Card>
                 {/* 无限滚动哨兵 */}
-                {visibleCount < filteredTransactions.length && (
+                {visibleCount < resultList.length && (
                   <div ref={sentinelRef} className="py-6 text-center text-sm text-ink-2">
                     加载更多…
                   </div>
                 )}
-                {visibleCount >= filteredTransactions.length && filteredTransactions.length > PAGE_SIZE && (
+                {visibleCount >= resultList.length && resultList.length > PAGE_SIZE && (
                   <div className="py-6 text-center text-sm text-ink-2">
                     已经到底啦
                   </div>
@@ -837,6 +982,23 @@ export default function SearchPage() {
         )}
       </main>
 
+      {/* 快速返回顶部：下拉后出现，置于顶部居中、头部之下，UI 参考财富板块「导入持仓」胶囊按钮 */}
+      {showBackToTop && !showFilterModal && (
+        <button
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          aria-label="返回顶部"
+          data-testid="search-back-to-top"
+          className="fixed left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-medium text-ink-2 bg-white/70 backdrop-blur-sm border border-[#e8e6dc]/60 shadow-sm transition-all active:scale-95"
+          style={{
+            top: 'calc(env(safe-area-inset-top) + 96px)',
+            animation: 'breathe 2.4s ease-in-out infinite, glow-pulse 3s ease-in-out infinite',
+          }}
+        >
+          <ArrowUp size={13} strokeWidth={1.8} />
+          <span>顶部</span>
+        </button>
+      )}
+
       {/* ========== 筛选 BottomSheet ========== */}
       <BottomSheet isOpen={showFilterModal} onClose={() => setShowFilterModal(false)} title="筛选">
         <div className="p-4 space-y-5 max-h-[70vh] overflow-y-auto">
@@ -844,10 +1006,13 @@ export default function SearchPage() {
           <div>
             <div className="text-sm font-medium text-ink mb-2">类型</div>
             <div className="flex gap-2">
-              {([['all', '全部'], ['expense', '支出'], ['income', '收入']] as const).map(([val, label]) => (
+              {([['all', '全部'], ['expense', '支出'], ['income', '收入'], ['transfer', '转账']] as const).map(([val, label]) => (
                 <button
                   key={val}
-                  onClick={() => setDraftFilters(f => ({ ...f, type: val }))}
+                  onClick={() => {
+                    setDraftFilters(f => ({ ...f, type: val }))
+                    setFilters(f => ({ ...f, type: val }))
+                  }}
                   className={`flex-1 py-2 rounded-full text-sm font-medium border transition-colors ${
                     draftFilters.type === val
                       ? 'bg-brand text-ink border-brand-strong'
@@ -860,20 +1025,198 @@ export default function SearchPage() {
             </div>
           </div>
 
+          {/* 收支类区块（分类/子分类/标签/账户）：转账不走此逻辑，仅非转账类型可见 */}
+          {draftFilters.type !== 'transfer' && (
+          <>
+          <FilterSection title="分类" open={openSections.category} onToggle={() => toggleSection('category')}>
+            <div className="space-y-3">
+              {(['expense', 'income'] as const).map(g => {
+                const list = categories[g]
+                // 已选类型时，只展示对应分组
+                if (draftFilters.type !== 'all' && draftFilters.type !== g) return null
+                if (!list.length) return null
+                return (
+                  <div key={g}>
+                    <div className="text-xs text-ink-2 mb-1.5">{g === 'expense' ? '支出分类' : '收入分类'}</div>
+                    <div className="flex flex-wrap gap-2">
+                      {list.map(cat => {
+                        const active = chips.some(c => c.kind === 'category' && c.label === cat.name)
+                        return (
+                          <button
+                            key={cat.id}
+                            onClick={() => toggleChip('category', cat.id, cat.name, cat.icon)}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm border transition-colors ${
+                              active ? 'bg-brand text-ink border-brand-strong' : 'bg-surface text-ink-2 border-[#e6e3da]'
+                            }`}
+                          >
+                            <span>{cat.icon}</span>
+                            <span>{cat.name}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </FilterSection>
+
+          {/* 子分类：先选「类型」或「分类」后才展开，仅显示相关子分类，避免长列表 */}
+          <FilterSection title="子分类" open={openSections.subcategory} onToggle={() => toggleSection('subcategory')}>
+            {(() => {
+              const selectedCats = chips.filter(c => c.kind === 'category').map(c => c.label)
+              const showSubs = draftFilters.type !== 'all' || selectedCats.length > 0
+              if (!showSubs) {
+                return <div className="text-xs text-ink-2 px-1 py-1.5">先选择「类型」或「分类」后，可在此精确筛选子分类</div>
+              }
+              const subs = subCategories.filter(s => {
+                const isExpense = expenseCatSet.has(s.categoryId)
+                if (draftFilters.type === 'expense' && !isExpense) return false
+                if (draftFilters.type === 'income' && isExpense) return false
+                if (selectedCats.length > 0) {
+                  const catName = categoryMap.get(s.categoryId)?.name
+                  if (!catName || !selectedCats.includes(catName)) return false
+                }
+                return true
+              }).sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+              if (!subs.length) {
+                return <div className="text-xs text-ink-2 px-1 py-1.5">当前条件下没有可选子分类</div>
+              }
+              return (
+                <div className="flex flex-wrap gap-2">
+                  {subs.map(sub => {
+                    const active = chips.some(c => c.kind === 'subcategory' && c.label === sub.name)
+                    return (
+                      <button
+                        key={sub.id}
+                        onClick={() => toggleChip('subcategory', sub.id, sub.name, '')}
+                        className={`inline-flex items-center px-3 py-1.5 rounded-full text-sm border transition-colors ${
+                          active ? 'bg-brand text-ink border-brand-strong' : 'bg-surface text-ink-2 border-[#e6e3da]'
+                        }`}
+                      >
+                        <span>{sub.name}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )
+            })()}
+          </FilterSection>
+
+          {/* 标签：紧凑药丸布局，与全局「选择标签」风格统一，多标签也可滚动 */}
+          <FilterSection title="标签" open={openSections.tag} onToggle={() => toggleSection('tag')}>
+            <div className="flex flex-wrap gap-2">
+              {tags.map(tag => {
+                const active = chips.some(c => c.kind === 'tag' && c.label === tag.name)
+                return (
+                  <button
+                    key={tag.id}
+                    onClick={() => toggleChip('tag', tag.id, tag.name, '')}
+                    className="inline-flex items-center px-3 py-1.5 rounded-full text-sm border"
+                    style={{
+                      backgroundColor: active ? (tag.color ? tag.color + '33' : '#FFF7E6') : 'transparent',
+                      borderColor: active ? (tag.color || '#f5c451') : '#e6e3da',
+                      color: '#3a3a3a',
+                    }}
+                  >
+                    {tag.name}{active ? ' ✓' : ''}
+                  </button>
+                )
+              })}
+            </div>
+          </FilterSection>
+
           {/* 账户 */}
-          <div>
-            <div className="text-sm font-medium text-ink mb-2">账户</div>
-            <select
-              value={draftFilters.accountId}
-              onChange={(e) => setDraftFilters(f => ({ ...f, accountId: e.target.value }))}
-              className="w-full px-4 py-2.5 rounded-xl bg-surface border border-[#e6e3da] text-sm text-ink outline-none"
-            >
-              <option value="all">全部</option>
+          <FilterSection title="账户" open={openSections.account} onToggle={() => toggleSection('account')}>
+            <div className="space-y-2">
+              <button
+                key="all"
+                onClick={() => setDraftFilters(f => ({ ...f, accountId: 'all' }))}
+                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm ${
+                  draftFilters.accountId === 'all' ? 'bg-brand text-ink' : 'bg-surface text-ink hover:bg-brand-tint'
+                }`}
+              >
+                <span>全部</span>
+                {draftFilters.accountId === 'all' && <Check size={16} />}
+              </button>
               {accounts.map(a => (
-                <option key={a.id} value={a.id}>{a.icon} {a.name}</option>
+                <button
+                  key={a.id}
+                  onClick={() => setDraftFilters(f => ({ ...f, accountId: a.id }))}
+                  className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm ${
+                    draftFilters.accountId === a.id ? 'bg-brand text-ink' : 'bg-surface text-ink hover:bg-brand-tint'
+                  }`}
+                >
+                  <span>{a.icon} {a.name}</span>
+                  {draftFilters.accountId === a.id && <Check size={16} />}
+                </button>
               ))}
-            </select>
-          </div>
+            </div>
+          </FilterSection>
+          </>
+          )}
+
+          {/* 转账专属筛选（转出账户 / 转入账户 / 币种）：仅"全部"或"转账"类型可见，不走分类逻辑 */}
+          {(draftFilters.type === 'all' || draftFilters.type === 'transfer') && (
+            <>
+              <FilterSection title="转出账户" open={!!openSections.fromAccount} onToggle={() => toggleSection('fromAccount')}>
+                <div className="flex flex-wrap gap-2">
+                  {accounts.map(a => {
+                    const active = draftFilters.fromAccounts.includes(a.id)
+                    return (
+                      <button
+                        key={a.id}
+                        onClick={() => toggleDraftArray('fromAccounts', a.id)}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm border transition-colors ${
+                          active ? 'bg-brand text-ink border-brand-strong' : 'bg-surface text-ink-2 border-[#e6e3da]'
+                        }`}
+                      >
+                        <span>{a.icon} {a.name}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </FilterSection>
+
+              <FilterSection title="转入账户" open={!!openSections.toAccount} onToggle={() => toggleSection('toAccount')}>
+                <div className="flex flex-wrap gap-2">
+                  {accounts.map(a => {
+                    const active = draftFilters.toAccounts.includes(a.id)
+                    return (
+                      <button
+                        key={a.id}
+                        onClick={() => toggleDraftArray('toAccounts', a.id)}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm border transition-colors ${
+                          active ? 'bg-brand text-ink border-brand-strong' : 'bg-surface text-ink-2 border-[#e6e3da]'
+                        }`}
+                      >
+                        <span>{a.icon} {a.name}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </FilterSection>
+
+              <FilterSection title="币种" open={!!openSections.currency} onToggle={() => toggleSection('currency')}>
+                <div className="flex flex-wrap gap-2">
+                  {currencyOptions.map(c => {
+                    const active = draftFilters.currencies.includes(c)
+                    return (
+                      <button
+                        key={c}
+                        onClick={() => toggleDraftArray('currencies', c)}
+                        className={`inline-flex items-center px-3 py-1.5 rounded-full text-sm border transition-colors ${
+                          active ? 'bg-brand text-ink border-brand-strong' : 'bg-surface text-ink-2 border-[#e6e3da]'
+                        }`}
+                      >
+                        <span>{c}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </FilterSection>
+            </>
+          )}
 
           {/* 日期 */}
           <div>
@@ -962,7 +1305,9 @@ export default function SearchPage() {
           <div className="flex gap-3 pt-2">
             <button
               onClick={() => {
-                setDraftFilters({ type: 'all', accountId: 'all', dateRange: 'all', dateStart: '', dateEnd: '', amountMin: '', amountMax: '', sort: 'newest' })
+                const def = { type: 'all', accountId: 'all', dateRange: 'all', dateStart: '', dateEnd: '', amountMin: '', amountMax: '', sort: 'newest', fromAccounts: [], toAccounts: [], currencies: [] }
+                setDraftFilters(def)
+                setFilters(def)
                 setChips([])
               }}
               className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-surface text-ink-2 border border-[#e6e3da]"
@@ -1007,13 +1352,15 @@ export default function SearchPage() {
                   />
                 ) : (
                   <div className={`font-bold font-mono amount-fluid-lg ${amountColor}`}>
-                    {formatCurrency(
-                      selectedTx.type === 'expense'
-                        ? -Math.abs(selectedTx.amount)
-                        : Math.abs(selectedTx.amount),
-                      selectedTx.type !== 'transfer',
-                      false
-                    )}
+                    {selectedTx.type === 'transfer'
+                      ? formatTransferAmount(selectedTx)
+                      : formatCurrency(
+                          selectedTx.type === 'expense'
+                            ? -Math.abs(selectedTx.amount)
+                            : Math.abs(selectedTx.amount),
+                          true,
+                          false
+                        )}
                   </div>
                 )}
                 <div className="text-sm text-ink-2 mt-1">{typeLabel}</div>
@@ -1082,7 +1429,8 @@ export default function SearchPage() {
                   </div>
                 )}
 
-                {/* 标签：编辑模式可增删 */}
+                {/* 标签：转账表无此字段，不展示 */}
+                {selectedTx.type !== 'transfer' && (
                 <div className="flex items-start justify-between gap-3 px-4 py-3">
                   <span className="text-sm text-ink-2 shrink-0 pt-0.5">标签</span>
                   {editMode ? (
@@ -1120,22 +1468,48 @@ export default function SearchPage() {
                     <span className="text-sm text-ink-2">—</span>
                   )}
                 </div>
+                )}
 
-                {/* 账户：编辑模式点击打开选择 */}
-                <div className="flex items-center justify-between gap-3 px-4 py-3">
-                  <span className="text-sm text-ink-2 shrink-0">账户</span>
-                  {editMode ? (
-                    <button
-                      onClick={() => setEditPicker('account')}
-                      className="flex items-center gap-1 text-sm text-ink"
-                    >
-                      {accounts.find(a => a.id === editAccountId)?.name}
-                      <span className="text-ink-2">›</span>
-                    </button>
-                  ) : (
-                    <span className="text-sm text-ink">{selectedTx.accountName}</span>
-                  )}
-                </div>
+                {/* 账户：转账在查看态展示转出/转入账户、手续费、汇率；编辑态沿用账户选择 */}
+                {selectedTx.type === 'transfer' && !editMode ? (
+                  <>
+                    <div className="flex items-center justify-between gap-3 px-4 py-3">
+                      <span className="text-sm text-ink-2 shrink-0">转出账户</span>
+                      <span className="text-sm text-ink">{selectedTx.accountName}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 px-4 py-3">
+                      <span className="text-sm text-ink-2 shrink-0">转入账户</span>
+                      <span className="text-sm text-ink">{selectedTx.toAccountName}</span>
+                    </div>
+                    {(selectedTx.fee ?? 0) > 0 && (
+                      <div className="flex items-center justify-between gap-3 px-4 py-3">
+                        <span className="text-sm text-ink-2 shrink-0">手续费</span>
+                        <span className="text-sm text-ink">{formatCurrency(selectedTx.fee ?? 0, false, false)}</span>
+                      </div>
+                    )}
+                    {selectedTx.fromCurrency && selectedTx.toCurrency && selectedTx.fromCurrency !== selectedTx.toCurrency && selectedTx.exchangeRate != null && (
+                      <div className="flex items-center justify-between gap-3 px-4 py-3">
+                        <span className="text-sm text-ink-2 shrink-0">汇率</span>
+                        <span className="text-sm text-ink">{selectedTx.exchangeRate}</span>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="flex items-center justify-between gap-3 px-4 py-3">
+                    <span className="text-sm text-ink-2 shrink-0">账户</span>
+                    {editMode ? (
+                      <button
+                        onClick={() => setEditPicker('account')}
+                        className="flex items-center gap-1 text-sm text-ink"
+                      >
+                        {accounts.find(a => a.id === editAccountId)?.name}
+                        <span className="text-ink-2">›</span>
+                      </button>
+                    ) : (
+                      <span className="text-sm text-ink">{selectedTx.accountName}</span>
+                    )}
+                  </div>
+                )}
 
                 {/* 日期 + 时间：编辑模式可改（统一卡片输入框） */}
                 <div className="flex items-center justify-between gap-3 px-4 py-3">

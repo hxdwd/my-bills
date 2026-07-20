@@ -18,6 +18,7 @@ const TABLE_NAMES = [
   'accounts',
   'categories',
   'transactions',
+  'transfers',
   'budgets',
   'subCategories',
   'tags',
@@ -33,6 +34,7 @@ const REMOTE_TABLE_MAP: Record<TableName, string> = {
   accounts: 'accounts',
   categories: 'categories',
   transactions: 'transactions',
+  transfers: 'transfers',
   budgets: 'budgets',
   subCategories: 'sub_categories',
   tags: 'tags',
@@ -480,6 +482,7 @@ async function clearAllData(): Promise<void> {
   await db.accounts.clear()
   await db.categories.clear()
   await db.transactions.clear()
+  await db.transfers.clear()
   await db.budgets.clear()
   await db.subCategories.clear()
   await db.tags.clear()
@@ -498,16 +501,17 @@ async function clearAllData(): Promise<void> {
 
 let timerInterval: ReturnType<typeof setInterval> | null = null
 
+// S1（简单版）：关闭 5 分钟定时全量拉取，避免无变更时也每 5 分钟把全部
+// 交易（数千条）重拉一遍。远程变更改为在「App 启动 (syncOnStartup)」与
+// 「网络恢复 (online 事件)」两个时机一次性全量拉回；本地增改删仍由
+// syncAfterWrite 即时推送。后台不再自动轮询，需等下次启动/联网。
 function startPeriodicSync(userId: string, intervalMs: number = 5 * 60 * 1000): void {
-  if (timerInterval) clearInterval(timerInterval)
-
-  timerInterval = setInterval(() => {
-    if (navigator.onLine) {
-      pushAll(userId).then(() => pullAll(userId)).catch(err => {
-        console.error('[Sync] 定时同步失败:', err)
-      })
-    }
-  }, intervalMs)
+  void userId
+  void intervalMs
+  if (timerInterval) {
+    clearInterval(timerInterval)
+    timerInterval = null
+  }
 }
 
 function stopPeriodicSync(): void {

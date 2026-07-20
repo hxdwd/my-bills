@@ -17,6 +17,8 @@ interface TransactionItemProps {
   account?: string
   subcategory?: string
   tags?: TagInfo[]
+  // 转账多币种展示：传入后覆盖默认金额格式（如 "¥100.00 → $14.50"）
+  transferLabel?: string
   onClick?: () => void
 }
 
@@ -30,6 +32,7 @@ export default function TransactionItem({
   account,
   subcategory,
   tags,
+  transferLabel,
   onClick
 }: TransactionItemProps) {
   // 配色：收入红色、支出黑色（默认）、转账灰色
@@ -37,7 +40,7 @@ export default function TransactionItem({
   // 数据层 amount 恒为非负，收支靠 type 区分；此处按 type 还原符号：
   // 支出显示 '-'、收入显示 '+'，转账无符号。统一走 formatCurrency 两位小数。
   const signedAmount = type === 'expense' ? -Math.abs(amount) : type === 'income' ? Math.abs(amount) : Math.abs(amount)
-  const amountFormat = formatCurrency(signedAmount, type !== 'transfer', false)
+  const amountFormat = transferLabel ?? formatCurrency(signedAmount, type !== 'transfer', false)
 
   return (
     <div

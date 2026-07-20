@@ -147,34 +147,71 @@ export interface Database {
       transfers: {
         Row: {
           id: string
-          transaction_id: string
           user_id: string
           from_account_id: string
+          from_currency: string
+          from_amount: number
           to_account_id: string
-          amount: number
+          to_currency: string
+          to_amount: number
+          exchange_rate: number
           fee: number
+          transaction_date: string
+          transaction_time: string
+          note: string | null
           created_at: string
+          updated_at: string
         }
         Insert: {
           id?: string
-          transaction_id: string
           user_id: string
           from_account_id: string
+          from_currency?: string
+          from_amount: number
           to_account_id: string
-          amount: number
+          to_currency?: string
+          to_amount: number
+          exchange_rate?: number
           fee?: number
+          transaction_date: string
+          transaction_time?: string
+          note?: string | null
           created_at?: string
+          updated_at?: string
         }
         Update: {
           id?: string
-          transaction_id?: string
           user_id?: string
           from_account_id?: string
+          from_currency?: string
+          from_amount?: number
           to_account_id?: string
-          amount?: number
+          to_currency?: string
+          to_amount?: number
+          exchange_rate?: number
           fee?: number
+          transaction_date?: string
+          transaction_time?: string
+          note?: string | null
           created_at?: string
+          updated_at?: string
         }
+        Relationships: [
+          {
+            foreignKeyName: "transfers_from_account_id_fkey"
+            columns: ["from_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transfers_to_account_id_fkey"
+            columns: ["to_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          }
+        ]
       }
       budgets: {
         Row: {

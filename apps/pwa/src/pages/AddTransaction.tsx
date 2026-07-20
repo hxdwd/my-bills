@@ -20,6 +20,7 @@ import { useAuthStore } from '../stores/useAuthStore';
 import SubCategoryManagerModal from '../components/SubCategoryManagerModal';
 import TagSelectModal from '../components/TagSelectModal';
 import { recordTagUsage } from '../utils/tagUsage';
+import { currencySymbol } from '../utils/format';
 
 // 预设图标
 const PRESET_ICONS = ['🏷️', '🎯', '⭐', '❤️', '🌟', '💫', '✨', '🔥', '💖', '🎪', '🎨', '🎭', '🎪', '🎯', '🎲', '🎱', '🛍️', '📦', '🎁', '🎀', '🌈', '⚡', '🌸', '🍀'];
@@ -58,6 +59,9 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
   const [toAccountId, setToAccountId] = useState<string>('');
+  // 转账多币种：手续费（转出币种）与到账金额（转入币种，跨币种时录入）
+  const [fee, setFee] = useState<string>('');
+  const [toAmountInput, setToAmountInput] = useState<string>('');
   const [showKeyboard, setShowKeyboard] = useState(false);
   const [showAccountSheet, setShowAccountSheet] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -108,6 +112,9 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
   // 获取选中的账户
   const selectedAccount = accounts.find((a) => a.id === selectedAccountId);
   const toAccount = accounts.find((a) => a.id === toAccountId);
+  const fromCurrency = selectedAccount?.currency || 'CNY';
+  const toCurrency = toAccount?.currency || 'CNY';
+  const isCrossCurrency = transactionType === 'transfer' && fromCurrency !== toCurrency;
 
   // 格式化金额
   const formatAmount = (value: string): string => {
@@ -286,6 +293,10 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
       displayToast('请选择转入账户');
       return;
     }
+    if (isCrossCurrency && !(parseFloat(toAmountInput) > 0)) {
+      displayToast('请输入到账金额');
+      return;
+    }
 
     try {
       // 使用本地日期字符串避免 UTC 时区偏移问题
@@ -294,6 +305,11 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
       await addTransaction({
         type: transactionType,
         amount: numAmount,
+        fromAmount: transactionType === 'transfer' ? numAmount : undefined,
+        toAmount: transactionType === 'transfer'
+          ? (isCrossCurrency ? (parseFloat(toAmountInput) || 0) : Math.max(numAmount - (parseFloat(fee) || 0), 0))
+          : undefined,
+        fee: transactionType === 'transfer' ? (parseFloat(fee) || 0) : undefined,
         categoryId: transactionType === 'transfer' ? 't1' : selectedCategoryId,
         categoryName: transactionType === 'transfer' ? '转账' : (selectedCategory?.name || '未分类'),
         categoryIcon: transactionType === 'transfer' ? '↔️' : (selectedCategory?.icon || '📌'),
@@ -342,6 +358,8 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
     setAmount('0');
     setSelectedCategoryId('');
     setToAccountId('');
+    setFee('');
+    setToAmountInput('');
     setNote('');
     setSelectedSubCategoryId('');
     setSelectedTagIds([]);
@@ -461,7 +479,7 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
                 : 'text-transfer'
             }`}
           >
-            ¥ {formatAmount(amount)}
+            {transactionType === 'transfer' ? currencySymbol(fromCurrency) : '¥'} {formatAmount(amount)}
           </span>
         </div>
 
@@ -542,6 +560,50 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
                 <ChevronDown size={16} className="text-[var(--text-tertiary)]" />
               </div>
             </button>
+          )}
+
+          {/* 转账：手续费 / 到账金额（多币种） */}
+          {transactionType === 'transfer' && (
+            <>
+              <div className="flex items-center justify-between py-3 px-4 bg-[var(--bg-secondary)] rounded-xl">
+                <span className="text-[var(--text-secondary)]">手续费（{currencySymbol(fromCurrency)}）</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  value={fee}
+                  onChange={(e) => setFee(e.target.value)}
+                  placeholder="0.00"
+                  className="w-32 text-right bg-transparent outline-none text-[var(--text-primary)] font-mono"
+                />
+              </div>
+              {isCrossCurrency ? (
+                <div className="flex items-center justify-between py-3 px-4 bg-[var(--bg-secondary)] rounded-xl">
+                  <span className="text-[var(--text-secondary)]">到账金额（{currencySymbol(toCurrency)}）</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    value={toAmountInput}
+                    onChange={(e) => setToAmountInput(e.target.value)}
+                    placeholder="0.00"
+                    className="w-32 text-right bg-transparent outline-none text-[var(--text-primary)] font-mono"
+                  />
+                </div>
+              ) : (
+                <div className="flex items-center justify-between py-3 px-4 bg-[var(--bg-secondary)] rounded-xl">
+                  <span className="text-[var(--text-secondary)]">到账金额（{currencySymbol(toCurrency)}）</span>
+                  <span className="text-[var(--text-primary)] font-mono">
+                    {currencySymbol(toCurrency)}
+                    {(() => {
+                      const f = parseFloat(fee) || 0
+                      const a = parseFloat(amount) || 0
+                      return Math.max(a - f, 0).toFixed(2)
+                    })()}
+                  </span>
+                </div>
+              )}
+            </>
           )}
 
           {/* 日期时间选择 */}

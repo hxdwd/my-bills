@@ -1,12 +1,13 @@
 import { createContext, useContext, useState, useEffect, ReactNode, useCallback, useMemo, useRef } from 'react'
-import { supabase, setSupabaseUserId } from '../services/supabase'
+import { setSupabaseUserId } from '../services/supabase'
 import { useAuthStore } from '../stores/useAuthStore'
-import type { AccountRecord, CategoryRecord, TransactionRecord, BudgetRecord, SubCategoryRecord, TagRecord } from '../db/database'
+import type { AccountRecord, CategoryRecord, TransactionRecord, TransferRecord, BudgetRecord, SubCategoryRecord, TagRecord } from '../db/database'
 import { syncEngine } from '../db/sync-engine'
 import {
   localAccounts,
   localCategories,
   localTransactions,
+  localTransfers,
   localBudgets,
   localSubCategories,
   localTags,
@@ -44,10 +45,20 @@ export interface Transaction {
   categoryId: string
   categoryName: string
   categoryIcon: string
+  categoryColor?: string
   accountId: string
   accountName: string
   toAccountId?: string
   toAccountName?: string
+  // 转账多币种字段（仅 type === 'transfer' 时有效）
+  fromAmount?: number
+  toAmount?: number
+  fee?: number
+  fromCurrency?: string
+  toCurrency?: string
+  exchangeRate?: number
+  // 数据来源标记：'txn' = transactions 表（消费/收入/历史转账），'transfer' = transfers 表（新转账）
+  source?: 'txn' | 'transfer'
   date: string           // 显示格式 "X月X日"
   transactionDate: string // 原始日期 YYYY-MM-DD
   time: string
@@ -86,6 +97,7 @@ interface AppContextType {
   accounts: Account[]
   categories: { expense: Category[]; income: Category[] }
   transactions: Transaction[]
+  transfers: Transaction[]
   budgets: Budget[]
 
   subCategories: SubCategory[]
@@ -127,7 +139,6 @@ interface AppContextType {
   getYearMonthDetail: (year: number) => { month: string; income: number; expense: number; balance: number }[]
   getMonthExpenseByCategory: (year: number, month: number) => (Category & { total: number })[]
   getMonthTopExpenses: (year: number, month: number, threshold?: number) => Transaction[]
-  loading: boolean
   bigExpenseThreshold: number
   setBigExpenseThreshold: (threshold: number) => Promise<void>
   refreshData: () => Promise<void>
@@ -166,7 +177,6 @@ function mapCategory(record: CategoryRecord): Category {
 
 function mapTransaction(
   record: TransactionRecord,
-  accountNameMap: Map<string, string>,
   categoryMap: Map<string, { name: string; icon: string }>,
   subCategoryMap: Map<string, string>
 ): Transaction {
@@ -185,17 +195,18 @@ function mapTransaction(
       }
     }
   }
+  // 仅映射消费/收入（转账由 mapTransfer / mapTransferFromTxn 处理，不在交易流中）
   return {
     id: record.id,
-    type: record.to_account_id ? 'transfer' : record.type,
+    type: record.type,
     amount: Number(record.amount),
     categoryId: record.category_id || '',
-    categoryName: record.category_id ? (categoryMap.get(record.category_id)?.name || '未分类') : '转账',
-    categoryIcon: record.category_id ? (categoryMap.get(record.category_id)?.icon || '📌') : '🔄',
+    categoryName: record.category_id ? (categoryMap.get(record.category_id)?.name || '未分类') : '未分类',
+    categoryIcon: record.category_id ? (categoryMap.get(record.category_id)?.icon || '📌') : '📌',
     accountId: record.account_id,
-    accountName: accountNameMap.get(record.account_id) || '未知账户',
-    toAccountId: record.to_account_id || undefined,
-    toAccountName: record.to_account_id ? (accountNameMap.get(record.to_account_id) || '未知账户') : undefined,
+    accountName: '未知账户',
+    toAccountId: undefined,
+    toAccountName: undefined,
     date: dateDisplay,
     transactionDate: record.transaction_date,
     time: record.transaction_time?.slice(0, 5) || '00:00',
@@ -205,7 +216,136 @@ function mapTransaction(
     note: record.note || undefined,
     images: record.images || undefined,
     location: record.location || undefined,
+    source: 'txn',
   }
+}
+
+function mapTransfer(
+  record: TransferRecord,
+  accountInfoMap: Map<string, { name: string; currency: string }>
+): Transaction {
+  const currentYear = new Date().getFullYear()
+  let dateDisplay = '未知日期'
+  if (record.transaction_date) {
+    const parts = record.transaction_date.split('-')
+    if (parts.length === 3) {
+      const y = parseInt(parts[0], 10)
+      const m = parseInt(parts[1], 10)
+      const d = parseInt(parts[2], 10)
+      if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+        dateDisplay = y !== currentYear ? `${y}年${m}月${d}日` : `${m}月${d}日`
+      }
+    }
+  }
+  return {
+    id: record.id,
+    type: 'transfer',
+    amount: Number(record.from_amount),
+    fromAmount: Number(record.from_amount),
+    toAmount: Number(record.to_amount),
+    fee: Number(record.fee ?? 0),
+    fromCurrency: record.from_currency,
+    toCurrency: record.to_currency,
+    categoryId: 't1',
+    categoryName: '转账',
+    categoryIcon: '🔄',
+    categoryColor: '#5b8dee',
+    accountId: record.from_account_id,
+    accountName: accountInfoMap.get(record.from_account_id)?.name || '未知账户',
+    toAccountId: record.to_account_id,
+    toAccountName: accountInfoMap.get(record.to_account_id)?.name || '未知账户',
+    date: dateDisplay,
+    transactionDate: record.transaction_date,
+    time: record.transaction_time?.slice(0, 5) || '00:00',
+    tags: undefined,
+    subcategoryId: undefined,
+    subcategoryName: undefined,
+    note: record.note || undefined,
+    source: 'transfer',
+  }
+}
+
+// 历史转账：旧模型留在 transactions 表、to_account_id 非空的记录，
+// 映射为转账形状（source='txn'），纳入独立 transfers 流，不污染交易列表。
+function mapTransferFromTxn(
+  record: TransactionRecord,
+  accountInfoMap: Map<string, { name: string; currency: string }>
+): Transaction {
+  const currentYear = new Date().getFullYear()
+  let dateDisplay = '未知日期'
+  if (record.transaction_date) {
+    const parts = record.transaction_date.split('-')
+    if (parts.length === 3) {
+      const y = parseInt(parts[0], 10)
+      const m = parseInt(parts[1], 10)
+      const d = parseInt(parts[2], 10)
+      if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+        dateDisplay = y !== currentYear ? `${y}年${m}月${d}日` : `${m}月${d}日`
+      }
+    }
+  }
+  return {
+    id: record.id,
+    type: 'transfer',
+    amount: Number(record.amount),
+    fromAmount: Number(record.amount),
+    toAmount: Number(record.amount),
+    fee: 0,
+    fromCurrency: accountInfoMap.get(record.account_id)?.currency || 'CNY',
+    toCurrency: accountInfoMap.get(record.to_account_id!)?.currency || 'CNY',
+    categoryId: 't1',
+    categoryName: '转账',
+    categoryIcon: '🔄',
+    categoryColor: '#5b8dee',
+    accountId: record.account_id,
+    accountName: accountInfoMap.get(record.account_id)?.name || '未知账户',
+    toAccountId: record.to_account_id!,
+    toAccountName: accountInfoMap.get(record.to_account_id!)?.name || '未知账户',
+    date: dateDisplay,
+    transactionDate: record.transaction_date,
+    time: record.transaction_time?.slice(0, 5) || '00:00',
+    tags: undefined,
+    subcategoryId: undefined,
+    subcategoryName: undefined,
+    note: record.note || undefined,
+    source: 'txn',
+  }
+}
+
+function compareTransactions(a: Transaction, b: Transaction): number {
+  if (a.transactionDate !== b.transactionDate) {
+    return b.transactionDate.localeCompare(a.transactionDate)
+  }
+  return (b.time || '').localeCompare(a.time || '')
+}
+
+// 仅加载消费/收入（transactions 表，排除历史转账 to_account_id 记录），按时间倒序
+async function loadTransactions(
+  userId: string,
+  categoryMap: Map<string, { name: string; icon: string }>,
+  subCategoryMap: Map<string, string>
+): Promise<Transaction[]> {
+  const records = await localTransactions.getAll(userId)
+  return records
+    .filter(r => !r.to_account_id)
+    .map(r => mapTransaction(r, categoryMap, subCategoryMap))
+    .sort(compareTransactions)
+}
+
+// 加载全部转账：新 transfers 表 + 历史 transactions 表中 to_account_id 记录，合并排序
+async function loadAllTransfers(
+  userId: string,
+  accountInfoMap: Map<string, { name: string; currency: string }>
+): Promise<Transaction[]> {
+  const [txnRecords, transferRecords] = await Promise.all([
+    localTransactions.getAll(userId),
+    localTransfers.getAll(userId),
+  ])
+  const fromTxn = txnRecords
+    .filter(r => !!r.to_account_id)
+    .map(r => mapTransferFromTxn(r, accountInfoMap))
+  const fromTable = transferRecords.map(r => mapTransfer(r, accountInfoMap))
+  return [...fromTxn, ...fromTable].sort(compareTransactions)
 }
 
 function mapBudget(record: BudgetRecord, categoryMap: Map<string, string>): Budget {
@@ -248,13 +388,14 @@ function round2(num: number): number {
 
 function calculateAccountBalances(
   accounts: Account[],
-  transactions: Transaction[]
+  transactions: Transaction[],
+  transfers: Transaction[]
 ): Account[] {
   // 以账户自身 balance 作为初始余额（开户时的初始金额），在此之上叠加交易
   const balanceMap = new Map<string, number>()
   accounts.forEach(a => balanceMap.set(a.id, a.balance))
 
-  // 遍历所有交易计算余额
+  // 1. 消费/收入（transactions 流，单账户单币种）
   transactions.forEach(t => {
     const accountId = t.accountId
     if (!balanceMap.has(accountId)) return
@@ -263,13 +404,18 @@ function calculateAccountBalances(
       balanceMap.set(accountId, (balanceMap.get(accountId) || 0) + t.amount)
     } else if (t.type === 'expense') {
       balanceMap.set(accountId, (balanceMap.get(accountId) || 0) - t.amount)
-    } else if (t.type === 'transfer') {
-      // 转出
-      balanceMap.set(accountId, (balanceMap.get(accountId) || 0) - t.amount)
-      // 转入
-      if (t.toAccountId && balanceMap.has(t.toAccountId)) {
-        balanceMap.set(t.toAccountId, (balanceMap.get(t.toAccountId) || 0) + t.amount)
-      }
+    }
+  })
+
+  // 2. 转账（独立 transfers 流）：按各账户自身币种加减（from 减源账户，to 加目标账户）
+  transfers.forEach(t => {
+    const fromAmt = t.fromAmount ?? t.amount
+    const toAmt = t.toAmount ?? t.amount
+    if (t.accountId && balanceMap.has(t.accountId)) {
+      balanceMap.set(t.accountId, (balanceMap.get(t.accountId) || 0) - fromAmt)
+    }
+    if (t.toAccountId && balanceMap.has(t.toAccountId)) {
+      balanceMap.set(t.toAccountId, (balanceMap.get(t.toAccountId) || 0) + toAmt)
     }
   })
 
@@ -291,6 +437,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [categories, setCategories] = useState<{ expense: Category[]; income: Category[] }>({ expense: [], income: [] })
   const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [transfers, setTransfers] = useState<Transaction[]>([])
   const [budgets, setBudgets] = useState<Budget[]>([])
   const [subCategories, setSubCategories] = useState<SubCategory[]>([])
   const [tags, setTags] = useState<Tag[]>([])
@@ -309,8 +456,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // 账户余额动态计算需放在 loadData / buildDerivationMaps 之前初始化，
   // 否则它们闭包引用 accountsWithBalance 会触发暂时性死区(TDZ)崩溃。
   const accountsWithBalance = useMemo(() => {
-    return calculateAccountBalances(accounts, transactions)
-  }, [accounts, transactions])
+    return calculateAccountBalances(accounts, transactions, transfers)
+  }, [accounts, transactions, transfers])
 
   const loadData = useCallback(async () => {
     if (!userId) {
@@ -336,9 +483,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const catRecords = await localCategories.getAll(userId)
       const rawCategories = catRecords.map(mapCategory)
 
-      // 构建查找 Map
-      const accountNameMap = new Map<string, string>()
-      rawAccounts.forEach(a => accountNameMap.set(a.id, a.name))
+      // 构建查找 Map（含币种，供转账多币种展示）
+      const accountInfoMap = new Map<string, { name: string; currency: string }>()
+      rawAccounts.forEach(a => accountInfoMap.set(a.id, { name: a.name, currency: a.currency || 'CNY' }))
 
       const categoryMap = new Map<string, { name: string; icon: string }>()
       rawCategories.forEach(c => categoryMap.set(c.id, { name: c.name, icon: c.icon }))
@@ -349,9 +496,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const subCategoryMap = new Map<string, string>()
       rawSubCategories.forEach(s => subCategoryMap.set(s.id, s.name))
 
-      // 3. 从 IndexedDB 加载交易
-      const txnRecords = await localTransactions.getAll(userId)
-      const rawTransactions = txnRecords.map(r => mapTransaction(r, accountNameMap, categoryMap, subCategoryMap))
+      // 3. 从 IndexedDB 加载交易（仅支出/收入）与独立转账流
+      const rawTransactions = await loadTransactions(userId, categoryMap, subCategoryMap)
+      const rawTransfers = await loadAllTransfers(userId, accountInfoMap)
 
       // 4. 从 IndexedDB 加载预算
       const bgtRecords = await localBudgets.getAll(userId)
@@ -376,6 +523,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         income: rawCategories.filter(c => c.type === 'income'),
       })
       setTransactions(rawTransactions)
+      setTransfers(rawTransfers)
       setBudgets(rawBudgets)
       setSubCategories(rawSubCategories)
       setTags(rawTags)
@@ -386,14 +534,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       syncEngine.syncOnStartup(userId).then(async () => {
         const refreshedAcc = (await localAccounts.getAll(userId)).map(mapAccount)
         const refreshedCat = (await localCategories.getAll(userId)).map(mapCategory)
-        const refreshedNameMap = new Map<string, string>()
-        refreshedAcc.forEach(a => refreshedNameMap.set(a.id, a.name))
+        const refreshedNameMap = new Map<string, { name: string; currency: string }>()
+        refreshedAcc.forEach(a => refreshedNameMap.set(a.id, { name: a.name, currency: a.currency || 'CNY' }))
         const refreshedCatMap = new Map<string, { name: string; icon: string }>()
         refreshedCat.forEach(c => refreshedCatMap.set(c.id, { name: c.name, icon: c.icon }))
         const refreshedSub = (await localSubCategories.getAll(userId)).map(mapSubCategory)
         const refreshedSubMap = new Map<string, string>()
         refreshedSub.forEach(s => refreshedSubMap.set(s.id, s.name))
-        const refreshedTxn = (await localTransactions.getAll(userId)).map(r => mapTransaction(r, refreshedNameMap, refreshedCatMap, refreshedSubMap))
+        const refreshedTxn = await loadTransactions(userId, refreshedCatMap, refreshedSubMap)
+        const refreshedTransfers = await loadAllTransfers(userId, refreshedNameMap)
         const refreshedBgt = (await localBudgets.getAll(userId)).map(r => mapBudget(r, catNameMap))
         const refreshedTag = (await localTags.getAll(userId)).map(mapTag)
         const refreshedProfile = await localProfiles.get(userId)
@@ -404,6 +553,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           income: refreshedCat.filter(c => c.type === 'income'),
         })
         setTransactions(refreshedTxn)
+        setTransfers(refreshedTransfers)
         setBudgets(refreshedBgt)
         setSubCategories(refreshedSub)
         setTags(refreshedTag)
@@ -470,15 +620,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const source = base ?? transactionsRef.current
     return source.map(t => {
       const next: Transaction = { ...t }
-      if (t.type === 'transfer') {
-        next.categoryName = '转账'
-        next.categoryIcon = '🔄'
-        next.categoryColor = '#5b8dee'
-        next.accountName = accountNameMap.get(t.accountId) || '未知账户'
-        next.toAccountName = t.toAccountId ? (accountNameMap.get(t.toAccountId) || '未知账户') : undefined
-        next.subcategoryName = undefined
-        return next
-      }
       const cat = t.categoryId ? categoryMap.get(t.categoryId) : undefined
       next.categoryName = cat?.name || '未分类'
       next.categoryIcon = cat?.icon || '📌'
@@ -504,6 +645,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setAccounts([])
     setCategories({ expense: [], income: [] })
     setTransactions([])
+    setTransfers([])
     setBudgets([])
     setSubCategories([])
     setTags([])
@@ -578,12 +720,52 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const transactionDate = t.transactionDate || t.date || new Date().toISOString().split('T')[0]
     const transactionTime = `${h || '00'}:${m || '00'}:00`
 
-    // 1. 立即写入 IndexedDB
+    // 转账：独立写入 transfers 表（不计入消费，支持多币种）
+    if (t.type === 'transfer') {
+      const fromAcc = accountsWithBalance.find(a => a.id === t.accountId)
+      const toAcc = accountsWithBalance.find(a => a.id === t.toAccountId)
+      const fromCurrency = fromAcc?.currency || 'CNY'
+      const toCurrency = toAcc?.currency || 'CNY'
+      const fromAmount = t.fromAmount ?? t.amount
+      const fee = t.fee ?? 0
+      const toAmount = t.toAmount ?? Math.max(fromAmount - fee, 0)
+      const exchangeRate = fromCurrency === toCurrency ? 1 : toAmount / Math.max(fromAmount - fee, 1e-8)
+
+      const record = await localTransfers.insert(userId, {
+        from_account_id: t.accountId!,
+        from_currency: fromCurrency,
+        from_amount: fromAmount,
+        to_account_id: t.toAccountId!,
+        to_currency: toCurrency,
+        to_amount: toAmount,
+        exchange_rate: exchangeRate,
+        fee,
+        transaction_date: transactionDate,
+        transaction_time: transactionTime,
+        note: t.note || null,
+      })
+
+      try {
+        const accountInfoMap = new Map<string, { name: string; currency: string }>()
+        accountsWithBalance.forEach(a => accountInfoMap.set(a.id, { name: a.name, currency: a.currency || 'CNY' }))
+        const newTransfer = mapTransfer(record, accountInfoMap)
+        setTransfers(prev => [newTransfer, ...prev].sort(compareTransactions))
+      } catch (mapErr) {
+        console.error('构建转账 UI 数据失败（不影响已保存）:', mapErr)
+      }
+
+      syncEngine.syncAfterWrite('transfers', userId).catch(err => {
+        console.error('后台同步转账失败:', err)
+      })
+      return
+    }
+
+    // 1. 立即写入 IndexedDB（此处已排除转账，type 仅为 expense/income）
     const record = await localTransactions.insert(userId, {
-      type: t.type === 'transfer' ? 'expense' : t.type,
+      type: t.type,
       amount: t.amount,
-      category_id: t.type === 'transfer' ? null : t.categoryId,
-      subcategory_id: t.type === 'transfer' ? null : (t.subcategoryId || null),
+      category_id: t.categoryId,
+      subcategory_id: t.subcategoryId || null,
       account_id: t.accountId,
       to_account_id: t.toAccountId || null,
       transaction_date: transactionDate,
@@ -598,15 +780,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // 注意：本地写入已成功（record 已落库），UI 映射层即使异常也只影响展示，
     // 绝不能因此让 addTransaction 抛错导致上层误报「保存失败」。
     try {
-      const accountNameMap = new Map<string, string>()
-      accountsWithBalance.forEach(a => accountNameMap.set(a.id, a.name))
+      const accountInfoMap = new Map<string, { name: string; currency: string }>()
+      accountsWithBalance.forEach(a => accountInfoMap.set(a.id, { name: a.name, currency: a.currency || 'CNY' }))
       const categoryMap = new Map<string, { name: string; icon: string }>()
       categories.expense.forEach(c => categoryMap.set(c.id, { name: c.name, icon: c.icon }))
       categories.income.forEach(c => categoryMap.set(c.id, { name: c.name, icon: c.icon }))
       const subCategoryMap = new Map<string, string>()
       subCategories.forEach(s => subCategoryMap.set(s.id, s.name))
 
-      const newTransaction = mapTransaction(record, accountNameMap, categoryMap, subCategoryMap)
+      const newTransaction = mapTransaction(record, categoryMap, subCategoryMap)
 
       setTransactions(prev => [newTransaction, ...prev])
     } catch (mapErr) {
@@ -627,17 +809,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const deleteTransaction = useCallback(async (id: string) => {
     if (!userId) throw new Error('未登录')
 
+    const existing = transactions.find(t => t.id === id) || transfers.find(t => t.id === id)
+    const isTransfer = existing?.source === 'transfer'
+
     // 1. 立即从 IndexedDB 标记删除
-    await localTransactions.remove(id)
+    if (isTransfer) {
+      await localTransfers.remove(id)
+    } else {
+      await localTransactions.remove(id)
+    }
 
     // 2. 更新本地 state
-    setTransactions(prev => prev.filter(t => t.id !== id))
+    if (isTransfer) {
+      setTransfers(prev => prev.filter(t => t.id !== id))
+    } else {
+      setTransactions(prev => prev.filter(t => t.id !== id))
+    }
 
     // 3. 后台同步
-    syncEngine.syncAfterWrite('transactions', userId).catch(err => {
+    syncEngine.syncAfterWrite(isTransfer ? 'transfers' : 'transactions', userId).catch(err => {
       console.error('后台同步删除交易失败:', err)
     })
-  }, [userId])
+  }, [userId, transactions, transfers])
 
   // ============================================================
   // CRUD: 更新交易
@@ -646,6 +839,52 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const updateTransaction = useCallback(async (id: string, data: Partial<Transaction>) => {
     if (!userId) throw new Error('未登录')
 
+    const existing = transactions.find(t => t.id === id) || transfers.find(t => t.id === id)
+    if (!existing) {
+      console.error('找不到交易:', id)
+      return
+    }
+    const isTransfer = existing.source === 'transfer'
+
+    // 转账：更新 transfers 表
+    if (isTransfer) {
+      const fromAcc = accountsWithBalance.find(a => a.id === (data.accountId ?? existing.accountId))
+      const toAcc = accountsWithBalance.find(a => a.id === (data.toAccountId ?? existing.toAccountId))
+      const fromCurrency = fromAcc?.currency || existing.fromCurrency || 'CNY'
+      const toCurrency = toAcc?.currency || existing.toCurrency || 'CNY'
+      const fromAmount = data.fromAmount ?? data.amount ?? existing.fromAmount ?? existing.amount ?? 0
+      const fee = data.fee ?? existing.fee ?? 0
+      const toAmount = data.toAmount ?? existing.toAmount ?? Math.max(fromAmount - fee, 0)
+      const exchangeRate = fromCurrency === toCurrency ? 1 : toAmount / Math.max(fromAmount - fee, 1e-8)
+      const timeToDb = (tim?: string) => {
+        if (tim === undefined) return undefined
+        return tim.length <= 5 ? tim + ':00' : tim
+      }
+      await localTransfers.update(id, {
+        from_account_id: (data.accountId ?? existing.accountId)!,
+        from_currency: fromCurrency,
+        from_amount: fromAmount,
+        to_account_id: (data.toAccountId ?? existing.toAccountId)!,
+        to_currency: toCurrency,
+        to_amount: toAmount,
+        exchange_rate: exchangeRate,
+        fee,
+        transaction_date: data.transactionDate ?? existing.transactionDate!,
+        transaction_time: timeToDb(data.time) ?? timeToDb(existing.time)!,
+        note: data.note !== undefined ? (data.note || null) : (existing.note || null),
+      })
+      syncEngine.syncAfterWrite('transfers', userId).catch(err => {
+        console.error('后台同步更新转账失败:', err)
+      })
+      setTransfers(prev =>
+        prev.map(t =>
+          t.id === id ? { ...t, ...data, fromAmount, toAmount, fee, fromCurrency, toCurrency } : t
+        )
+      )
+      return
+    }
+
+    // 非转账（含历史转账 source='txn'，仍落 transactions 表）
     // 1. 构建 IndexedDB 更新字段
     const dbUpdates: Partial<TransactionRecord> = {}
     if (data.type !== undefined) {
@@ -678,7 +917,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     syncEngine.syncAfterWrite('transactions', userId).catch(err => {
       console.error('后台同步更新交易失败:', err)
     })
-  }, [userId, recomputeTransactions])
+  }, [userId, transactions, transfers, accountsWithBalance, recomputeTransactions])
 
   // ============================================================
   // CRUD: 账户
@@ -1286,6 +1525,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       accounts: accountsWithBalance,
       categories,
       transactions,
+      transfers,
       budgets,
       loading,
       addTransaction,

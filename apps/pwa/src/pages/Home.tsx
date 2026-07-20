@@ -150,9 +150,7 @@ export default function HomePage({ onAddTransaction }: HomePageProps = {}) {
           <Card className="!p-2">
             {recent.length > 0 ? (
               recent.map((t) => {
-                const category = t.type === 'transfer'
-                  ? { icon: '↔️', color: '#888888' }
-                  : (categories[t.type === 'expense' ? 'expense' : 'income'] as any[])?.find(c => c.id === t.categoryId) || { icon: '📝', color: '#888888' }
+                const category = (categories[t.type === 'expense' ? 'expense' : 'income'] as any[])?.find(c => c.id === t.categoryId) || { icon: '📝', color: '#888888' }
                 return (
                   <TransactionItem
                     key={t.id}

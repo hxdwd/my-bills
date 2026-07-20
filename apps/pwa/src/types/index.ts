@@ -27,6 +27,15 @@ export interface Transaction {
   accountName: string;
   toAccountId?: string;
   toAccountName?: string;
+  // 转账多币种字段（仅 type === 'transfer' 时有效）
+  fromAmount?: number;
+  toAmount?: number;
+  fee?: number;
+  fromCurrency?: string;
+  toCurrency?: string;
+  exchangeRate?: number;
+  // 数据来源标记：'txn' = transactions 表（消费/收入/历史转账），'transfer' = transfers 表（新转账）
+  source?: 'txn' | 'transfer';
   date: string;
   time: string;
   tags?: string[];

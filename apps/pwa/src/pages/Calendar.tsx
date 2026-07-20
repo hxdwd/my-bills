@@ -206,9 +206,7 @@ export default function CalendarPage() {
             {selectedDayTransactions.length > 0 ? (
               <div className="space-y-1">
                 {selectedDayTransactions.map((t) => {
-                  const category = t.type === 'transfer'
-                    ? { icon: '↔️', color: '#5b8dee' }
-                    : (categories[t.type === 'expense' ? 'expense' : 'income'] as any[]).find(c => c.id === t.categoryId) || { icon: '📝', color: '#87867f' }
+                  const category = (categories[t.type === 'expense' ? 'expense' : 'income'] as any[]).find(c => c.id === t.categoryId) || { icon: '📝', color: '#87867f' }
                   return (
                     <TransactionItem
                       key={t.id}

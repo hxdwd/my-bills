@@ -4,6 +4,141 @@
 
 ---
 
+## 2026-07-21：搜索转账详情适配 + 转账去标签 + 交易明细分页懒加载
+
+> 本日增量改动建立在 07-20「转账独立表重构」之上（017/018 迁移 + AppContext/database/sync-engine/AddTransaction 多币种接入未提交，本次一并提交）。
+
+### 一、本次做了什么
+
+#### 1. 搜索页转账交易详情适配（`apps/pwa/src/pages/Search.tsx`）
+- **问题**：搜索页内置的详情 BottomSheet 是 `TransactionDetailSheet` 组件的近重复实现，转账分支仍是旧的"普通交易"展示逻辑——金额用 `formatCurrency(selectedTx.amount)`（忽略原/目标币种），账户只显示单个 `accountName`，且 `openDetail` 没重置 `editType`，打开转账时若上一条是收支会错误显示分类/子分类行。
+- **修复**：
+  - 金额：`type==='transfer'` 改用 `formatTransferAmount(selectedTx)`，显示「原币种金额 → 目标币种金额」。
+  - 账户：查看态拆成「转出账户」+「转入账户」两行。
+  - 手续费：`fee>0` 时展示。
+  - 汇率：仅当跨币种且 `exchangeRate` 有值时展示。
+  - `openDetail` 打开时同步 `setEditType(t.type)`，结合已有 `editType!=='transfer'` 隐藏逻辑，转账正确隐藏分类/子分类。
+
+#### 2. 转账详情去掉「标签」（`apps/pwa/src/pages/Search.tsx`）
+- transfers 表没有 `tags` 字段，整块「标签」显示/编辑用 `selectedTx.type!=='transfer'` 包裹，转账（查看/编辑态）都不渲染，连带其触发的「选择标签」弹层对转账不可达（保存时不写 tags）。
+
+#### 3. 交易明细分页懒加载（`apps/pwa/src/pages/TransactionList.tsx`）
+- **诊断**：点首页「查看全部」每次重新挂载该页，一次性同步渲染整张交易表为 DOM，数据量大时主线程被阻塞 ~787ms（浏览器控制台 `[Violation] 'message' handler took 787ms` 是把长任务甩锅给第三方 `message` 监听器——代码里没有任何 `message` 监听，真正元凶是整表 DOM 体量）。
+- **实现**：按「日期分组」分页，首屏只渲染前 `PAGE_SIZE=10` 组，底部「加载更多」每次追加 10 天并显示进度 `已显示 X / Y 天`；切换筛选（全部/按月/月份）时 `useEffect` 重置分页；同时把逐行 `.find` 标签/分类改为进入页时建一次 `tagMap`/`categoryMap` 字典、渲染时 O(1) `.get()`。
+
+### 二、🔴 踩坑 / 避坑（重点）
+
+1. **项目存在两份 `Transaction` 接口**。`selectedTx` 实际走 `AppContext.tsx` 定义的 `Transaction`（含 `fromAmount/toAmount/fee/fromCurrency/toCurrency`，但**缺 `exchangeRate`**），我第一反应是去加 `types/index.ts` 那份——改完 `exchangeRate` 报错仍在。定位：`useApp()` 返回的 `transactions` 类型用的是 AppContext 那份。**任何给交易对象加字段的改动，先确认到底用哪份接口，两份都要补**（都补了 `exchangeRate`）。
+2. **`[Violation] 'message' handler took 787ms` 是假象**——应用代码零 `message` 监听（`addEventListener('message'|'onmessage'|'postMessage'|'BroadcastChannel')` 全 0 命中）。别浪费时间去查 `message`，真实瓶颈是"整表同步渲染"。同理，遇到此类 `Violation` 先看是不是自己的长同步任务被归因给第三方监听器（Vite HMR / PWA SW / React DevTools 之一）。
+3. **搜索页详情是复用组件的近重复**：`Search.tsx` 里自己写了一套详情 BottomSheet，和 `TransactionDetailSheet.tsx` 逻辑高度重合、且转账适配滞后。后续转账/详情改动要记得**两处同步**或抽公共组件，否则一边修了一边还是旧的。
+4. **`openDetail` 必须重置 `editType`**：详情用 `editType!=='transfer'` 决定是否显示分类/子分类；若不随选中行重置，残留的旧 `editType` 会让转账错误显示这些行。典型"上一条状态污染下一条"——任何按类型分支渲染、又复用同一个详情组件的场景，打开时都要重置类型。
+5. **`vite build` 是本项目唯一真实的编译校验**，`tsc --noEmit` 不门禁且有大量预存错误（`toYMD` 缺失、`theme` 未用、`id` 隐式 any、`FilterState` 默认值类型不符）。交付只看 `vite build` 通过即可，别去追那些预存 tsc 报错。
+6. **分页粒度选「天」而非「条」**：列表按日期分组，按条分页会把同一天记录拆散、且每个日期头部要重复渲染。按「日期分组」分页既治 DOM 体量又保持分组完整。编辑/删除后分页状态不重置是预期（编辑不改分组归属，删除会自然缩短列表使 `hasMoreGroups` 收敛），只有切换筛选才重置。
+
+### 三、验证
+- `vite build` 通过（✓ built in ~6.6s，PWA `sw.js` 正常生成）。
+- 全量 `tsc --noEmit` 仅余项目预存错误（Search.tsx 的 toYMD/theme/id/FilterState 等），非本次引入。
+
+### 四、提交流水
+| commit | 内容 |
+|--------|------|
+| 待 push | 转账独立表重构（017/018 迁移 + AppContext/database/sync-engine/AddTransaction 多币种接入）+ 搜索转账详情适配 + 转账去标签 + 交易明细分页懒加载 |
+
+### 五、遗留 / 待办（属方案 A 范畴，排期再做）
+- [ ] 搜索账户/关键字筛选转账仅匹配"出账户/原币种"（`applyFilters` 只看 `accountId`）。
+- [ ] 搜索"最近交易"无查询态不显示转账。
+- [ ] 转账账户改名后列表 `accountName` 不实时刷新（需 reload）。
+- [ ] 交易明细分页是"按天懒加载"，若单天记录极多（如历史导入某天几百条）仍会一次性渲染那一天——极端情况可再细化到"天内也分页"，一般场景够用。
+
+---
+
+## 2026-07-20：同步逻辑审查结论与方案（含转账重构 → RLS 修复 → 同步优化排期）
+### 0. 背景与上下文
+
+本文件记录一次对 `my-bills` PWA 同步逻辑的端到端审查结论，供后续排期落地参考。
+
+事件脉络：
+1. 转账重构：把账户间转账从 `transactions` 表拆到独立 `transfers` 多币种表（迁移 `017`，已执行）。
+2. 同步报 401：新建转账推送被 RLS 拦截。根因是 `017` 误用 `auth.uid() = user_id`，而全站其他表都用 `public.get_current_user_id()`（读同步引擎传入的 `x-user-id` 请求头）。已用迁移 `018` 修正。
+3. 用户发现同步**每 5 分钟全量重拉**远程数据（含 3938 条交易 × 4 页），质疑"记录没增加为何还在拉"。
+4. 我提出"先 `get_sync_counts` 比总数，相等就跳过 `pullAll`"的简化方案。
+5. 用户指出该方案**对"修改"失效**（改数据行数不变 → 误判无变化 → 漏拉）。
+6. 我改提 `updated_at` 水位增量方案；用户要求用 MCP **核实远程库触发器是否真的齐全**。
+7. MCP 核实：`transfers`、`holdings_transactions` **没有** `updated_at` 触发器（其他 8 张主表有）。
+8. 用户要求"全面排查方案，不然不信任"，遂做本次完整审查。
+9. 结论：复杂设计排期后做；**先上简单版本止住重复全量拉取**。
+
+---
+
+### 1. 已核实的关键事实
+
+- **远程库触发器（MCP `pg_trigger` 核实）**：
+  - 有 `BEFORE UPDATE` + `update_updated_at_column` 触发器的表（共 8 张）：
+    `accounts`、`budgets`、`categories`、`profiles`、`sub_categories`、`tags`、`transactions`、`users`。
+  - **没有**该触发器的表（共 2 张）：`transfers`、`holdings_transactions`。
+  - 含义：这两张表被远程直接修改时 `updated_at` 不会前进，任何依赖 `updated_at` 的方案都检测不到它们的远程修改。
+- **`/api/valuation/batch` 与数据同步是两回事**：
+  它来自 `useWealthValuation` 的 60s 行情估值轮询（`apps/pwa/src/hooks/useWealthValuation.ts:130-134`），**不是**数据库同步。排查同步频率时不要混淆两者。
+- **当前 `pullAll` 行为**：每个同步周期**无条件全量重拉**所有表（`id` 游标分页），靠 `bulkPut` 按主键幂等合并（`apps/pwa/src/db/sync-engine.ts:79-181`）。
+- **同步触发点（仅 3 处）**：
+  1. 启动 `loadData → syncOnStartup`（仅 1 次，`AppContext.tsx:484`）。
+  2. 网络恢复 `window 'online'` 事件（`sync-engine.ts:452-467`）。
+  3. 定时 `startPeriodicSync` 每 **5 分钟**一次（`sync-engine.ts:504-514`）。
+  - 日志里约 5 次完整循环 ≈ 20~25 分钟运行时长，**频率本身正常**，问题在于每次都是全量。
+
+---
+
+### 2. 完整漏洞清单（A–H，均按代码核对）
+
+| # | 位置 | 现象 | 严重度 | 现存全量方案 | 此前我提的增量方案 |
+|---|---|---|---|---|---|
+| **A** | `pullTable` 只 `bulkPut`、不删本地 | 远程（或其他设备）**删除**的行，本地永远残留 → 列表/统计出现幽灵数据 | 正确性 | ❌ 未处理 | ❌ 未处理 |
+| **B** | `pullTable` 仅排除 `pending_delete`，**不排除 `local_dirty`** | 离线改了但还没推送的行，被远程版本 `bulkPut` 覆盖 → **本地修改丢失** | 正确性 | ⚠️ 靠"先 push 再 pull"掩盖 | ❌ 未处理 |
+| **C** | `checkForUpdates` 只比 `COUNT(*)` | 远程**改**了数据、条数不变 → 误判"无变化"跳过 → 漏拉 | 正确性 | （没用上） | ❌ 此前未意识到 |
+| **D** | 远程 `transfers`/`holdings_transactions` **无 UPDATE 触发器** | 这两张表被远程改时 `updated_at` 不前进 → 水位检测不到 | 正确性 | — | ❌ 经 MCP 验证才发现 |
+| **E** | `pushTable` 删除分支：`DELETE` 返回 404 直接 `throw`→`markError` | "本地建了又删、从未推送"的记录，每次同步都发注定 404 的 DELETE，**无限重试** | 正确性/噪音 | ❌ | ❌ 未处理 |
+| **F** | `pullAll` 每个周期全表重拉（3938 条交易×4 页） | 无变更也每 5 分钟拉全量 → 用户最初问的**流量浪费** | 效率 | ❌ | ✅ 水位解决 |
+| **G** | `syncOnStartup`/`startPeriodicSync`/`online` 三处都可能并发触发，无锁 | 两次同步交错操作 Dexie 的 `bulkPut`/`delete` → 竞态 | 正确性（低概率） | ❌ | ❌ 未处理 |
+| **H** | `on_conflict=id` + `merge-duplicates` | 两设备改同一行 → last-write-wins，静默丢一端 | 已知限制 | 同 | 同 |
+
+> 关键认知：**A、B、E、G 是当前线上代码就已存在的漏洞**（平时被"先 push 后 pull"和"单人单设备"掩盖）；**C、D 是此前增量方案里漏掉的**。只修 F 或只上水位，都会留下 A/B/E/D 这些真正确性坑。
+
+---
+
+### 3. 完整重做设计（方案 X，排期后做）
+
+目标：一次闭合 A~G，H 记为已知限制。
+
+1. **删除以墓碑传播（修 A）**：新增表 `deleted_records(id, tbl, user_id, deleted_at)`；任何删除都写一行，远程行改为软删（`deleted_at` 置位）。拉取时带 `deleted_at > 水位` 的行 → 本地标记并物理删除。删除也能被增量捕获。
+2. **拉取不覆盖本地脏写（修 B）**：`pullTable` 排除集合从"只排除 `pending_delete`"扩展为"排除 `pending_delete` **和 `local_dirty`**"，脏写保留等下次推送。
+3. **水位增量（修 C/F）**：`syncMeta` 存每表 `lastPullTs`；拉取 `updated_at > 水位`；首拉无水位走全量。
+4. **补触发器（修 D）**：迁移 `019` 给 `transfers`、`holdings_transactions` 加 `BEFORE UPDATE` 触发器，使 `updated_at` 在远程改动时前进。
+5. **推送 404 即视为已删（修 E）**：`DELETE` 返回 404 当作成功，本地物理删除，不再重试。
+6. **并发锁（修 G）**：同步入口加 `inFlight` 标志，进行中则跳过/排队，杜绝交错。
+7. **H（冲突 last-write-wins）**：对个人记账 App 可接受，显式标注为已知限制，不假装解决。
+
+---
+
+### 4. 当前决定
+
+- **方案 X（完整重做）排期后做**，因其改动同步关键路径、需多个迁移 + 改 `pull`/`push`/`database`，工作量大。
+- **先做简单版本止住"重复全量拉取"（漏洞 F）**，详见对话给出的简单方案。
+- 简单版本**不引入新漏洞**，也不声称解决 A/B/C/D/E/G；这些统一留给方案 X。
+
+---
+
+### 5. 重点事项 【重点】
+
+- 【重点】**`transfers`、`holdings_transactions` 缺 `updated_at` 触发器**（MCP 已核实）。这是水位方案（方案 X 第 3、4 点）生效的前提，落地 X 前必须先补（迁移 `019`）。
+- 【重点】**远程删除永不传播到本地（漏洞 A）**：任何增量/全量方案都必须处理墓碑，否则幽灵数据。当前全量方案同样没处理。
+- 【重点】**拉取会覆盖本地未推送修改（漏洞 B）**：`pullTable` 必须排除 `local_dirty`，否则离线改的数据会被远程版本冲掉。
+- 【重点】**`COUNT(*)` 方案漏"修改"（漏洞 C）**：不能单独用作"是否拉取"的判断；它只能感知新增/删除，感知不到改。
+- 【重点】**未同步即删除的记录会无限重试 DELETE 404（漏洞 E）**：推送删除分支需把 404 当成功处理。
+- 【重点】**`/api/valuation/batch` 与数据库同步是两回事**：前者是资产估值 60s 轮询，后者是数据同步；排查时不要混淆，也不要为"省流量"去动估值轮询。
+- 【重点】**方案 X 改动同步关键路径，必须经用户过目 SQL 后再经 MCP 执行**（用户习惯："先看 SQL 再执行"）；不可先斩后奏。
+
+---
+
 ## 2026-07-19（续）：PWA 更新机制修复（iOS 桌面版更新卡死）
 
 ### 一、问题现象

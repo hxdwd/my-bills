@@ -4,7 +4,7 @@ import { useAuthStore } from '../stores/useAuthStore'
 import { recordTagUsage } from '../utils/tagUsage'
 import BottomSheet from './ui/BottomSheet'
 import { X, Trash2, Pencil, Check } from 'lucide-react'
-import { formatCurrency } from '../utils/format'
+import { formatCurrency, formatTransferAmount } from '../utils/format'
 
 // YYYY-MM-DD -> "X月X日"
 function formatDateDisplay(dateStr: string): string {
@@ -195,13 +195,15 @@ export default function TransactionDetailSheet({
                   />
                 ) : (
                   <div className={`font-bold font-mono amount-fluid-lg ${amountColor}`}>
-                    {formatCurrency(
-                      selectedTx.type === 'expense'
-                        ? -Math.abs(selectedTx.amount)
-                        : Math.abs(selectedTx.amount),
-                      selectedTx.type !== 'transfer',
-                      false
-                    )}
+                    {selectedTx.type === 'transfer'
+                      ? formatTransferAmount(selectedTx)
+                      : formatCurrency(
+                          selectedTx.type === 'expense'
+                            ? -Math.abs(selectedTx.amount)
+                            : Math.abs(selectedTx.amount),
+                          selectedTx.type !== 'transfer',
+                          false
+                        )}
                   </div>
                 )}
                 <div className="text-sm text-ink-2 mt-1">{typeLabel}</div>
@@ -354,7 +356,11 @@ export default function TransactionDetailSheet({
                       <span className="text-ink-2">›</span>
                     </button>
                   ) : (
-                    <span className="text-sm text-ink">{selectedTx.accountName}</span>
+                    <span className="text-sm text-ink">
+                      {selectedTx.type === 'transfer' && selectedTx.toAccountName
+                        ? `${selectedTx.accountName} → ${selectedTx.toAccountName}`
+                        : selectedTx.accountName}
+                    </span>
                   )}
                 </div>
 

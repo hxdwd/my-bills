@@ -11,6 +11,7 @@ import type {
   AccountRecord,
   CategoryRecord,
   TransactionRecord,
+  TransferRecord,
   BudgetRecord,
   SubCategoryRecord,
   TagRecord,
@@ -198,6 +199,61 @@ export const localTransactions = {
       .where('account_id').equals(accountId)
       .filter(r => r.user_id === userId && r._sync_status !== 'pending_delete')
       .toArray()
+  },
+}
+
+// ============================================================
+// Transfers（账户间转账，独立表，不计入消费，支持多币种）
+// ============================================================
+
+export const localTransfers = {
+  /** 获取所有有效转账，按日期倒序 */
+  async getAll(userId: string): Promise<TransferRecord[]> {
+    const records = await db.transfers
+      .where('user_id').equals(userId)
+      .filter(r => r._sync_status !== 'pending_delete')
+      .toArray()
+    records.sort((a, b) => {
+      const da = parseTransactionDate(a.transaction_date)
+      const dbDate = parseTransactionDate(b.transaction_date)
+      const dateCmp = dbDate - da
+      if (dateCmp !== 0) return dateCmp
+      return (b.transaction_time || '').localeCompare(a.transaction_time || '')
+    })
+    return records
+  },
+
+  /** 获取单条转账 */
+  async getById(id: string): Promise<TransferRecord | undefined> {
+    const record = await db.transfers.get(id)
+    if (record && record._sync_status === 'pending_delete') return undefined
+    return record
+  },
+
+  /** 新增转账 */
+  async insert(userId: string, data: Omit<TransferRecord, keyof ReturnType<typeof newRecordBase> | '_sync_status' | '_updated_at_local'>): Promise<TransferRecord> {
+    const record: TransferRecord = {
+      ...newRecordBase(userId),
+      ...data,
+    }
+    await db.transfers.put(record)
+    return record
+  },
+
+  /** 更新转账 */
+  async update(id: string, data: Partial<TransferRecord>): Promise<void> {
+    const existing = await db.transfers.get(id)
+    if (!existing) return
+    const updated = markDirty({ ...existing, ...data })
+    await db.transfers.put(updated)
+  },
+
+  /** 删除转账（软删除） */
+  async remove(id: string): Promise<void> {
+    const existing = await db.transfers.get(id)
+    if (!existing) return
+    const deleted = markDeleted(existing)
+    await db.transfers.put(deleted)
   },
 }
 
