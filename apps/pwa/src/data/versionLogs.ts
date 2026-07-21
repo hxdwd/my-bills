@@ -18,6 +18,13 @@ export interface VersionLog {
 
 export const VERSION_LOGS: VersionLog[] = [
   {
+    version: '1.1.4',
+    date: '2026-07-21',
+    changes: [
+      '新增「人生进度」彩蛋：生命进度大环、今年/本月/本周/今天进度条、生命刻度与多目标倒计时',
+    ],
+  },
+  {
     version: '1.1.3',
     date: '2026-07-21',
     changes: [

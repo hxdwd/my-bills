@@ -22,6 +22,7 @@ import {
   LogOut,
   Crown,
   ScrollText,
+  Sparkles,
 } from 'lucide-react'
 
 // 版本更新说明（CHANGELOG）统一维护在 ../data/versionLogs.ts，设置页与首页共用。
@@ -280,6 +281,12 @@ export default function SettingsPage() {
           title: '版本更新',
           subtitle: '查看历史更新内容',
           onClick: () => setShowChangelog(true),
+        },
+        {
+          icon: <Sparkles size={20} className="text-amber-400" />,
+          title: '彩蛋',
+          subtitle: '一些藏在角落里的小温柔',
+          onClick: () => navigate('/egg'),
         },
       ],
     },

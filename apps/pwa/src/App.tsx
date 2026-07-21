@@ -22,6 +22,8 @@ import {
   WealthDetail,
   WealthAdd,
   WealthImport,
+  Egg,
+  LifeProgress,
 } from './pages';
 import { TabType } from './types';
 import { UpdatePrompt } from './pwa/UpdatePrompt';
@@ -55,6 +57,8 @@ function ensureSubPageRoutes() {
   subPageRoutes.push({ path: '/wealth/add', element: () => <WealthAdd /> });
   subPageRoutes.push({ path: '/wealth/import', element: () => <WealthImport /> });
   subPageRoutes.push({ path: '/wealth/:type', element: () => <WealthCategory /> });
+  subPageRoutes.push({ path: '/egg/life', element: () => <LifeProgress /> });
+  subPageRoutes.push({ path: '/egg', element: () => <Egg /> });
   subPageRoutesInited = true;
 }
 

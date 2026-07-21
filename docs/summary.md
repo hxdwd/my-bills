@@ -4,6 +4,21 @@
 
 ---
 
+## 2026-07-21（再续）— 「人生进度」彩蛋页面
+
+- **新增通用扩展表 `public.user_expand`**（迁移 `019_user_expand.sql`，已线上 apply）。设计原则：所有彩蛋共用此表，数据按命名空间放 `extras.life` 下；绝不改 `users` 主表、绝不每彩蛋单建表。RLS 用 `public.get_current_user_id()`（读 `x-user-id` 头），**不用 `auth.uid()`**（anon key 下恒为 NULL）——已 `execute_sql` 复核策略 `qual`/`with_check` 均为 `get_current_user_id()`。
+- **前端数据读写** `services/userExpand.ts`：复用 sync-engine 的 `fetch + x-user-id` 直连模式，按 `user_id` upsert `extras` JSONB。
+- **新增页面**：
+  - `Egg.tsx` 彩蛋卡片列表（入口：设置 → 其他 → 彩蛋 → `/egg`）。
+  - `LifeProgress.tsx`（`/egg/life`）：① 生命大环 SVG（渐变描边 + round 端点 + 中心百分比/年龄 + 每日小诗）；② 今年/本月/本周/今天 4 条进度条；③ 生命刻度（`grid` 周方块横向滚动，目标周描边高亮）；④ 多目标倒计时（悬浮金色圆按钮 + BottomSheet 录入 名称/Emoji/日期/6 色渐变，rAF 数字滚动卡片，按日期排序，过期处理）。
+  - 动画：入场滑入、`StarField.tsx` Canvas 金色星空（≤50 点）、下拉浮现随机名言（禁下拉同步）。
+  - 文案约束：中性温暖，禁用死亡/死期等负面词。
+- 路由：`App.tsx` 注册 `/egg`、`/egg/life` 为子页（自动隐藏 TabBar）；`Settings.tsx`「其他」加"彩蛋"入口（lucide `Sparkles`）。新增 `hooks/useHaptic.ts`、复用 `data/lifeProgress.ts`（类型/渐变池/小诗名言池/计算工具）。
+- 版本号升至 **1.1.4**，changelog 头部追加 1.1.4 条目。
+- 校验：`vite build` 通过（exit 0）；新建文件 lint 0 错误。
+
+---
+
 ## 2026-07-21（续）— 本会话改动
 
 - **搜索页时间区间崩溃修复**：`Search.tsx` 的 `resolveRange` 调用了未定义的 `toYMD`，选任意时间区间（今年/本月/今天等）都会 `ReferenceError` 整页崩溃。已补 `toYMD(d): string`（本地时区 `YYYY-MM-DD`）。教训：名称解析失败是真实运行期崩溃，必须修，不能当类型噪音忽略。
