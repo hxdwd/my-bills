@@ -22,7 +22,7 @@ import {
   WealthDetail,
   WealthAdd,
   WealthImport,
-  Egg,
+  EasterEgg,
   LifeProgress,
 } from './pages';
 import { TabType } from './types';
@@ -57,8 +57,8 @@ function ensureSubPageRoutes() {
   subPageRoutes.push({ path: '/wealth/add', element: () => <WealthAdd /> });
   subPageRoutes.push({ path: '/wealth/import', element: () => <WealthImport /> });
   subPageRoutes.push({ path: '/wealth/:type', element: () => <WealthCategory /> });
-  subPageRoutes.push({ path: '/egg/life', element: () => <LifeProgress /> });
-  subPageRoutes.push({ path: '/egg', element: () => <Egg /> });
+  subPageRoutes.push({ path: '/easterEgg/life', element: () => <LifeProgress /> });
+  subPageRoutes.push({ path: '/easterEgg', element: () => <EasterEgg /> });
   subPageRoutesInited = true;
 }
 

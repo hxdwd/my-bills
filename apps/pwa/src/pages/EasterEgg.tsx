@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { PageContainer } from '../components/layout/PageContainer'
 import { useHaptic } from '../hooks/useHaptic'
 
-interface EggItem {
+interface EasterEggItem {
   key: string
   title: string
   desc: string
@@ -12,17 +12,17 @@ interface EggItem {
   soon?: boolean
 }
 
-const EGGS: EggItem[] = [
+const EASTER_EGGS: EasterEggItem[] = [
   {
     key: 'life',
     title: '人生进度',
     desc: '看一看，你在这趟旅程里，走到了哪里。',
     emoji: '🌅',
-    to: '/egg/life',
+    to: '/easterEgg/life',
   },
 ]
 
-export default function Egg() {
+export default function EasterEgg() {
   const navigate = useNavigate()
   const haptic = useHaptic()
   const [mounted, setMounted] = useState(false)
@@ -59,32 +59,32 @@ export default function Egg() {
         </p>
 
         <div className="space-y-3">
-          {EGGS.map((egg, i) => (
+          {EASTER_EGGS.map((item, i) => (
             <button
-              key={egg.key}
+              key={item.key}
               onClick={() => {
                 haptic()
-                navigate(egg.to)
+                navigate(item.to)
               }}
               className="w-full text-left bg-surface rounded-3xl shadow-soft p-5 flex items-center gap-4 active:scale-[0.99] transition-transform"
               style={{
                 transitionDelay: `${i * 60}ms`,
-                animation: mounted ? `eggIn 0.5s ${i * 60}ms both` : 'none',
+                animation: mounted ? `easterEggIn 0.5s ${i * 60}ms both` : 'none',
               }}
             >
               <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-100 to-rose-100 flex items-center justify-center text-3xl shrink-0">
-                {egg.emoji}
+                {item.emoji}
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="text-lg font-semibold text-ink">{egg.title}</span>
-                  {egg.soon && (
+                  <span className="text-lg font-semibold text-ink">{item.title}</span>
+                  {item.soon && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-ink/10 text-ink/50">
                       筹备中
                     </span>
                   )}
                 </div>
-                <p className="text-ink/50 text-sm mt-0.5 truncate">{egg.desc}</p>
+                <p className="text-ink/50 text-sm mt-0.5 truncate">{item.desc}</p>
               </div>
               <svg viewBox="0 0 24 24" className="w-5 h-5 text-ink/30 shrink-0" fill="none" stroke="currentColor" strokeWidth={2}>
                 <path d="M9 6l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
@@ -95,7 +95,7 @@ export default function Egg() {
       </div>
 
       <style>{`
-        @keyframes eggIn {
+        @keyframes easterEggIn {
           from { opacity: 0; transform: translateY(16px); }
           to { opacity: 1; transform: translateY(0); }
         }

@@ -286,7 +286,7 @@ export default function SettingsPage() {
           icon: <Sparkles size={20} className="text-amber-400" />,
           title: '彩蛋',
           subtitle: '一些藏在角落里的小温柔',
-          onClick: () => navigate('/egg'),
+          onClick: () => navigate('/easterEgg'),
         },
       ],
     },

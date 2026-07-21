@@ -12,7 +12,6 @@ import {
   randomQuote,
   computeLifeRing,
   computeGranularity,
-  buildWeekGrid,
   daysUntil,
   DEFAULT_LIFE_EXPECTANCY,
   type LifeData,
@@ -190,17 +189,6 @@ export default function LifeProgress() {
     [life.birthDate, life.lifeExpectancy]
   )
   const gran = useMemo(() => computeGranularity(now), [now])
-  const weekCells = useMemo(
-    () =>
-      life.birthDate
-        ? buildWeekGrid(
-            life.birthDate,
-            life.lifeExpectancy,
-            (life.goals ?? []).map((g) => g.date)
-          )
-        : [],
-    [life.birthDate, life.lifeExpectancy, life.goals]
-  )
   const goals = useMemo(
     () => [...(life.goals ?? [])].sort((a, b) => a.date.localeCompare(b.date)),
     [life.goals]
@@ -346,7 +334,7 @@ export default function LifeProgress() {
           </button>
         </div>
       ) : (
-        <div className="px-4 pb-28 space-y-5">
+        <div className="px-4 pb-10 space-y-5">
           {/* 模块1：生命大环 */}
           <div className="bg-surface rounded-3xl shadow-soft p-6 text-center">
             {ring ? (
@@ -371,46 +359,12 @@ export default function LifeProgress() {
             <GranBar label="今天" value={gran.day} gradient="linear-gradient(90deg,#A1C4FD,#C2E9FB)" />
           </div>
 
-          {/* 模块3：生命刻度 */}
-          <div className="bg-surface rounded-3xl shadow-soft p-5">
-            <div className="text-ink/70 text-sm font-medium mb-1">生命刻度</div>
-            <p className="text-ink/40 text-xs mb-3">每一格是一周。金色的是已经走过的路。</p>
-            <div className="overflow-x-auto" style={{ overscrollBehavior: 'contain' }}>
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(52, 9px)',
-                  gap: '3px',
-                  width: 'max-content',
-                }}
-              >
-                {weekCells.map((cell) => (
-                  <div
-                    key={cell.index}
-                    title={`第 ${cell.index + 1} 周`}
-                    className="rounded-[2px]"
-                    style={{
-                      width: 9,
-                      height: 9,
-                      background: cell.lived
-                        ? 'linear-gradient(135deg,#FFD56B,#FF8A5B)'
-                        : 'rgba(255,255,255,0.10)',
-                      outline: cell.isGoal ? '1.5px solid #fff' : 'none',
-                      outlineOffset: '1px',
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
-            <p className="text-ink/35 text-[11px] mt-3">左右滑动，看看这一生有多长 🌿</p>
-          </div>
-
-          {/* 模块4：目标倒计时 */}
+          {/* 模块3：目标倒计时 */}
           <div>
             <div className="text-ink/70 text-sm font-medium px-1 mb-2">在等的那些日子</div>
             {goals.length === 0 ? (
               <div className="bg-surface/60 rounded-3xl p-6 text-center text-ink/40 text-sm">
-                还没有在等的事。点右下角的金色按钮，加一个吧 🌟
+                还没有在等的事。点下面的按钮，加一个吧 🌟
               </div>
             ) : (
               <div className="space-y-3">
@@ -421,17 +375,19 @@ export default function LifeProgress() {
             )}
           </div>
 
-          {/* 悬浮金色圆按钮 */}
-          <button
-            onClick={() => {
-              haptic()
-              openSheet()
-            }}
-            className="fixed right-5 bottom-[calc(env(safe-area-inset-bottom)+84px)] w-14 h-14 rounded-full bg-gradient-to-br from-amber-400 to-rose-400 shadow-lg flex items-center justify-center text-white text-3xl active:scale-90 z-20"
-            aria-label="新增目标"
-          >
-            +
-          </button>
+          {/* 页面底部添加按钮（非悬浮，随页面滚动） */}
+          <div className="flex justify-center pt-1">
+            <button
+              onClick={() => {
+                haptic()
+                openSheet()
+              }}
+              className="w-12 h-12 rounded-full bg-gradient-to-br from-amber-400 to-rose-400 shadow flex items-center justify-center text-white text-2xl active:scale-90"
+              aria-label="新增目标"
+            >
+              +
+            </button>
+          </div>
         </div>
       )}
       </div>
