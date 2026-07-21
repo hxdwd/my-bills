@@ -97,6 +97,13 @@ function startOfMonth(d: Date): Date {
 function startOfYear(d: Date): Date {
   return new Date(d.getFullYear(), 0, 1)
 }
+// Date -> "YYYY-MM-DD"（本地时区，供 resolveRange 换算日期区间边界）
+function toYMD(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
 // YYYY-MM-DD -> "X月X日"（与 AppContext 中 date 显示格式保持一致）
 function formatDateDisplay(dateStr: string): string {
   const parts = dateStr.split('-')
@@ -184,7 +191,7 @@ export default function SearchPage() {
   const [debouncedQuery, setDebouncedQuery] = useState('')
   const [chips, setChips] = useState<FilterChip[]>([])
   const [filters, setFilters] = useState<FilterState>({
-    type: 'all',
+    type: 'expense',
     accountId: 'all',
     dateRange: 'all',
     dateStart: '',
@@ -432,19 +439,37 @@ export default function SearchPage() {
     const max = filters.amountMax === '' ? null : Number(filters.amountMax)
     if (min !== null && !isNaN(min) && t.amount < min) return false
     if (max !== null && !isNaN(max) && t.amount > max) return false
-    // Chips（AND）—— 按名称匹配，规避底层重复 id 导致的漏匹配
-    for (const chip of chips) {
-      if (chip.kind === 'tag') {
+    // Chips：同 kind 内 OR（如选了多个分类=任一匹配即可），跨 kind 间 AND
+    // 注意：category/subcategory/account/note 在单笔交易上只有一个值，若同类仍用 AND 叠加，
+    // 选两个同类条件会要求「同时等于 A 又等于 B」而恒为空，故同类内必须 OR。
+    if (chips.length > 0) {
+      const tagLabels: string[] = []
+      const catLabels: string[] = []
+      const subLabels: string[] = []
+      const accLabels: string[] = []
+      const noteLabels: string[] = []
+      for (const chip of chips) {
+        if (chip.kind === 'tag') tagLabels.push(chip.label)
+        else if (chip.kind === 'category') catLabels.push(chip.label)
+        else if (chip.kind === 'subcategory') subLabels.push(chip.label)
+        else if (chip.kind === 'account') accLabels.push(chip.label)
+        else if (chip.kind === 'note') noteLabels.push(chip.label)
+      }
+      if (tagLabels.length > 0) {
         const names = (t.tags || []).map(id => tagMap.get(id)?.name || '')
-        if (!names.includes(chip.label)) return false
-      } else if (chip.kind === 'category') {
-        if ((categoryMap.get(t.categoryId)?.name || '') !== chip.label) return false
-      } else if (chip.kind === 'subcategory') {
-        if ((subCategoryMap.get(t.subcategoryId)?.name || '') !== chip.label) return false
-      } else if (chip.kind === 'account') {
-        if ((accountMap.get(t.accountId)?.name || '') !== chip.label) return false
-      } else if (chip.kind === 'note') {
-        if (!t.note || !t.note.toLowerCase().includes(chip.label.toLowerCase())) return false
+        if (!tagLabels.some(l => names.includes(l))) return false
+      }
+      if (catLabels.length > 0) {
+        if (!catLabels.includes(categoryMap.get(t.categoryId)?.name || '')) return false
+      }
+      if (subLabels.length > 0) {
+        if (!subLabels.includes(subCategoryMap.get(t.subcategoryId)?.name || '')) return false
+      }
+      if (accLabels.length > 0) {
+        if (!accLabels.includes(accountMap.get(t.accountId)?.name || '')) return false
+      }
+      if (noteLabels.length > 0) {
+        if (!noteLabels.some(l => t.note && t.note.toLowerCase().includes(l.toLowerCase()))) return false
       }
     }
     // 转账专属筛选（仅对转账生效，避免影响收支流水）—— 走出分类/子分类/标签逻辑
@@ -728,10 +753,10 @@ export default function SearchPage() {
       {/* Header */}
       <header className={`sticky top-0 z-40 bg-bg/80 backdrop-blur-md safe-area-top px-5 pt-3 pb-2`}>
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate(-1)} className="p-1">
+          <button onClick={() => navigate(-1)} className="p-1 shrink-0">
             <X size={24} className="text-ink-2" />
           </button>
-          <div className={`flex-1 flex items-center gap-2 px-4 py-2.5 rounded-full bg-surface shadow-soft`}>
+          <div className={`flex-1 min-w-0 flex items-center gap-2 px-4 py-2.5 rounded-full bg-surface shadow-soft`}>
             <Search size={18} className="text-ink-2" />
             <input
               ref={inputRef}
@@ -750,26 +775,15 @@ export default function SearchPage() {
           </div>
           <button
             onClick={() => { setDraftFilters(filters); setShowFilterModal(true) }}
-            className={`p-2 rounded-full bg-surface shadow-soft text-ink-2`}
+            className={`p-2 rounded-full bg-surface shadow-soft text-ink-2 shrink-0`}
           >
             <Filter size={20} />
           </button>
         </div>
 
         {/* 筛选 Chips 区 */}
-        {(chips.length > 0 || filters.type !== 'all' || filters.fromAccounts.length > 0 || filters.toAccounts.length > 0 || filters.currencies.length > 0) && (
+        {(chips.length > 0 || filters.fromAccounts.length > 0 || filters.toAccounts.length > 0 || filters.currencies.length > 0) && (
           <div className="flex flex-wrap gap-2 mt-3">
-            {/* 类型本身即筛选条件，作为可见 chip，点击移除 */}
-            {filters.type !== 'all' && (
-              <button
-                onClick={() => setFilters(f => ({ ...f, type: 'all' }))}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-full text-sm bg-brand-tint text-ink border border-brand-soft"
-              >
-                <span className="opacity-70">类型</span>
-                <span className="font-medium">{filters.type === 'expense' ? '支出' : filters.type === 'income' ? '收入' : '转账'}</span>
-                <X size={14} className="opacity-60" />
-              </button>
-            )}
             {/* 转账专属筛选 chip */}
             {filters.fromAccounts.map(id => (
               <button key={`from-${id}`} onClick={() => setFilters(f => ({ ...f, fromAccounts: f.fromAccounts.filter(x => x !== id) }))}
@@ -1006,7 +1020,7 @@ export default function SearchPage() {
           <div>
             <div className="text-sm font-medium text-ink mb-2">类型</div>
             <div className="flex gap-2">
-              {([['all', '全部'], ['expense', '支出'], ['income', '收入'], ['transfer', '转账']] as const).map(([val, label]) => (
+              {([['expense', '支出'], ['income', '收入'], ['transfer', '转账']] as const).map(([val, label]) => (
                 <button
                   key={val}
                   onClick={() => {
@@ -1156,8 +1170,8 @@ export default function SearchPage() {
           </>
           )}
 
-          {/* 转账专属筛选（转出账户 / 转入账户 / 币种）：仅"全部"或"转账"类型可见，不走分类逻辑 */}
-          {(draftFilters.type === 'all' || draftFilters.type === 'transfer') && (
+          {/* 转账专属筛选（转出账户 / 转入账户 / 币种）：仅"转账"类型可见，不走分类逻辑 */}
+          {draftFilters.type === 'transfer' && (
             <>
               <FilterSection title="转出账户" open={!!openSections.fromAccount} onToggle={() => toggleSection('fromAccount')}>
                 <div className="flex flex-wrap gap-2">
@@ -1305,7 +1319,7 @@ export default function SearchPage() {
           <div className="flex gap-3 pt-2">
             <button
               onClick={() => {
-                const def = { type: 'all', accountId: 'all', dateRange: 'all', dateStart: '', dateEnd: '', amountMin: '', amountMax: '', sort: 'newest', fromAccounts: [], toAccounts: [], currencies: [] }
+                const def = { type: 'expense', accountId: 'all', dateRange: 'all', dateStart: '', dateEnd: '', amountMin: '', amountMax: '', sort: 'newest', fromAccounts: [], toAccounts: [], currencies: [] }
                 setDraftFilters(def)
                 setFilters(def)
                 setChips([])

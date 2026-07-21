@@ -1,10 +1,16 @@
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { useAuthStore } from '../stores/useAuthStore'
 import Card from '../components/ui/Card'
 import TransactionItem from '../components/ui/TransactionItem'
+import { Modal } from '../components/ui/Modal'
 import { formatCurrency } from '../utils/format'
+import { VERSION_LOGS, type VersionLog } from '../data/versionLogs'
 import { TrendingUp, TrendingDown, PiggyBank, ChevronRight, Sparkles, PieChart, Search } from 'lucide-react'
+
+// 记录用户上次已看到的版本号，用于「更新后首页提示」
+const LAST_SEEN_VERSION_KEY = 'mybills:lastSeenVersion'
 
 // 首页日历图标：中间动态显示"今天"日期
 const HomeCalendarIcon: React.FC<{ size?: number; color?: string }> = ({ size = 24, color = '#222222' }) => {
@@ -37,6 +43,23 @@ export default function HomePage({ onAddTransaction }: HomePageProps = {}) {
     categories,
   } = useApp()
   const user = useAuthStore(state => state.user)
+
+  // 版本更新提示：升级到新版本后，首页弹窗告知本次更新内容（首次安装不弹）
+  const [updatedLog, setUpdatedLog] = useState<VersionLog | null>(null)
+  useEffect(() => {
+    try {
+      const current = __APP_VERSION__
+      const seen = localStorage.getItem(LAST_SEEN_VERSION_KEY)
+      if (seen && seen !== current) {
+        const log = VERSION_LOGS.find(l => l.version === current)
+        setUpdatedLog(log ?? { version: current, date: '', changes: [] })
+      }
+      // 无论是否弹窗，都记录当前版本：首次安装静默写入，升级后只提示一次
+      localStorage.setItem(LAST_SEEN_VERSION_KEY, current)
+    } catch {
+      // localStorage 不可用（隐私模式等）时静默跳过
+    }
+  }, [])
 
   const totalAssets = getTotalAssets()
   const monthlyIncome = getMonthlyIncome()
@@ -170,6 +193,40 @@ export default function HomePage({ onAddTransaction }: HomePageProps = {}) {
           </Card>
         </div>
       </main>
+
+      {/* 版本更新提示弹窗 */}
+      <Modal
+        isOpen={!!updatedLog}
+        onClose={() => setUpdatedLog(null)}
+        title="🎉 已更新到新版本"
+      >
+        {updatedLog && (
+          <div>
+            <p className="text-sm text-ink-2">
+              当前版本 <span className="font-medium text-ink">v{updatedLog.version}</span>
+              {updatedLog.date && <span className="text-ink-3">（{updatedLog.date}）</span>}
+            </p>
+            {updatedLog.changes.length > 0 ? (
+              <ul className="mt-3 space-y-2">
+                {updatedLog.changes.map((c, i) => (
+                  <li key={i} className="flex gap-2 text-sm text-ink leading-relaxed">
+                    <span className="text-brand-strong shrink-0">•</span>
+                    <span>{c}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-3 text-sm text-ink-2">已升级到最新版本，感谢使用～</p>
+            )}
+            <button
+              onClick={() => setUpdatedLog(null)}
+              className="mt-6 w-full py-3 rounded-2xl bg-brand text-ink font-medium active:scale-95 transition-all"
+            >
+              知道了
+            </button>
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }

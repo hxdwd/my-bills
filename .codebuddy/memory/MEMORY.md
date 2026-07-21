@@ -1,5 +1,9 @@
 # 长期记忆（指导性原则，不是事件记录）
 
+## 记忆书写纪律（重要）
+- **日常代码改动不要自动写 memory**。只有用户**明确说"记一下 / 写到 memory"**时才动 memory 文件，否则不写。每改一点就往 memory 里塞会导致不可维护，这是用户明确批评过的。
+- 仍遵循「记原则、不记事件」的总体要求（见下「与用户协作的方式」）。
+
 ## 与用户协作的方式
 - **先确认真实需求再动手**。用户骂"听不懂人话"时，问题几乎都不在"某个具体 bug"，而在我自作主张拍脑袋、没照他明确的指令做。他给的指令（如"放一行"）就是唯一标准，不要套 AI 默认范式去"优化"。
 - **记忆要写指导性原则，不写具体事件/坑**。记录"下次遇到 X 类问题该怎么做"，而不是"某天改了什么、踩了什么"。事件会过期，原则能复用。
@@ -54,3 +58,15 @@
   - 生成前**先查远程库现有 tags**（MCP），用 `ON CONFLICT (user_id,name) DO NOTHING` 避免重复；已有 tag 不重复插入。
   - 生成脚本命名 `gen_import_sql_<批次>.py`，写入 tags 的白名单写死在脚本里，可复跑。
   - 用户原则：有分歧疑惑的问题**必须问**，不要自行处理。
+- **版本号机制（已修复"关于版本不随发布更新"）**：`package.json` 的 `version` 是**唯一真相源**。`vite.config.ts` 用 `define: { __APP_VERSION__: JSON.stringify(pkg.version) }` 注入；`apps/pwa/src/vite-env.d.ts` 声明 `declare const __APP_VERSION__: string`；`Settings.tsx` 的 `APP_VERSION = __APP_VERSION__`，"关于"与 footer 均用之。**每次发布：bump `package.json` version + 在 `VERSION_LOGS` 头部追加一条**，版本号自动跟随，无需手改显示处。注意 `import.meta.env.VITE_*` 这种 define 键不稳，必须用裸全局 `__APP_VERSION__`。
+- **版本更新说明（CHANGELOG）维护约定**：入口在设置页"其他"板块的"版本更新"（BottomSheet 展示），数据在 `apps/pwa/src/pages/Settings.tsx` 顶部的 `VERSION_LOGS` 常量。**每次发布(push)在数组【头部】追加一条**，其 `version` 应与 `package.json` 的 `version` 一致。内容**只面向用户**说明"新增/优化/修复了什么功能"，**绝不泄露开发细节**。目前种子为 v1.0.1–v1.1.0 共 10 条，日期取自真实 git 提交历史（2026-07-06 首发 ~ 2026-07-18），功能均对应真实提交。
+
+## Supabase RLS 约定（my-bills，硬约束）
+- 本项目的离线同步引擎（sync-engine.ts）用**anon key + 自定义请求头 `x-user-id`** 直连 REST，并不携带已登录用户的 JWT。因此**所有表的 RLS 策略必须用 `public.get_current_user_id()`（读取 `x-user-id` 头），绝不能写 `auth.uid() = user_id`**——后者返回 anon key 的 sub（或 null），插入/更新会被 42501 RLS 拦截报 401。
+- 新建任何表的 RLS 时，USING 与 WITH CHECK 都用 `user_id = public.get_current_user_id()`，与 accounts/categories/transactions/budgets 等现有表保持一致（见 `002_simple_auth.sql` 的 `get_current_user_id` 函数）。曾因转账表 transfers 误用 `auth.uid()` 导致同步全部 401。
+
+## 文件写入与编码（反复踩坑，硬约束）
+- **核心雷区**：PowerShell 的 `[System.Text.Encoding]::UTF8` 在 .NET 里**本质是 UTF-8 带 BOM**（`EF BB BF`）。一旦用它写 `package.json`/`.json`/源码并 commit，本地 `.ts` 容忍 BOM 不报错，但 CI/Cloudflare 的 `JSON.parse` 严格拒绝 BOM → 构建直接 `SyntaxError: Unexpected token '﻿'` 失败。本项目已因此炸过多次部署。
+- **首选：用编辑工具做改动**（`replace_in_file`/`write_to_file`）——它按文件真实换行处理、默认无 BOM，从根上规避编码问题，不要为精准替换去写 shell 脚本。
+- **必须写脚本时优先 Python**：`open(f,'w',encoding='utf-8')` 在所有平台/版本**默认绝不写 BOM**，确定性强。PowerShell 7 只是 `Set-Content`/`Out-File` 默认改无 BOM，但 `.NET [Encoding]::UTF8` 仍是带 BOM，换 PS7 不等于真解决。
+- **若非用 PowerShell 不可**：锁死无 BOM 写法 `[System.Text.UTF8Encoding]::new($false)`，且**绝不碰** `[System.Text.Encoding]::UTF8`。批量去 BOM 用 Python 脚本扫 tracked 文件首 3 字节更稳。

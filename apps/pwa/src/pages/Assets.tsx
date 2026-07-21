@@ -6,7 +6,7 @@ import { useState, useMemo } from 'react'
 import { TrendingUp, TrendingDown, Plus, ChevronRight, Trash2, AlertCircle, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import { Pie } from 'react-chartjs-2'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
-import { formatCurrency } from '../utils/format'
+import { formatCurrency, formatTransferAmount } from '../utils/format'
 import { useWealthValuation } from '../hooks/useWealthValuation'
 import { toBase } from '../utils/currency'
 
@@ -45,13 +45,19 @@ const currencySymbol: Record<string, string> = {
 
 export default function AssetsPage() {
   const { theme } = useTheme()
-  const { accounts, loading, getTotalLiabilities, addAccount, updateAccount, setDefaultAccount, deleteAccount, getAssetTrend } = useApp()
+  const { accounts, loading, transfers, getTotalLiabilities, addAccount, updateAccount, setDefaultAccount, deleteAccount, getAssetTrend } = useApp()
   // 汇率数据 + 持仓估值（用于投资账户展示持仓市值）
   const { rates, results } = useWealthValuation()
   const [showAddAccount, setShowAddAccount] = useState(false)
   const [editingAccount, setEditingAccount] = useState<Account | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [sortOrder, setSortOrder] = useState<'amount-desc' | 'amount-asc' | null>(null)
+
+  // 账户信息视图（点击账户行打开，只读）：账户属性 + 相关转账
+  const [infoAccount, setInfoAccount] = useState<Account | null>(null)
+  const [showAccountInfo, setShowAccountInfo] = useState(false)
+  const ACCOUNT_TX_PAGE = 10
+  const [infoVisibleTx, setInfoVisibleTx] = useState(ACCOUNT_TX_PAGE)
 
   const initNewAccountForm = {
     name: '',
@@ -118,6 +124,25 @@ export default function AssetsPage() {
   )
 
   const netAssetsCNY = totalAssetsCNY - totalLiabilities
+
+  // 账户信息页相关转账：筛选该账户作为转出/转入方的转账，按日期倒序
+  const accountTransfers = useMemo(() => {
+    if (!infoAccount) return []
+    return transfers
+      .filter(t => t.accountId === infoAccount.id || t.toAccountId === infoAccount.id)
+      .sort((a, b) => {
+        if (a.transactionDate !== b.transactionDate) return a.transactionDate < b.transactionDate ? 1 : -1
+        return a.time < b.time ? 1 : -1
+      })
+  }, [transfers, infoAccount])
+  const visibleAccountTransfers = accountTransfers.slice(0, infoVisibleTx)
+  const hasMoreAccountTx = infoVisibleTx < accountTransfers.length
+
+  // 账户信息页展示用的币种/余额派生
+  const infoCcy = infoAccount?.currency || 'CNY'
+  const infoSym = currencySymbol[infoCcy] || '¥'
+  const infoIsOther = infoCcy !== 'CNY'
+  const infoCny = infoAccount ? toCNY(infoAccount.balance, infoCcy) : 0
 
   // 拆分：日常资金 vs 投资组合
   const dailyAccounts = assetAccounts.filter(a => a.type !== 'investment')
@@ -212,6 +237,24 @@ export default function AssetsPage() {
     setEditingAccount(null)
     setEditForm({ ...initEditForm })
     setShowDeleteConfirm(false)
+  }
+
+  // 点击账户行 -> 只读账户信息（属性 + 相关转账），不再直接打开编辑
+  const handleOpenInfo = (account: Account) => {
+    setInfoAccount(account)
+    setShowAccountInfo(true)
+    setInfoVisibleTx(ACCOUNT_TX_PAGE)
+  }
+  const handleCloseInfo = () => {
+    setShowAccountInfo(false)
+    setInfoAccount(null)
+  }
+  // 信息页「编辑账户」：关闭信息后打开编辑
+  const handleEditFromInfo = () => {
+    if (!infoAccount) return
+    const acc = infoAccount
+    handleCloseInfo()
+    handleOpenEdit(acc)
   }
 
   const handleSaveEdit = async () => {
@@ -443,7 +486,7 @@ export default function AssetsPage() {
                 return (
                   <div
                     key={acc.id}
-                    onClick={() => handleOpenEdit(acc)}
+                    onClick={() => handleOpenInfo(acc)}
                     className={`flex items-center gap-3 p-4 cursor-pointer transition-colors
                       ${theme === 'dark' ? 'hover:bg-surface' : 'hover:bg-[#faf9f5]'}`}
                   >
@@ -506,7 +549,7 @@ export default function AssetsPage() {
                 return (
                   <div
                     key={acc.id}
-                    onClick={() => handleOpenEdit(acc)}
+                    onClick={() => handleOpenInfo(acc)}
                     className={`flex items-center gap-3 p-4 cursor-pointer transition-colors
                       ${theme === 'dark' ? 'hover:bg-surface' : 'hover:bg-[#faf9f5]'}`}
                   >
@@ -527,8 +570,9 @@ export default function AssetsPage() {
                           {c}
                         </span>
                       </div>
-                      <div className={`text-[11px] mt-0.5 ${theme === 'dark' ? 'text-ink-3' : 'text-ink-3'}`}>
-                        可用 {sym}{acc.balance.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | 持仓 {sym}{holdingsVal.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      <div className={`text-[11px] mt-0.5 space-y-0.5 ${theme === 'dark' ? 'text-ink-3' : 'text-ink-3'}`}>
+                        <div>可用 {sym}{acc.balance.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                        <div>持仓 {sym}{holdingsVal.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                       </div>
                     </div>
                     <div className="text-right shrink-0 min-w-0">
@@ -562,7 +606,7 @@ export default function AssetsPage() {
               {liabilityAccounts.map((acc) => (
                 <div
                   key={acc.id}
-                  onClick={() => handleOpenEdit(acc)}
+                  onClick={() => handleOpenInfo(acc)}
                   className={`flex items-center gap-3 p-4 cursor-pointer transition-colors
                     ${theme === 'dark' ? 'hover:bg-surface' : 'hover:bg-[#faf9f5]'}`}
                 >
@@ -964,6 +1008,132 @@ export default function AssetsPage() {
                 )}
               </>
             )}
+          </div>
+        )}
+      </BottomSheet>
+
+      {/* 账户信息 Sheet（点击账户行打开，只读） */}
+      <BottomSheet
+        isOpen={showAccountInfo}
+        onClose={handleCloseInfo}
+        title="账户信息"
+        footer={
+          <div className="flex gap-3">
+            <button
+              onClick={handleCloseInfo}
+              className={`flex-1 py-3 rounded-xl font-medium transition-colors ${
+                theme === 'dark' ? 'bg-surface text-ink-2' : 'bg-bg text-ink-2'
+              }`}
+            >
+              关闭
+            </button>
+            <button
+              onClick={handleEditFromInfo}
+              className="flex-1 py-3 rounded-xl font-medium bg-brand text-ink"
+            >
+              编辑账户
+            </button>
+          </div>
+        }
+      >
+        {infoAccount && (
+          <div className="p-4 space-y-4">
+            {/* 头部 */}
+            <div className="flex items-center gap-3">
+              <div
+                className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shrink-0"
+                style={{ backgroundColor: `${infoAccount.color}15` }}
+              >
+                {infoAccount.icon}
+              </div>
+              <div className="min-w-0">
+                <div className="font-semibold text-base text-ink truncate">{infoAccount.name}</div>
+                <div className="text-xs text-ink-2 mt-0.5">
+                  {accountTypeLabels[infoAccount.type]}{infoAccount.isDefault ? ' · 默认账户' : ''}
+                </div>
+              </div>
+            </div>
+
+            {/* 属性区 */}
+            <Card className="!p-0 divide-y divide-[#f0eee6] dark:divide-[#3d3d3a]">
+              <div className="flex items-center justify-between px-4 py-3">
+                <span className="text-sm text-ink-2">账户名称</span>
+                <span className="text-sm font-medium text-ink">{infoAccount.name}</span>
+              </div>
+              <div className="flex items-center justify-between px-4 py-3">
+                <span className="text-sm text-ink-2">账户类型</span>
+                <span className="text-sm font-medium text-ink">{accountTypeLabels[infoAccount.type]}</span>
+              </div>
+              <div className="flex items-center justify-between px-4 py-3">
+                <span className="text-sm text-ink-2">账户币种</span>
+                <span className="text-sm font-medium text-ink">{infoAccount.currency || 'CNY'}</span>
+              </div>
+              <div className="flex items-center justify-between px-4 py-3">
+                <span className="text-sm text-ink-2">当前余额</span>
+                <span className="text-sm font-medium text-ink text-right">
+                  {infoSym}{infoAccount.balance.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {infoIsOther && (
+                    <span className="block text-[11px] text-ink-2 font-normal">
+                      (¥{infoCny.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                    </span>
+                  )}
+                </span>
+              </div>
+              <div className="flex items-center justify-between px-4 py-3">
+                <span className="text-sm text-ink-2">默认账户</span>
+                <span className="text-sm font-medium text-ink">{infoAccount.isDefault ? '是' : '否'}</span>
+              </div>
+            </Card>
+
+            {/* 相关转账区 */}
+            <div>
+              <div className="flex items-center justify-between px-1 mb-2">
+                <h4 className="text-sm font-medium text-ink-2">相关转账</h4>
+                <span className="text-xs text-ink-2">{accountTransfers.length} 笔</span>
+              </div>
+              {accountTransfers.length === 0 ? (
+                <div className="text-center text-sm py-6 text-ink-2">该账户暂无转账记录</div>
+              ) : (
+                <div className="space-y-2">
+                  {visibleAccountTransfers.map((t) => {
+                    const isOut = t.accountId === infoAccount.id
+                    const counterpart = isOut
+                      ? (t.toAccountName || '未知账户')
+                      : (t.accountName || '未知账户')
+                    return (
+                      <div key={t.id} className="flex items-center gap-3 p-3 rounded-xl bg-surface">
+                        <span className={`shrink-0 text-[11px] px-2 py-0.5 rounded-full font-medium ${
+                          isOut ? 'bg-danger/10 text-danger' : 'bg-ok/10 text-ok'
+                        }`}>
+                          {isOut ? '转出' : '转入'}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm text-ink truncate">
+                            {isOut ? '至 ' : '自 '}{counterpart}
+                          </div>
+                          <div className="text-xs text-ink-2 mt-0.5">{t.date} {t.time}</div>
+                        </div>
+                        <div className={`shrink-0 font-mono text-sm font-medium ${isOut ? 'text-danger' : 'text-ok'}`}>
+                          {formatTransferAmount(t)}
+                        </div>
+                      </div>
+                    )
+                  })}
+                  {hasMoreAccountTx && (
+                    <div className="flex justify-center pt-1 pb-2">
+                      <button
+                        onClick={() => setInfoVisibleTx(v => v + ACCOUNT_TX_PAGE)}
+                        className={`px-6 py-2.5 rounded-full text-sm font-medium transition-colors ${
+                          theme === 'dark' ? 'bg-surface text-ink-2 hover:text-ink' : 'bg-white text-ink-2 hover:text-ink'
+                        }`}
+                      >
+                        加载更多（已显示 {visibleAccountTransfers.length} / {accountTransfers.length} 笔）
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </BottomSheet>
