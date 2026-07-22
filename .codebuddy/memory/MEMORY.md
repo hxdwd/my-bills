@@ -65,6 +65,11 @@
 - 本项目的离线同步引擎（sync-engine.ts）用**anon key + 自定义请求头 `x-user-id`** 直连 REST，并不携带已登录用户的 JWT。因此**所有表的 RLS 策略必须用 `public.get_current_user_id()`（读取 `x-user-id` 头），绝不能写 `auth.uid() = user_id`**——后者返回 anon key 的 sub（或 null），插入/更新会被 42501 RLS 拦截报 401。
 - 新建任何表的 RLS 时，USING 与 WITH CHECK 都用 `user_id = public.get_current_user_id()`，与 accounts/categories/transactions/budgets 等现有表保持一致（见 `002_simple_auth.sql` 的 `get_current_user_id` 函数）。曾因转账表 transfers 误用 `auth.uid()` 导致同步全部 401。
 
+## 构建命令（my-bills，防误判）
+- **`vite build` 必须从项目根目录用 `npm run build` 跑**（根 `package.json` 的 script，根 `vite.config.ts` 配置了 `root: 'apps/pwa'`）。
+- **在 `apps/pwa` 子目录直接跑 `vite build` 会静默退化为默认配置**：Vite 在子目录找不到根配置文件 → 不加载 VitePWA → 报 `Rollup failed to resolve import "virtual:pwa-register/react"`。这是假阳性，不是真 bug，**不要因此改 vite.config.ts 或 PWA 配置**。
+- 验证构建是否真通过：从根目录跑，看是否 `✓ built` + 生成 `dist/sw.js`/`workbox-*`；若只从子目录跑出错，先怀疑是跑错目录。
+
 ## 文件写入与编码（反复踩坑，硬约束）
 - **核心雷区**：PowerShell 的 `[System.Text.Encoding]::UTF8` 在 .NET 里**本质是 UTF-8 带 BOM**（`EF BB BF`）。一旦用它写 `package.json`/`.json`/源码并 commit，本地 `.ts` 容忍 BOM 不报错，但 CI/Cloudflare 的 `JSON.parse` 严格拒绝 BOM → 构建直接 `SyntaxError: Unexpected token '﻿'` 失败。本项目已因此炸过多次部署。
 - **首选：用编辑工具做改动**（`replace_in_file`/`write_to_file`）——它按文件真实换行处理、默认无 BOM，从根上规避编码问题，不要为精准替换去写 shell 脚本。

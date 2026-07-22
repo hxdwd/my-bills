@@ -111,6 +111,7 @@ export interface TransactionFormData {
   type: TransactionType;
   amount: string;
   categoryId: string;
+  categoryName?: string;
   subcategoryId?: string;
   accountId: string;
   toAccountId?: string;
@@ -120,6 +121,7 @@ export interface TransactionFormData {
   tags?: string[];
   images?: string[];
   location?: { lat: number; lng: number; name: string };
+  id?: string;
 }
 
 // 子分类（二级分类，绑在一级分类下）

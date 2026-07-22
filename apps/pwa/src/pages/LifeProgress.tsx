@@ -4,7 +4,7 @@ import { PageContainer } from '../components/layout/PageContainer'
 import { useHaptic } from '../hooks/useHaptic'
 import BottomSheet from '../components/ui/BottomSheet'
 import StarField from '../components/StarField'
-import { getUserExpand, upsertUserExpand } from '../services/userExpand'
+import { getUserExpandValue, upsertUserExpandValue } from '../services/userExpand'
 import {
   GRADIENTS,
   getGradient,
@@ -140,7 +140,11 @@ function GoalCard({ goal, onRemove }: { goal: LifeGoal; onRemove: (id: string) =
 export default function LifeProgress() {
   const navigate = useNavigate()
   const haptic = useHaptic()
-  const [extras, setExtras] = useState<Record<string, any>>({})
+  const [life, setLife] = useState<LifeData>({
+    birthDate: '',
+    lifeExpectancy: DEFAULT_LIFE_EXPECTANCY,
+    goals: [],
+  })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [now, setNow] = useState(new Date())
@@ -181,7 +185,6 @@ export default function LifeProgress() {
   const [bBirth, setBBirth] = useState('')
   const [bExp, setBExp] = useState(DEFAULT_LIFE_EXPECTANCY)
 
-  const life: LifeData = extras.life ?? {}
   const hasBirth = !!life.birthDate
 
   const ring = useMemo(
@@ -196,9 +199,15 @@ export default function LifeProgress() {
 
   useEffect(() => {
     let active = true
-    getUserExpand()
-      .then((ex) => {
-        if (active) setExtras(ex ?? {})
+    // 首次访问：key='life_data' 无记录时返回 null，兜底为默认空生命数据
+    getUserExpandValue('life_data')
+      .then((v: any) => {
+        if (!active) return
+        setLife({
+          birthDate: v?.birthDate ?? '',
+          lifeExpectancy: v?.lifeExpectancy ?? DEFAULT_LIFE_EXPECTANCY,
+          goals: v?.goals ?? [],
+        })
       })
       .catch(() => {})
       .finally(() => {
@@ -216,11 +225,11 @@ export default function LifeProgress() {
   }, [])
 
   async function persist(newLife: LifeData) {
-    const next = { ...extras, life: newLife }
-    setExtras(next)
+    setLife(newLife)
     setSaving(true)
     try {
-      await upsertUserExpand(next)
+      // 原子 upsert：仅覆盖 key='life_data' 这一行，不影响其它 key
+      await upsertUserExpandValue('life_data', newLife)
     } catch (e) {
       // 失败静默保留本地，下次再试
     } finally {
@@ -394,7 +403,7 @@ export default function LifeProgress() {
 
       {/* 目标录入 BottomSheet */}
       <BottomSheet isOpen={sheetOpen} onClose={() => setSheetOpen(false)} title="在等哪一天">
-        <div className="space-y-4 pb-2">
+        <div className="px-5 space-y-4 pb-5">
           <div>
             <label className="block text-ink/60 text-sm mb-1">名字</label>
             <input

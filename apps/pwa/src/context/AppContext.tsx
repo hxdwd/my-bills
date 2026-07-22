@@ -103,7 +103,7 @@ interface AppContextType {
   subCategories: SubCategory[]
   tags: Tag[]
   loading: boolean
-  addTransaction: (t: Omit<Transaction, 'id'>) => Promise<void>
+  addTransaction: (t: Omit<Transaction, 'id'>) => Promise<string>
   updateTransaction: (id: string, data: Partial<Transaction>) => Promise<void>
   deleteTransaction: (id: string) => Promise<void>
   addAccount: (a: Omit<Account, 'id'>) => Promise<void>
@@ -713,7 +713,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // CRUD: 添加交易 (本地优先 + 后台同步)
   // ============================================================
 
-  const addTransaction = useCallback(async (t: Omit<Transaction, 'id'>) => {
+  const addTransaction = useCallback(async (t: Omit<Transaction, 'id'>): Promise<string> => {
     if (!userId) throw new Error('未登录')
 
     const [h, m] = (t.time || '00:00').split(':')
@@ -757,7 +757,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       syncEngine.syncAfterWrite('transfers', userId).catch(err => {
         console.error('后台同步转账失败:', err)
       })
-      return
+      return record.id
     }
 
     // 1. 立即写入 IndexedDB（此处已排除转账，type 仅为 expense/income）
@@ -799,6 +799,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     syncEngine.syncAfterWrite('transactions', userId).catch(err => {
       console.error('后台同步交易失败:', err)
     })
+    return record.id
   }, [userId, accountsWithBalance, categories, subCategories])
 
 

@@ -302,7 +302,7 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
       // 使用本地日期字符串避免 UTC 时区偏移问题
       const localDateStr = toLocalDateString(date)
       const localTimeStr = formatTime(time)
-      await addTransaction({
+      const txId = await addTransaction({
         type: transactionType,
         amount: numAmount,
         fromAmount: transactionType === 'transfer' ? numAmount : undefined,
@@ -332,6 +332,8 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
         onSave({
           type: transactionType,
           amount: amount,
+          id: txId,
+          categoryName: transactionType === 'transfer' ? '转账' : (selectedCategory?.name || '未分类'),
           categoryId: transactionType === 'transfer' ? 't1' : selectedCategoryId,
           subcategoryId: selectedSubCategoryId || undefined,
           accountId: selectedAccountId,

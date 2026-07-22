@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { BrowserRouter, useLocation, matchPath, Routes, Route } from 'react-router-dom';
 import { ThemeProvider } from './context/ThemeContext';
 import { AppProvider } from './context/AppContext';
@@ -24,7 +24,12 @@ import {
   WealthImport,
   EasterEgg,
   LifeProgress,
+  DietControl,
 } from './pages';
+import { getDietItems, getDietMonthRecords, appendDietRecord } from './db/dietStore';
+import DietLinkPrompt from './components/DietLinkPrompt';
+import type { TransactionFormData } from './types';
+import type { DietControlItem, DietRecord } from './types/diet';
 import { TabType } from './types';
 import { UpdatePrompt } from './pwa/UpdatePrompt';
 
@@ -57,6 +62,7 @@ function ensureSubPageRoutes() {
   subPageRoutes.push({ path: '/wealth/add', element: () => <WealthAdd /> });
   subPageRoutes.push({ path: '/wealth/import', element: () => <WealthImport /> });
   subPageRoutes.push({ path: '/wealth/:type', element: () => <WealthCategory /> });
+  subPageRoutes.push({ path: '/easterEgg/diet', element: () => <DietControl /> });
   subPageRoutes.push({ path: '/easterEgg/life', element: () => <LifeProgress /> });
   subPageRoutes.push({ path: '/easterEgg', element: () => <EasterEgg /> });
   subPageRoutesInited = true;
@@ -72,6 +78,10 @@ function AppContent() {
   const location = useLocation();
   const [activeTab, setActiveTab] = useState<TabType>('home');
   const [showAddTransaction, setShowAddTransaction] = useState(false);
+  const [dietPrompt, setDietPrompt] = useState<{
+    item: DietControlItem;
+    tx: { id: string; date: string; amount: number | null; note: string | null };
+  } | null>(null);
 
   // 初始化认证状态
   useEffect(() => {
@@ -87,6 +97,47 @@ function AppContent() {
       setActiveTab(tab);
     }
   }, [location.pathname]);
+
+  // 饮食控制联动：记账选「餐饮」且备注命中某控制项时，弹出关联提示
+  const toLocalDateStr = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
+  const handleAddSave = useCallback(async (data: TransactionFormData) => {
+    if (data.type !== 'expense') return;
+    if (data.categoryName !== '餐饮') return;
+    const note = data.note || '';
+    if (!note.trim() || !data.id) return;
+    try {
+      const items = await getDietItems();
+      const match = items.find((it) => note.includes(it.name));
+      if (!match) return;
+      setDietPrompt({
+        item: match,
+        tx: { id: data.id, date: toLocalDateStr(data.date), amount: parseFloat(data.amount) || null, note },
+      });
+    } catch {}
+  }, []);
+
+  const confirmDietLink = useCallback(async () => {
+    if (!dietPrompt) return;
+    const { item, tx } = dietPrompt;
+    try {
+      const month = tx.date.slice(0, 7);
+      const monthRecs = await getDietMonthRecords(month);
+      const exists = Object.values(monthRecs).some((arr) => arr.some((r) => r.transactionId === tx.id));
+      if (!exists) {
+        const rec: DietRecord = { date: tx.date, name: item.name, transactionId: tx.id };
+        await appendDietRecord(month, item.id, rec);
+      }
+    } catch {}
+    setDietPrompt(null);
+  }, [dietPrompt]);
+
+  const ignoreDietLink = useCallback(() => setDietPrompt(null), []);
 
   // 认证加载中
   if (authLoading) {
@@ -167,7 +218,17 @@ function AppContent() {
       <AddTransaction
         isOpen={showAddTransaction}
         onClose={() => setShowAddTransaction(false)}
+        onSave={handleAddSave}
       />
+
+      {dietPrompt && (
+        <DietLinkPrompt
+          itemName={dietPrompt.item.name}
+          itemIcon={dietPrompt.item.icon}
+          onConfirm={confirmDietLink}
+          onIgnore={ignoreDietLink}
+        />
+      )}
 
       <UpdatePrompt />
     </div>

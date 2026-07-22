@@ -6,12 +6,18 @@
 
 ## 2026-07-21（再续）— 「人生进度」彩蛋页面
 
-- **新增通用扩展表 `public.user_expand`**（迁移 `019_user_expand.sql`，已线上 apply）。设计原则：所有彩蛋共用此表，数据按命名空间放 `extras.life` 下；绝不改 `users` 主表、绝不每彩蛋单建表。RLS 用 `public.get_current_user_id()`（读 `x-user-id` 头），**不用 `auth.uid()`**（anon key 下恒为 NULL）——已 `execute_sql` 复核策略 `qual`/`with_check` 均为 `get_current_user_id()`。
-- **前端数据读写** `services/userExpand.ts`：复用 sync-engine 的 `fetch + x-user-id` 直连模式，按 `user_id` upsert `extras` JSONB。
+- **通用扩展表 `public.user_expand`**（迁移 `019_user_expand.sql` 建表、`020_user_expand_kv.sql` 重构为键值对，均已线上 apply）。设计原则：**键值对模式**——`(user_id, key)` 复合主键 + `value JSONB`；所有彩蛋共用此表，人生进度数据只写 `key='life_data'`，饮食控制数据只写 `key='diet_control'`，未来新彩蛋用新 `key`（如 `annual_review`），**绝不改 `users` 主表、绝不每彩蛋单建表**。RLS 用 `public.get_current_user_id()`（读 `x-user-id` 头），**不用 `auth.uid()`**（anon key 下恒为 NULL 会被 401）——已 `execute_sql` 复核：主键 `user_id,key`、`value` 为 `jsonb`、RLS 开启、策略 `user_expand_owner:ALL` 均基于 `get_current_user_id()`，旧 `extras.life` 已迁移进 `key='life_data'`。新增饮食控制彩蛋**未建任何新表**（已核对 `pg_tables` 仅 `user_expand`）。
+- **前端数据读写** `services/userExpand.ts`：复用 sync-engine 的 `fetch + x-user-id` 直连模式，提供 `getUserExpandValue(key)`（按 key 读取，无则返 null）与 `upsertUserExpandValue(key, value)`（按 `(user_id,key)` 复合主键**原子 upsert，仅覆盖该 key**）。**严禁「先读全量 extras、改完再整包覆盖」反模式**。`LifeProgress.tsx` 仅作用域 `key='life_data'` 读写，首次访问返回默认空生命数据（出生日期空、期望寿命 80、目标空）。
 - **新增页面**：
   - `Egg.tsx` 彩蛋卡片列表（入口：设置 → 其他 → 彩蛋 → `/easterEgg`）。
   - `LifeProgress.tsx`（`/easterEgg/life`）：① 生命大环 SVG（渐变描边 + round 端点 + 中心百分比/年龄 + 每日小诗）；② 今年/本月/本周/今天 4 条进度条；③ 生命刻度（`grid` 周方块横向滚动，目标周描边高亮）；④ 多目标倒计时（悬浮金色圆按钮 + BottomSheet 录入 名称/Emoji/日期/6 色渐变，rAF 数字滚动卡片，按日期排序，过期处理）。
+  - `DietControl.tsx`（`/easterEgg/diet`）：饮食控制游戏化彩蛋（详见下方独立小节）。
   - 动画：入场滑入、`StarField.tsx` Canvas 金色星空（≤50 点）、下拉浮现随机名言（禁下拉同步）。
+
+## 2026-07-22 — 「饮食控制」彩蛋（复用 user_expand 键值对）
+- **数据层**：`src/types/diet.ts` 定义 `DietControlItem / DietRecord / DietControlData`；`src/db/dietStore.ts` 提供 `getDietData()`（key='diet_control' 无则返 `{items:[],records:[]}`）与 `updateDietData()`（复用 userExpand 的 upsert，原子覆盖该 key）。**零新建表、零新增列**，与 life_data 共用 `user_expand` 表的键值对模式。
+- **主页面 `DietControl.tsx`**（`/easterEgg/diet`）：① 深色滚动布局（`bg-[#0F0F0F]`）+ 顶部状态栏（返回 + 金色「饮食控制」+ 本月总览日历入口）；② 控制项卡片（`bg-[#1A1A1A] rounded-2xl`）含信息区（图标/名称/状态标签：还剩 X 次·已用完·已超 X 次）、进度条（6px，`#2A2A2A` 底，已用填 item 色，超限转红 + `animate-pulse` + 达成闪光）、快捷操作（+ 记一次 / 📅 日历 / ...）；③ 记一次 BottomSheet（默认当天，确认后次数 +1、数字翻转 + 进度条动画）；④ 本月总览日历（`grid-cols-7` + 月份切换 + 记录点 + 当月统计：共记录/超出/均消）；⑤ 添加/编辑 BottomSheet（Emoji 网格 + 名称联想 + 周期分段 + 次数步进 + 6 色块 + 金色完成）；⑥ 空状态（奶茶杯 SVG + 配文）；⑦ 周期自动过滤（周/月动态统计，只过滤不删库）。超限非惩罚设计：轻（标签变红）/ 中（金底横幅「要适度哦～」）/ 重（微红背景 + 「自由不是真的自由 😅」+ 重置本月）。
+- **记账全闭环联动（模块6）**：`AddTransaction` 保存后通过 `onSave` 回调传出真实 `transactionId` 与 `categoryName`；`App.tsx` 拦截「餐饮分类 + 备注命中某控制项名称」时弹出 `DietLinkPrompt`（轻量提示「这杯奶茶要计入饮食控制吗？[是][忽略]」），点「是」即在对应控制项记一笔（带 transactionId/amount/date/note）；`TransactionDetailSheet` 查看态按 `transactionId` 匹配显示饮食控制徽章（控制项图标 + 颜色）。文案全程游戏化（小放纵/额度/再来一杯），无惩罚性负面词。
   - 文案约束：中性温暖，禁用死亡/死期等负面词。
 - 路由：`App.tsx` 注册 `/easterEgg`、`/easterEgg/life` 为子页（自动隐藏 TabBar）；`Settings.tsx`「其他」加"彩蛋"入口（lucide `Sparkles`）。新增 `hooks/useHaptic.ts`、复用 `data/lifeProgress.ts`（类型/渐变池/小诗名言池/计算工具）。
 - 版本号升至 **1.1.4**，changelog 头部追加 1.1.4 条目。

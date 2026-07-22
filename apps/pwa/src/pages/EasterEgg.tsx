@@ -20,6 +20,13 @@ const EASTER_EGGS: EasterEggItem[] = [
     emoji: '🌅',
     to: '/easterEgg/life',
   },
+  {
+    key: 'diet',
+    title: '饮食控制',
+    desc: '和小放纵温柔相处，只记录，不焦虑。',
+    emoji: '🧋',
+    to: '/easterEgg/diet',
+  },
 ]
 
 export default function EasterEgg() {

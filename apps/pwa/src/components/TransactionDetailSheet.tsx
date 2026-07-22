@@ -5,6 +5,7 @@ import { recordTagUsage } from '../utils/tagUsage'
 import BottomSheet from './ui/BottomSheet'
 import { X, Trash2, Pencil, Check } from 'lucide-react'
 import { formatCurrency, formatTransferAmount } from '../utils/format'
+import { getDietItems, getDietMonthRecords } from '../db/dietStore'
 
 // YYYY-MM-DD -> "X月X日"
 function formatDateDisplay(dateStr: string): string {
@@ -56,6 +57,29 @@ export default function TransactionDetailSheet({
   const [showTagSelect, setShowTagSelect] = useState(false)
   const [editPicker, setEditPicker] = useState<null | 'category' | 'subcategory' | 'account'>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+
+  // 饮食控制关联徽章（查看态）：按真实交易 id 匹配 diet record
+  const [dietBadge, setDietBadge] = useState<{ icon: string; name: string; color: string } | null>(null)
+  useEffect(() => {
+    let active = true
+    if (!selectedTx?.id) {
+      setDietBadge(null)
+      return
+    }
+    const txId = selectedTx.id
+    const txDate = selectedTx.date
+    Promise.all([getDietItems(), getDietMonthRecords((txDate || '').slice(0, 7))])
+      .then(([items, monthRecs]) => {
+        if (!active) return
+        const entry = Object.entries(monthRecs).find(([, arr]) => arr.some((r) => r.transactionId === txId))
+        const it = entry ? items.find((i) => i.id === entry[0]) : null
+        setDietBadge(it ? { icon: it.icon, name: it.name, color: it.color } : null)
+      })
+      .catch(() => setDietBadge(null))
+    return () => {
+      active = false
+    }
+  }, [selectedTx])
 
   // 外部切换到新交易时，重置为查看态
   useEffect(() => {
@@ -256,6 +280,20 @@ export default function TransactionDetailSheet({
                     ) : (
                       <span className="text-sm text-ink">{cat.icon} {selectedTx.categoryName}</span>
                     )}
+                  </div>
+                )}
+
+                {/* 饮食控制关联（查看态徽章） */}
+                {!editMode && dietBadge && (
+                  <div className="flex items-center justify-between gap-3 px-4 py-3">
+                    <span className="text-sm text-ink-2 shrink-0">饮食控制</span>
+                    <span
+                      className="inline-flex items-center gap-1.5 text-sm"
+                      style={{ color: dietBadge.color }}
+                    >
+                      <span>{dietBadge.icon}</span>
+                      <span>{dietBadge.name}</span>
+                    </span>
                   </div>
                 )}
 
