@@ -5,6 +5,7 @@ import { marketToCategory, marketLabel, AssetCategory } from '../db/wealthStore'
 import type { Market } from '../utils/quoteApi'
 import { fmtMoney as fmtMoneyUtil, CURRENCY_SYMBOL, CURRENCY_LABEL, BASE_CURRENCIES, Currency } from '../utils/currency'
 import CashIcon from '../components/ui/CashIcon'
+import { MoreHorizontal, Upload, BarChart3, Sparkles } from 'lucide-react'
 
 const CAT_META: Record<AssetCategory, { label: string; color: string }> = {
   stock: { label: '股票', color: '#c96442' },
@@ -56,6 +57,7 @@ export function WealthHome() {
   const [refreshing, setRefreshing] = useState(false)
   const [filter, setFilter] = useState<FilterCat>('all')
   const [sortKey, setSortKey] = useState<SortKey>('market_value')
+  const [fabOpen, setFabOpen] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('today')
   const [showSortMenu, setShowSortMenu] = useState(false)
   const [showDist, setShowDist] = useState(true)
@@ -532,22 +534,63 @@ export function WealthHome() {
         基金当日收益为盘中估算，仅供参考，实际以确认净值结算
       </div>
 
-      {/* 悬浮加仓胶囊：右下角，紧贴底部导航栏设置图标左上方，呼吸灯 + 光晕 */}
-      <button
-        onClick={() => navigate('/wealth/add')}
-        data-testid="wealth-fab"
-        aria-label="导入持仓"
-        className="fixed right-4 z-40 flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-medium text-ink-2 bg-white/70 backdrop-blur-sm border border-[#e8e6dc]/60 shadow-sm transition-all active:scale-95"
-        style={{
-          bottom: 'calc(env(safe-area-inset-bottom) + 72px)',
-          animation: 'breathe 2.4s ease-in-out infinite, glow-pulse 3s ease-in-out infinite',
-        }}
-      >
-        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-          <path d="M8 3v10M3 8h10" />
-        </svg>
-        <span>导入</span>
-      </button>
+      {/* FAB 多功能菜单：右下角，呼吸灯胶囊 → 点击展开 Popover */}
+      <div className="fixed right-4 z-40" style={{ bottom: 'calc(env(safe-area-inset-bottom) + 72px)' }}>
+        {/* 点击遮罩层 */}
+        {fabOpen && (
+          <div
+            className="fixed inset-0 z-30"
+            onClick={() => setFabOpen(false)}
+          />
+        )}
+
+        {/* Popover 菜单：从 FAB 正上方长出 */}
+        <div className={`absolute bottom-full right-0 mb-2 z-40 transition-all duration-200 origin-bottom-right ${
+          fabOpen ? 'scale-100 opacity-100 pointer-events-auto' : 'scale-95 opacity-0 pointer-events-none'
+        }`}>
+          <div className="bg-surface rounded-2xl p-1.5 min-w-[130px] shadow-soft-lg border border-brand-tint">
+            {/* 导入持仓 */}
+            <button
+              onClick={() => { setFabOpen(false); navigate('/wealth/add') }}
+              className="flex items-center gap-3 w-full h-11 px-3 rounded-xl hover:bg-brand-tint transition-colors text-left"
+            >
+              <Upload size={16} className="text-brand shrink-0" />
+              <span className="text-sm text-ink">导入持仓</span>
+            </button>
+
+            {/* 清仓复盘 */}
+            <button
+              onClick={() => { setFabOpen(false); navigate('/wealth/liquidation') }}
+              className="flex items-center gap-3 w-full h-11 px-3 rounded-xl hover:bg-brand-tint transition-colors text-left"
+            >
+              <BarChart3 size={16} className="text-amber-500 shrink-0" />
+              <span className="text-sm text-ink">清仓复盘</span>
+            </button>
+
+            {/* AI 诊断 */}
+            <button
+              onClick={() => { setFabOpen(false); alert('功能开发中，敬请期待') }}
+              className="flex items-center gap-3 w-full h-11 px-3 rounded-xl hover:bg-brand-tint transition-colors text-left"
+            >
+              <Sparkles size={16} className="text-purple-500 shrink-0" />
+              <span className="text-sm text-ink"> AI   诊断</span>
+            </button>
+          </div>
+        </div>
+
+        {/* FAB 触发按钮 */}
+        <button
+          onClick={() => setFabOpen(v => !v)}
+          data-testid="wealth-fab"
+          aria-label="财富功能"
+          className="relative z-30 flex items-center justify-center w-10 h-10 rounded-full bg-white/70 backdrop-blur-sm border border-[#e8e6dc]/60 shadow-sm transition-all active:scale-95"
+          style={{
+            animation: 'breathe 2.4s ease-in-out infinite, glow-pulse 3s ease-in-out infinite',
+          }}
+        >
+          <MoreHorizontal size={18} className="text-ink-2" />
+        </button>
+      </div>
     </div>
   )
 }

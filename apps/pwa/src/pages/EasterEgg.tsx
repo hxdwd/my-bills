@@ -27,6 +27,13 @@ const EASTER_EGGS: EasterEggItem[] = [
     emoji: '🧋',
     to: '/easterEgg/diet',
   },
+  {
+    key: 'wishlist',
+    title: '购物清单',
+    desc: '加进冷静区，等等再决定。',
+    emoji: '🛒',
+    to: '/easterEgg/wishlist',
+  },
 ]
 
 export default function EasterEgg() {
@@ -91,7 +98,7 @@ export default function EasterEgg() {
                     </span>
                   )}
                 </div>
-                <p className="text-ink/50 text-sm mt-0.5 truncate">{item.desc}</p>
+                <p className="text-ink/50 text-sm mt-0.5">{item.desc}</p>
               </div>
               <svg viewBox="0 0 24 24" className="w-5 h-5 text-ink/30 shrink-0" fill="none" stroke="currentColor" strokeWidth={2}>
                 <path d="M9 6l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />

@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { searchQuote, fetchQuoteDetail, QuoteSearchResult } from '../utils/quoteApi'
+import { searchQuote, fetchQuoteDetail, QuoteSearchResult, Market } from '../utils/quoteApi'
 import { addHoldingTransaction } from '../db/wealthStore'
 import { CURRENCY_SYMBOL, Currency } from '../utils/currency'
+import { useApp } from '../context/AppContext'
 import { Coins } from 'lucide-react'
 
 function marketToCurrency(market: QuoteSearchResult['market']): Currency {
@@ -15,6 +16,7 @@ type Step = 'choose' | 'search' | 'fill'
 
 export function WealthAdd() {
   const navigate = useNavigate()
+  const { accounts, updateAccount } = useApp()
   const [step, setStep] = useState<Step>('choose')
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<QuoteSearchResult[]>([])
@@ -29,6 +31,45 @@ export function WealthAdd() {
   const [price, setPrice] = useState('')
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
   const [saving, setSaving] = useState(false)
+
+  // 根据市场过滤可用投资账户（与 WealthDetail 一致）
+  const investmentAccounts = useMemo(() => {
+    if (!selected) return []
+    const m = selected.market
+    return accounts.filter(a => {
+      if (a.type !== 'investment') return false
+      const ac = a.currency || 'CNY'
+      if (m === 'US') return ac === 'USD'
+      if (m === 'HK') return ac === 'HKD' || ac === 'CNY' // 港股通用CNY账户
+      if (m === 'CN' || m === 'FUND') return ac === 'CNY'
+      if (m === 'GOLD') return ac === 'CNY'
+      return false
+    })
+  }, [accounts, selected])
+
+  // 资产原始币种（根据 market 推断）
+  const assetCurrency = useMemo(() => {
+    if (!selected) return 'CNY'
+    const m = selected.market
+    if (m === 'US') return 'USD'
+    if (m === 'HK') return 'HKD'
+    return 'CNY'
+  }, [selected])
+
+  // 选择的投资账户
+  const [tradeAccountId, setTradeAccountId] = useState('')
+
+  // 最近使用的账户记忆（localStorage，与 WealthDetail 共享同一 key）
+  const LAST_ACCOUNT_KEY = 'wealth_last_account_id'
+  const getLastAccountId = () => localStorage.getItem(LAST_ACCOUNT_KEY) || ''
+
+  // 进入 fill 步骤时自动选中最近账户或第一个可用账户
+  useEffect(() => {
+    if (step !== 'fill' || !selected || investmentAccounts.length === 0) return
+    const lastId = getLastAccountId()
+    const defaultId = investmentAccounts.find(a => a.id === lastId)?.id || investmentAccounts[0]?.id || ''
+    setTradeAccountId(defaultId)
+  }, [step, selected?.symbol, selected?.market, investmentAccounts.length])
 
   // 最近搜索记录（localStorage 持久化，最多 8 条，去重，最新在前）
   const RECENT_KEY = 'wealth:recentSearch'
@@ -133,8 +174,15 @@ export function WealthAdd() {
       alert('请填写有效的数量和成本')
       return
     }
+    if (!tradeAccountId) {
+      alert('请选择投资账户')
+      return
+    }
     setSaving(true)
     try {
+      // 确定币种：投资账户币种优先，否则用 market 推断
+      const targetAccount = accounts.find(a => a.id === tradeAccountId)
+      const accountCur = targetAccount?.currency || assetCurrency
       await addHoldingTransaction({
         symbol: selected.symbol,
         market: selected.market,
@@ -143,7 +191,19 @@ export function WealthAdd() {
         quantity: q,
         price: p,
         date,
-      })
+        account_id: tradeAccountId,
+        asset_currency: accountCur,
+        is_active: true,
+      } as any)
+      // 资金联动：买入从账户余额扣减
+      if (targetAccount) {
+        const amount = q * p
+        await updateAccount(targetAccount.id, {
+          balance: parseFloat((targetAccount.balance - amount).toFixed(2)),
+        })
+      }
+      // 记录最近账户
+      localStorage.setItem(LAST_ACCOUNT_KEY, tradeAccountId)
       navigate('/wealth')
     } catch (e: any) {
       alert('保存失败：' + (e?.message || e))
@@ -277,10 +337,36 @@ export function WealthAdd() {
                 type="number"
                 value={price}
                 onChange={e => setPrice(e.target.value)}
-                className="w-full bg-bg rounded-xl p-3 pl-7 border border-brand-tint text-ink"
+                className="w-full bg-bg rounded-xl p-3 pl-12 border border-brand-tint text-ink"
                 placeholder="0.00"
               />
             </div>
+          </div>
+          {/* 资金账户选择器 */}
+          <div>
+            <div className="text-xs text-ink-2 mb-1.5">投资账户</div>
+            {investmentAccounts.length === 0 ? (
+              <div className="text-xs text-red-400 bg-red-50 rounded-xl px-3 py-2.5">
+                没有可用的投资账户，请先在账户管理中创建对应币种的投资账户
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {investmentAccounts.map(acc => (
+                  <button
+                    key={acc.id}
+                    onClick={() => setTradeAccountId(acc.id)}
+                    className={`text-xs px-3 py-2 rounded-xl border transition-colors ${
+                      tradeAccountId === acc.id
+                        ? 'bg-brand border-brand-tint text-ink font-medium'
+                        : 'bg-bg border-brand-tint text-ink-2'
+                    }`}
+                  >
+                    {acc.icon} {acc.name} ({acc.currency || 'CNY'})
+                    {acc.currency === 'CNY' && selected.market === 'HK' && <span className="text-[10px] ml-0.5">港股通</span>}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           <div>
             <div className="text-xs text-ink-2 mb-1">日期</div>

@@ -77,7 +77,7 @@ export async function updateHoldingTransaction(
 ): Promise<void> {
   const userId = await getCurrentUserId()
   const now = new Date().toISOString()
-  await db.holdings_transactions.update(id, { ...patch, _updated_at_local: now })
+  await db.holdings_transactions.update(id, { ...patch, _sync_status: 'local_dirty', _updated_at_local: now })
   syncEngine.syncAfterWrite('holdings_transactions', userId).catch(e => console.error('[Wealth] 同步更新持仓流水失败', e))
 }
 
@@ -132,10 +132,11 @@ export async function archiveHolding(symbol: string, market: Market): Promise<vo
     .filter(r => r.symbol === symbol && r.market === market && r.is_active !== false)
     .toArray()
 
-  // 批量标记 is_active=false
+  // 批量标记 is_active=false（必须加 local_dirty 否则 sync-engine 不推送）
   for (const r of active) {
     await db.holdings_transactions.update(r.id, {
       is_active: false,
+      _sync_status: 'local_dirty',
       _updated_at_local: now,
     })
   }
@@ -160,11 +161,28 @@ export async function archiveHolding(symbol: string, market: Market): Promise<vo
   }
 }
 
+/** 清仓复盘记录（一个标的的历史终局总结） */
+export interface LiquidatedHolding {
+  symbol: string
+  market: Market
+  name: string
+  currency: string        // 原币种（USD/HKD/CNY）
+  firstBuyDate: string    // 首笔买入日期
+  lastSellDate: string    // 末笔卖出/清仓日期
+  holdingDays: number
+  totalCost: number       // 买入总成本
+  totalProceeds: number   // 卖出总金额
+  profitLoss: number      // 盈亏金额
+  profitRate: number      // 盈亏百分比
+}
+
 // 聚合：当前持仓（仅聚合 is_active=true 的记录，清仓归档的不参与）
 export async function aggregateHoldings(): Promise<Holding[]> {
   const txs = await getAllTransactions()
+  // 按日期排序后处理，确保加权成本计算正确（卖出用当前均价冲减，依赖顺序）
+  const sorted = [...txs].sort((a, b) => a.date.localeCompare(b.date) || a.created_at.localeCompare(b.created_at))
   // 仅聚合 is_active=true 的记录（清仓归档的不参与当前持仓计算）
-  const active = txs.filter(t => t.is_active !== false)
+  const active = sorted.filter(t => t.is_active !== false)
   const map = new Map<string, Holding>()
   for (const t of active) {
     const key = `${t.market}:${t.symbol}`
@@ -213,6 +231,73 @@ export async function aggregateHoldings(): Promise<Holding[]> {
     if (h.quantity <= 0) continue
     result.push(h)
   }
+  return result
+}
+
+/** 获取清仓复盘列表：所有彻底清仓（净持仓归零且全体 is_active=false）的标的历史终局统计 */
+export async function getLiquidatedHoldings(): Promise<LiquidatedHolding[]> {
+  const txs = await getAllTransactions()
+  // 按日期排序确保成本计算顺序正确
+  const sorted = [...txs].sort((a, b) => a.date.localeCompare(b.date) || a.created_at.localeCompare(b.created_at))
+
+  // 按 symbol+market 分组
+  const groups = new Map<string, HoldingTransactionRecord[]>()
+  for (const t of sorted) {
+    const key = `${t.market}:${t.symbol}`
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push(t)
+  }
+
+  const result: LiquidatedHolding[] = []
+
+  for (const [_key, records] of groups) {
+    // 判断是否彻底清仓：全部记录的 is_active 都是 false
+    if (records.some(r => r.is_active !== false)) continue
+    // 且净持仓归零（买 = 卖）
+    const buys = records.filter(r => r.direction === 'buy')
+    const sells = records.filter(r => r.direction === 'sell')
+    const buyQty = buys.reduce((s, r) => s + r.quantity, 0)
+    const sellQty = sells.reduce((s, r) => s + r.quantity, 0)
+    if (buyQty <= 0 || Math.abs(buyQty - sellQty) > 0.001) continue
+
+    const firstBuy = buys[0]  // 按日期排序后第一条买入
+    // 最后一条 sell 是清仓日（跳过清仓节点 quantity=0 的记录）
+    const lastSell = [...sells].reverse().find(r => r.quantity > 0) || sells[sells.length - 1]
+
+    const totalCost = buys.reduce((s, r) => s + r.quantity * r.price, 0)
+    const totalProceeds = sells.filter(r => r.quantity > 0).reduce((s, r) => s + r.quantity * r.price, 0)
+    const profitLoss = totalProceeds - totalCost
+    const profitRate = totalCost > 0 ? (profitLoss / totalCost) * 100 : 0
+
+    const firstDate = firstBuy.date
+    const lastDate = lastSell.date
+    let holdingDays = 0
+    if (firstDate && lastDate) {
+      const d1 = new Date(firstDate)
+      const d2 = new Date(lastDate)
+      holdingDays = Math.max(1, Math.ceil((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)) + 1)
+    }
+
+    // 从第一条买入提取原币种
+    const currency = firstBuy.asset_currency || 'CNY'
+
+    result.push({
+      symbol: firstBuy.symbol,
+      market: firstBuy.market,
+      name: firstBuy.name,
+      currency,
+      firstBuyDate: firstDate,
+      lastSellDate: lastDate,
+      holdingDays,
+      totalCost,
+      totalProceeds,
+      profitLoss,
+      profitRate,
+    })
+  }
+
+  // 按清仓日期倒序排列
+  result.sort((a, b) => b.lastSellDate.localeCompare(a.lastSellDate))
   return result
 }
 

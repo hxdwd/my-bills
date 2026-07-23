@@ -2,13 +2,15 @@ import { useTheme } from '../context/ThemeContext'
 import { useApp, Account } from '../context/AppContext'
 import Card from '../components/ui/Card'
 import BottomSheet from '../components/ui/BottomSheet'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { TrendingUp, TrendingDown, Plus, ChevronRight, Trash2, AlertCircle, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import { Pie } from 'react-chartjs-2'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
 import { formatCurrency, formatTransferAmount } from '../utils/format'
 import { useWealthValuation } from '../hooks/useWealthValuation'
-import { toBase } from '../utils/currency'
+import { toBase, fmtWithSymbol, Currency } from '../utils/currency'
+import { getAllTransactions } from '../db/wealthStore'
 
 ChartJS.register(ArcElement, Tooltip, Legend)
 
@@ -45,6 +47,7 @@ const currencySymbol: Record<string, string> = {
 
 export default function AssetsPage() {
   const { theme } = useTheme()
+  const navigate = useNavigate()
   const { accounts, loading, transfers, getTotalLiabilities, addAccount, updateAccount, setDefaultAccount, deleteAccount, getAssetTrend } = useApp()
   // 汇率数据 + 持仓估值（用于投资账户展示持仓市值）
   const { rates, results } = useWealthValuation()
@@ -53,7 +56,7 @@ export default function AssetsPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [sortOrder, setSortOrder] = useState<'amount-desc' | 'amount-asc' | null>(null)
 
-  // 账户信息视图（点击账户行打开，只读）：账户属性 + 相关转账
+  // 账户信息视图（点击账户行打开，只读）：账户属性 + 相关转账 + 投资交易
   const [infoAccount, setInfoAccount] = useState<Account | null>(null)
   const [showAccountInfo, setShowAccountInfo] = useState(false)
   const ACCOUNT_TX_PAGE = 10
@@ -142,7 +145,54 @@ export default function AssetsPage() {
   const infoCcy = infoAccount?.currency || 'CNY'
   const infoSym = currencySymbol[infoCcy] || '¥'
   const infoIsOther = infoCcy !== 'CNY'
-  const infoCny = infoAccount ? toCNY(infoAccount.balance, infoCcy) : 0
+
+  // 当前选中账户的投资交易记录（holdings_transactions）
+  const [infoHoldingTxs, setInfoHoldingTxs] = useState<any[]>([])
+  useEffect(() => {
+    if (!infoAccount || infoAccount.type !== 'investment') {
+      setInfoHoldingTxs([])
+      return
+    }
+    let cancelled = false
+    getAllTransactions().then(txs => {
+      if (cancelled) return
+      const filtered = txs
+        .filter(t => t.account_id === infoAccount.id)
+        .sort((a, b) => b.date.localeCompare(a.date) || (b.created_at || '').localeCompare(a.created_at || ''))
+      setInfoHoldingTxs(filtered)
+    }).catch(() => {
+      if (!cancelled) setInfoHoldingTxs([])
+    })
+    return () => { cancelled = true }
+  }, [infoAccount])
+
+  // 投资交易分页
+  const visibleHoldingTxs = infoHoldingTxs.slice(0, infoVisibleTx)
+  const hasMoreHoldingTx = infoVisibleTx < infoHoldingTxs.length
+
+
+
+  // 当前选中账户的持仓市值（原始币种）
+  const infoHoldingsValue = useMemo(() => {
+    const hv = holdingsValueByAccount[infoAccount?.id || '']
+    return hv?.value ?? 0
+  }, [holdingsValueByAccount, infoAccount])
+
+  // 持有该账户的当前持仓概览（来自 results）
+  const infoCurrentHoldings = useMemo(() => {
+    if (!infoAccount) return []
+    return results.filter(r => r.holding?.accountId === infoAccount.id)
+  }, [results, infoAccount])
+
+  // 总净资产 = 账户余额 + 持仓市值（原币种）
+  const infoTotalNetOriginal = (infoAccount?.balance ?? 0) + infoHoldingsValue
+  // 折算 CNY 总净资产（占用余额 + 持仓市值的 CNY 折算）
+  const infoTotalNetCNY = useMemo(() => {
+    if (!infoAccount) return 0
+    const balCny = toCNY(infoAccount.balance, infoCcy)
+    const hvCny = infoAccount.type === 'investment' ? toCNY(infoHoldingsValue, infoCcy) : 0
+    return balCny + hvCny
+  }, [infoAccount, infoCcy, infoHoldingsValue, rates])
 
   // 拆分：日常资金 vs 投资组合
   const dailyAccounts = assetAccounts.filter(a => a.type !== 'investment')
@@ -1038,61 +1088,114 @@ export default function AssetsPage() {
       >
         {infoAccount && (
           <div className="p-4 space-y-4">
-            {/* 头部 */}
-            <div className="flex items-center gap-3">
+            {/* ===== 头部（头像+名称+类型）—— 所有账户通用 ===== */}
+            <div className="flex items-center gap-3 pb-3 border-b border-[#f0eee6] dark:border-[#3d3d3a]">
               <div
-                className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shrink-0"
+                className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl shrink-0"
                 style={{ backgroundColor: `${infoAccount.color}15` }}
               >
                 {infoAccount.icon}
               </div>
               <div className="min-w-0">
-                <div className="font-semibold text-base text-ink truncate">{infoAccount.name}</div>
-                <div className="text-xs text-ink-2 mt-0.5">
+                <div className="font-bold text-lg text-ink truncate">{infoAccount.name}</div>
+                <div className="text-xs text-ink-3 mt-0.5">
                   {accountTypeLabels[infoAccount.type]}{infoAccount.isDefault ? ' · 默认账户' : ''}
+                  <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-surface text-ink-3">
+                    {infoAccount.currency || 'CNY'}
+                  </span>
                 </div>
               </div>
             </div>
 
-            {/* 属性区 */}
-            <Card className="!p-0 divide-y divide-[#f0eee6] dark:divide-[#3d3d3a]">
-              <div className="flex items-center justify-between px-4 py-3">
-                <span className="text-sm text-ink-2">账户名称</span>
-                <span className="text-sm font-medium text-ink">{infoAccount.name}</span>
-              </div>
-              <div className="flex items-center justify-between px-4 py-3">
-                <span className="text-sm text-ink-2">账户类型</span>
-                <span className="text-sm font-medium text-ink">{accountTypeLabels[infoAccount.type]}</span>
-              </div>
-              <div className="flex items-center justify-between px-4 py-3">
-                <span className="text-sm text-ink-2">账户币种</span>
-                <span className="text-sm font-medium text-ink">{infoAccount.currency || 'CNY'}</span>
-              </div>
-              <div className="flex items-center justify-between px-4 py-3">
-                <span className="text-sm text-ink-2">当前余额</span>
-                <span className="text-sm font-medium text-ink text-right">
-                  {infoSym}{infoAccount.balance.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            {/* ===== 投资账户：核心数据看板 + 持仓概览 ===== */}
+            {infoAccount.type === 'investment' ? (
+              <>
+                <div className="bg-surface rounded-2xl p-4">
+                  <div className="text-xs text-ink-3 mb-1">总净资产</div>
+                  <div className="font-mono font-extrabold amount-fluid-lg text-ink mb-1">
+                    {infoSym}{infoTotalNetOriginal.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
                   {infoIsOther && (
-                    <span className="block text-[11px] text-ink-2 font-normal">
-                      (¥{infoCny.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
-                    </span>
+                    <div className="text-xs text-ink-3 font-mono -mt-0.5 mb-2">
+                      (¥{infoTotalNetCNY.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                    </div>
                   )}
-                </span>
-              </div>
-              <div className="flex items-center justify-between px-4 py-3">
-                <span className="text-sm text-ink-2">默认账户</span>
-                <span className="text-sm font-medium text-ink">{infoAccount.isDefault ? '是' : '否'}</span>
-              </div>
-            </Card>
+                  <div className="flex gap-4 mt-2 pt-2 border-t border-brand-tint">
+                    <div className="flex-1">
+                      <div className="text-[10px] text-ink-3">可用现金</div>
+                      <div className="font-mono text-sm text-ink mt-0.5">
+                        {infoSym}{infoAccount.balance.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-[10px] text-ink-3">持仓市值</div>
+                      <div className="font-mono text-sm text-ink mt-0.5">
+                        {infoSym}{infoHoldingsValue.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
 
-            {/* 相关转账区 */}
+                {/* 当前持仓明细概览 */}
+                {infoCurrentHoldings.length > 0 && (
+                  <div>
+                    <div className="flex items-center justify-between px-1 mb-2">
+                      <h4 className="text-sm font-medium text-ink-2">📊 当前持仓</h4>
+                      <span className="text-xs text-ink-3">{infoCurrentHoldings.length} 个</span>
+                    </div>
+                    <div className="space-y-1.5">
+                      {infoCurrentHoldings.map(r => {
+                        const cur = (r.currency || 'CNY') as Currency
+                        const mv = r.market_value ?? 0
+                        const cp = r.change_percent ?? 0
+                        const up = cp > 0
+                        const flat = cp === 0
+                        return (
+                          <div
+                            key={`${r.market}:${r.symbol}`}
+                            onClick={() => { handleCloseInfo(); navigate(`/wealth/detail/${r.market}/${r.symbol}`) }}
+                            className="flex items-center justify-between p-3 rounded-xl bg-surface cursor-pointer hover:brightness-95 transition-colors"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="text-sm text-ink font-medium truncate">{r.name || r.symbol}</div>
+                              <div className="text-[10px] text-ink-3 mt-0.5">{r.symbol} · {r.market}</div>
+                            </div>
+                            <div className="text-right shrink-0 ml-3">
+                              <div className="font-mono text-sm text-ink">{fmtWithSymbol(mv, cur, 0)}</div>
+                              <div className={`text-[11px] font-mono ${up ? 'text-danger' : flat ? 'text-ink-3' : 'text-ok'}`}>
+                                {up ? '+' : ''}{cp.toFixed(2)}%
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              /* ===== 日常资金账户：简洁余额展示 ===== */
+              <div className="bg-surface rounded-2xl p-4 text-center">
+                <div className="text-xs text-ink-3 mb-1">当前余额</div>
+                <div className="font-mono font-extrabold amount-fluid-lg text-ink">
+                  {infoSym}{infoAccount.balance.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+                {infoIsOther && (
+                  <div className="text-xs text-ink-3 font-mono mt-1">
+                    (¥{infoTotalNetCNY.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ===== 资金流水（转账）—— 所有账户通用 ===== */}
             <div>
               <div className="flex items-center justify-between px-1 mb-2">
-                <h4 className="text-sm font-medium text-ink-2">相关转账</h4>
-                <span className="text-xs text-ink-2">{accountTransfers.length} 笔</span>
+                <h4 className="text-sm font-medium text-ink-2">💰 资金流水</h4>
+                <span className="text-xs text-ink-3">{accountTransfers.length} 笔</span>
               </div>
               {accountTransfers.length === 0 ? (
-                <div className="text-center text-sm py-6 text-ink-2">该账户暂无转账记录</div>
+                <div className="text-center text-sm py-4 text-ink-3">暂无资金流水</div>
               ) : (
                 <div className="space-y-2">
                   {visibleAccountTransfers.map((t) => {
@@ -1111,7 +1214,7 @@ export default function AssetsPage() {
                           <div className="text-sm text-ink truncate">
                             {isOut ? '至 ' : '自 '}{counterpart}
                           </div>
-                          <div className="text-xs text-ink-2 mt-0.5">{t.date} {t.time}</div>
+                          <div className="text-xs text-ink-3 mt-0.5">{t.date} {t.time}</div>
                         </div>
                         <div className={`shrink-0 font-mono text-sm font-medium ${isOut ? 'text-danger' : 'text-ok'}`}>
                           {formatTransferAmount(t)}
@@ -1134,6 +1237,58 @@ export default function AssetsPage() {
                 </div>
               )}
             </div>
+
+            {/* ===== 模块二：投资交易记录（仅投资账户） ===== */}
+            {infoAccount.type === 'investment' && (
+              <div>
+                <div className="flex items-center justify-between px-1 mb-2">
+                  <h4 className="text-sm font-medium text-ink-2">📈 投资交易</h4>
+                  <span className="text-xs text-ink-3">{infoHoldingTxs.length} 笔</span>
+                </div>
+                {infoHoldingTxs.length === 0 ? (
+                  <div className="text-center text-sm py-4 text-ink-3">暂无投资交易</div>
+                ) : (
+                  <div className="space-y-2">
+                    {visibleHoldingTxs.map((t: any) => {
+                      const isBuy = t.direction === 'buy'
+                      const sym = currencySymbol[t.asset_currency || infoCcy] || infoSym
+                      return (
+                        <div
+                          key={t.id}
+                          onClick={() => { handleCloseInfo(); navigate(`/wealth/detail/${t.market}/${t.symbol}`) }}
+                          className="flex items-center gap-3 p-3 rounded-xl bg-surface cursor-pointer hover:brightness-95 transition-colors"
+                        >
+                          <span className={`shrink-0 text-[11px] px-2 py-0.5 rounded-full font-medium ${
+                            isBuy ? 'bg-danger/10 text-danger' : 'bg-ok/10 text-ok'
+                          }`}>
+                            {isBuy ? '买入' : '卖出'}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm text-ink truncate">{t.name || t.symbol}</div>
+                            <div className="text-xs text-ink-3 mt-0.5">
+                              {t.quantity} {t.market === 'GOLD' ? '克' : '份'} @ {sym}{t.price}
+                            </div>
+                          </div>
+                          <div className="text-xs text-ink-3 shrink-0">{t.date}</div>
+                        </div>
+                      )
+                    })}
+                    {hasMoreHoldingTx && (
+                      <div className="flex justify-center pt-1 pb-2">
+                        <button
+                          onClick={() => setInfoVisibleTx(v => v + ACCOUNT_TX_PAGE)}
+                          className={`px-6 py-2.5 rounded-full text-sm font-medium transition-colors ${
+                            theme === 'dark' ? 'bg-surface text-ink-2 hover:text-ink' : 'bg-white text-ink-2 hover:text-ink'
+                          }`}
+                        >
+                          加载更多（已显示 {visibleHoldingTxs.length} / {infoHoldingTxs.length} 笔）
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </BottomSheet>

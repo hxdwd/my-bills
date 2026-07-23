@@ -4,6 +4,38 @@
 
 ---
 
+## 2026-07-23 — Bug 修复、资产账户重构、清仓复盘、购物清单
+
+### Bug 修复
+- **HKD 符号重合**：`WealthAdd.tsx` 成本输入框 `pl-7` → `pl-10`，容纳 `HK$` 三字符
+- **持仓不关联投资账户**：`WealthAdd.tsx` 新增投资账户选择器（按 market 过滤）+ `account_id`/`asset_currency` 传入 + 资金联动扣减余额
+- **BottomSheet footer 被裁切**：`BottomSheet.tsx` 硬编码 `90vh-120px` → flex 布局 `flex-1 min-h-0`
+- **清仓归档 sync 失效**：`archiveHolding` 的 `db.update` 缺 `_sync_status: 'local_dirty'`，`pushTable` 不推送；补上 `local_dirty`（同时修复 `updateHoldingTransaction`）
+- **聚合排序依赖 UUID**：`aggregateHoldings` 加 `sort(a,b) => a.date.localeCompare(b.date)`
+- **清仓复盘导航错误**：路由缺 `/detail/` 段
+
+### 资产账户信息 BottomSheet 重构（Assets.tsx）
+- **日常资金**：简洁余额卡片 + 资金流水
+- **投资账户**：总净资产看板（余额+持仓市值）+ 可用现金/持仓市值并排 + 当前持仓概览 + 资金流水 + 投资交易（买卖记录，点击跳详情）
+- 移除原有 key-value 属性表
+
+### 财富首页 FAB 重构（WealthHome.tsx）
+- 图标 `+` → `MoreHorizontal`（`⋯`），弹出 Popover 菜单（向上生长 + 透明遮罩关闭）
+- 三项：导入持仓 → `/wealth/add`、清仓复盘 → `/wealth/liquidation`、AI 诊断 → alert 占位
+
+### 新增清仓复盘页（WealthLiquidation.tsx，路由 `/wealth/liquidation`）
+- 数据源：`holdings_transactions` 净持仓归零 + `is_active` 全 `false` → 盈亏/持有天数/收益率
+- 统计卡片 + 排序（日期/盈亏）+ 月份分组 + 骨架屏
+- 动态币种符号（`¥`/`$`/`HK$`）
+
+### 新增购物清单彩蛋页（Wishlist.tsx，路由 `/easterEgg/wishlist`）
+- 数据：`user_expand` 表 `key='wishlist_data'`（与 LifeProgress/DietControl 一致）
+- 欲望等级系统：5星滑动选择，等级越高冷静期越长（3/7/14/30/60天）
+- 四状态分组：ready/cooling/bought/abandoned，进度条+倒计时
+- 操作：记账购买/放弃/再冷静N天/删除
+- 添加 BottomSheet：名称→价格→分类→星级→冷静天数→备注→加入
+
+---
 ## 2026-07-21（再续）— 「人生进度」彩蛋页面
 
 - **通用扩展表 `public.user_expand`**（迁移 `019_user_expand.sql` 建表、`020_user_expand_kv.sql` 重构为键值对，均已线上 apply）。设计原则：**键值对模式**——`(user_id, key)` 复合主键 + `value JSONB`；所有彩蛋共用此表，人生进度数据只写 `key='life_data'`，饮食控制数据只写 `key='diet_control'`，未来新彩蛋用新 `key`（如 `annual_review`），**绝不改 `users` 主表、绝不每彩蛋单建表**。RLS 用 `public.get_current_user_id()`（读 `x-user-id` 头），**不用 `auth.uid()`**（anon key 下恒为 NULL 会被 401）——已 `execute_sql` 复核：主键 `user_id,key`、`value` 为 `jsonb`、RLS 开启、策略 `user_expand_owner:ALL` 均基于 `get_current_user_id()`，旧 `extras.life` 已迁移进 `key='life_data'`。新增饮食控制彩蛋**未建任何新表**（已核对 `pg_tables` 仅 `user_expand`）。

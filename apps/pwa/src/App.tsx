@@ -22,9 +22,11 @@ import {
   WealthDetail,
   WealthAdd,
   WealthImport,
+  WealthLiquidation,
   EasterEgg,
   LifeProgress,
   DietControl,
+  Wishlist,
 } from './pages';
 import { getDietItems, getDietMonthRecords, appendDietRecord } from './db/dietStore';
 import DietLinkPrompt from './components/DietLinkPrompt';
@@ -61,9 +63,11 @@ function ensureSubPageRoutes() {
   subPageRoutes.push({ path: '/wealth/detail/:market/:symbol', element: () => <WealthDetail /> });
   subPageRoutes.push({ path: '/wealth/add', element: () => <WealthAdd /> });
   subPageRoutes.push({ path: '/wealth/import', element: () => <WealthImport /> });
+  subPageRoutes.push({ path: '/wealth/liquidation', element: () => <WealthLiquidation /> });
   subPageRoutes.push({ path: '/wealth/:type', element: () => <WealthCategory /> });
   subPageRoutes.push({ path: '/easterEgg/diet', element: () => <DietControl /> });
   subPageRoutes.push({ path: '/easterEgg/life', element: () => <LifeProgress /> });
+  subPageRoutes.push({ path: '/easterEgg/wishlist', element: () => <Wishlist /> });
   subPageRoutes.push({ path: '/easterEgg', element: () => <EasterEgg /> });
   subPageRoutesInited = true;
 }
