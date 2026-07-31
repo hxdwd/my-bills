@@ -18,6 +18,15 @@ export interface VersionLog {
 
 export const VERSION_LOGS: VersionLog[] = [
   {
+    version: '1.1.5',
+    date: '2026-07-31',
+    changes: [
+      '新增「魔性打卡」彩蛋：习惯卡片、连胜墙、月度热力图，首页火焰图标红点提醒',
+      '新增「AI 持仓分析」：持仓详情页一键调用 AI 分析实时新闻与行业趋势',
+      '优化持仓详情页布局：现价换行显示、AI 入口浓缩为图标',
+    ],
+  },
+  {
     version: '1.1.4',
     date: '2026-07-21',
     changes: [

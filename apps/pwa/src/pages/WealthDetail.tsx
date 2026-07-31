@@ -180,6 +180,16 @@ export function WealthDetail() {
   const [aiError, setAiError] = useState('')
   const [aiOpen, setAiOpen] = useState(false)
   const aiAbortRef = useRef<AbortController | null>(null)
+  // 首次提示
+  const AI_HINT_KEY = 'wealth_ai_hint_shown'
+  const [aiHint, setAiHint] = useState(() => !localStorage.getItem(AI_HINT_KEY))
+  useEffect(() => {
+    if (aiHint) {
+      const t = setTimeout(() => { setAiHint(false); localStorage.setItem(AI_HINT_KEY, '1') }, 4000)
+      return () => clearTimeout(t)
+    }
+  }, [aiHint])
+  const dismissAiHint = () => { setAiHint(false); localStorage.setItem(AI_HINT_KEY, '1') }
   // ref 桥接：这些值在组件后面声明，但 runAiAnalyze 需要用到
   const nameRef = useRef<string>('')
   const curPriceRef = useRef<number | null>(null)
@@ -504,18 +514,34 @@ export function WealthDetail() {
           </div>
         </div>
         {/* AI 分析入口 */}
-        <button
-          onClick={runAiAnalyze}
-          disabled={aiLoading}
-          className={`rounded-full px-3 py-1 text-sm font-medium inline-flex items-center gap-1.5 shrink-0 transition-all ${
-            aiLoading
-              ? 'bg-ink-3/10 text-ink-3 pointer-events-none'
-              : 'bg-brand-tint/40 text-ink active:scale-95'
-          }`}
-        >
-          <span>{aiLoading ? '⏳' : '🤖'}</span>
-          <span>{aiLoading ? '分析中...' : 'AI 分析'}</span>
-        </button>
+        <div className="relative">
+          <button
+            onClick={() => { dismissAiHint(); runAiAnalyze() }}
+            disabled={aiLoading}
+            title="AI 辅助分析"
+            aria-label="AI 辅助分析"
+            className={`w-7 h-7 flex items-center justify-center rounded-lg transition-colors ${
+              aiLoading ? 'text-ink-3 pointer-events-none' : 'text-ink-3 hover:text-ink hover:bg-brand-tint'
+            }`}
+          >
+            {aiLoading ? (
+              <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="8" cy="8" r="6" strokeDasharray="4 2" className="animate-spin" style={{ animationDuration: '1.5s' }} />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M8 1v2M8 13v2M3.5 3.5l1.5 1.5M11 11l1.5 1.5M1 8h2M13 8h2M3.5 12.5l1.5-1.5M11 5l1.5-1.5" />
+                <circle cx="8" cy="8" r="2" />
+              </svg>
+            )}
+          </button>
+          {/* 首次提示气泡 */}
+          {aiHint && (
+            <div className="absolute right-0 bottom-full mb-1 z-30 px-2.5 py-1 rounded-lg bg-ink text-bg text-[11px] font-medium whitespace-nowrap shadow-lg animate-fade-in">
+              👆 点击AI分析
+            </div>
+          )}
+        </div>
       </div>
 
       {/* 方案二：左重右精 · 主次分明 · 响应式字号 */}
@@ -559,14 +585,13 @@ export function WealthDetail() {
               {td == null ? '—' : td >= 0 ? `+${fmtWithSymbol(td, cur)}` : fmtWithSymbol(td, cur)}
             </div>
             <div
-              className="mt-2 text-ink-2/70 leading-relaxed whitespace-nowrap"
+              className="mt-2 text-ink-2/70 leading-relaxed"
               style={{ fontSize: 'clamp(10px, 1.8vw, 12px)' }}
             >
               {changePct != null && (
-                <span style={{ color: changeColor }}>{changeArrow} {(Math.abs(changePct) * 100).toFixed(2)}%</span>
+                <div style={{ color: changeColor }}>{changeArrow} {(Math.abs(changePct) * 100).toFixed(2)}%</div>
               )}
-              {curPrice != null && <span className="hidden sm:inline"> ｜ 现价 {fmtWithSymbol(curPrice, cur)}</span>}
-              {market === 'FUND' && <span className="text-ink-3"> (估算)</span>}
+              {curPrice != null && <div>现价 {fmtWithSymbol(curPrice, cur)}{market === 'FUND' && <span className="text-ink-3"> (估算)</span>}</div>}
             </div>
           </div>
         </div>
