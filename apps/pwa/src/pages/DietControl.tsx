@@ -9,6 +9,7 @@ import {
   appendDietRecord,
   deleteDietItem,
 } from '../db/dietStore'
+import { recordHabit } from '../db/habitStore'
 import type { DietControlData, DietControlItem, DietRecord, DietMonthRecords } from '../types/diet'
 import BottomSheet from '../components/ui/BottomSheet'
 
@@ -79,7 +80,6 @@ function DietItemCard({
   over,
   flash,
   onRecord,
-  onCalendar,
   onEdit,
 }: {
   item: DietControlItem
@@ -88,7 +88,6 @@ function DietItemCard({
   over: number
   flash: boolean
   onRecord: () => void
-  onCalendar: () => void
   onEdit: () => void
 }) {
   const limit = item.limitCount
@@ -157,12 +156,6 @@ function DietItemCard({
           className="flex-1 rounded-2xl py-2.5 text-sm font-semibold text-ink active:scale-[0.98] bg-brand"
         >
           + 记一次
-        </button>
-        <button
-          onClick={onCalendar}
-          className="rounded-2xl px-3 py-2.5 text-sm text-ink-2 bg-brand-tint active:scale-95"
-        >
-          📅 日历
         </button>
         <button
           onClick={onEdit}
@@ -575,6 +568,8 @@ export default function DietControl() {
       const rec: DietRecord = { date, name: name.trim() || item.name, transactionId: null }
       const recMonth = date.slice(0, 7)
       appendDietRecord(recMonth, item.id, rec).catch(() => {})
+      // 无感触发魔性打卡：饮食控制记一次 → 自动完成今日 diet 习惯
+      recordHabit('diet').catch(() => {})
       if (recMonth === currentMonth) {
         setData((prev) => ({
           ...prev,
@@ -635,10 +630,6 @@ export default function DietControl() {
               haptic()
               setActiveItem(item)
               setSheet('record')
-            }}
-            onCalendar={() => {
-              haptic()
-              setSheet('calendar')
             }}
             onEdit={() => {
               setActiveItem(item)

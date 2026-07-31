@@ -7,7 +7,8 @@ import TransactionItem from '../components/ui/TransactionItem'
 import { Modal } from '../components/ui/Modal'
 import { formatCurrency } from '../utils/format'
 import { VERSION_LOGS, type VersionLog } from '../data/versionLogs'
-import { TrendingUp, TrendingDown, PiggyBank, ChevronRight, Sparkles, PieChart, Search } from 'lucide-react'
+import { TrendingUp, TrendingDown, PiggyBank, ChevronRight, Sparkles, PieChart, Search, Flame } from 'lucide-react'
+import { useHabitAllDone } from '../hooks/useHabitBadge'
 
 // 记录用户上次已看到的版本号，用于「更新后首页提示」
 const LAST_SEEN_VERSION_KEY = 'mybills:lastSeenVersion'
@@ -43,6 +44,8 @@ export default function HomePage({ onAddTransaction }: HomePageProps = {}) {
     categories,
   } = useApp()
   const user = useAuthStore(state => state.user)
+  // 魔性打卡：今日未完成习惯 → 火焰图标的红点亮起
+  const { allDone } = useHabitAllDone()
 
   // 版本更新提示：升级到新版本后，首页弹窗告知本次更新内容（首次安装不弹）
   const [updatedLog, setUpdatedLog] = useState<VersionLog | null>(null)
@@ -92,12 +95,25 @@ export default function HomePage({ onAddTransaction }: HomePageProps = {}) {
               <p className="text-xs opacity-60 mt-0.5">总资产</p>
               <p className="font-bold font-amount amount-fluid-lg mt-1">{fmt(totalAssets)}</p>
             </div>
-            <button
-              onClick={() => navigate('/assets')}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-white/50 text-xs font-medium active:scale-95 transition-all"
-            >
-              资产 <ChevronRight size={14} />
-            </button>
+            <div className="flex items-center gap-2">
+              {/* 魔性打卡入口：今日未完成 → 红点亮起 */}
+              <button
+                onClick={() => navigate('/easterEgg/habit')}
+                className="relative w-9 h-9 flex items-center justify-center rounded-full bg-white/50 active:scale-90 transition-all"
+                aria-label="魔性打卡"
+              >
+                <Flame size={18} color={allDone === false ? '#9C9C8F' : '#222222'} />
+                {allDone === false && (
+                  <span className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-red-500" />
+                )}
+              </button>
+              <button
+                onClick={() => navigate('/assets')}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-white/50 text-xs font-medium active:scale-95 transition-all"
+              >
+                资产 <ChevronRight size={14} />
+              </button>
+            </div>
           </div>
 
           {/* 当月三统计：点击进入预算页 */}

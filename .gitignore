@@ -12,6 +12,9 @@ build/
 apps/pwa/.env
 *.env
 
+# Wrangler 本地密钥
+.dev.vars
+
 # Keep example env as reference
 !.env.example
 
@@ -33,10 +36,10 @@ npm-debug.log*
 supabase/.temp/
 supabase/.branches/
 
-# Cache
-.tsbuildinfo
-*.tsbuildinfo
+# Vite 构建缓存
 .vite/
+# Vite 依赖预构建时间戳文件
+vite.config.ts.timestamp-*.mjs
 
 # 本地历史账单数据（含个人隐私，不入库）
 history-bills/

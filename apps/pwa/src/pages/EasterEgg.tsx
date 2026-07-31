@@ -34,6 +34,13 @@ const EASTER_EGGS: EasterEggItem[] = [
     emoji: '🛒',
     to: '/easterEgg/wishlist',
   },
+  {
+    key: 'habit',
+    title: '魔性打卡',
+    desc: '连续行为打卡，和小精灵一起变强。',
+    emoji: '🔥',
+    to: '/easterEgg/habit',
+  },
 ]
 
 export default function EasterEgg() {

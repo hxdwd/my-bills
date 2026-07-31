@@ -27,6 +27,7 @@ import {
   LifeProgress,
   DietControl,
   Wishlist,
+  HabitCheckin,
 } from './pages';
 import { getDietItems, getDietMonthRecords, appendDietRecord } from './db/dietStore';
 import DietLinkPrompt from './components/DietLinkPrompt';
@@ -68,6 +69,7 @@ function ensureSubPageRoutes() {
   subPageRoutes.push({ path: '/easterEgg/diet', element: () => <DietControl /> });
   subPageRoutes.push({ path: '/easterEgg/life', element: () => <LifeProgress /> });
   subPageRoutes.push({ path: '/easterEgg/wishlist', element: () => <Wishlist /> });
+  subPageRoutes.push({ path: '/easterEgg/habit', element: () => <HabitCheckin /> });
   subPageRoutes.push({ path: '/easterEgg', element: () => <EasterEgg /> });
   subPageRoutesInited = true;
 }

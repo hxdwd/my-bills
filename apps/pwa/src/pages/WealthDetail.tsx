@@ -23,6 +23,95 @@ function fmt(n: number | null | undefined, d = 2): string {
   return n.toLocaleString('zh-CN', { maximumFractionDigits: d })
 }
 
+// 轻量 Markdown 渲染器（处理 **bold**, ### headings, > blockquote, \n\n paragraphs）
+function renderMarkdown(text: string): React.ReactNode[] {
+  const nodes: React.ReactNode[] = []
+  const lines = text.split('\n')
+  let i = 0
+  while (i < lines.length) {
+    const line = lines[i]
+    const trimmed = line.trim()
+
+    // 空行 → 段落间距
+    if (!trimmed) {
+      i++
+      continue
+    }
+
+    // ## heading (兼容 `##1.` `#1.` 等不规范写法)
+    if (/^#{1,2}\s?/.test(trimmed)) {
+      const label = trimmed.replace(/^#{1,2}\s?/, '').trim()
+      nodes.push(
+        <div key={i} className="text-base font-bold text-ink mt-3 mb-1.5">
+          {label}
+        </div>
+      )
+      i++
+      continue
+    }
+
+    // ### heading (兼容不规范写法)
+    if (/^#{3}\s?/.test(trimmed)) {
+      const label = trimmed.replace(/^#{3}\s?/, '').trim()
+      nodes.push(
+        <div key={i} className="text-sm font-semibold text-ink mt-2.5 mb-1">
+          {label}
+        </div>
+      )
+      i++
+      continue
+    }
+
+    // > blockquote
+    if (trimmed.startsWith('> ')) {
+      nodes.push(
+        <div key={i} className="text-xs text-ink-2 border-l-2 border-brand pl-2 py-0.5 my-0.5 italic">
+          {parseInline(trimmed.slice(2))}
+        </div>
+      )
+      i++
+      continue
+    }
+
+    // - bullet point (single line only)
+    if (trimmed.startsWith('- ')) {
+      nodes.push(
+        <div key={i} className="text-sm text-ink leading-relaxed mb-1 pl-3">
+          <span className="text-ink-3 mr-1">•</span>
+          {parseInline(trimmed.slice(2))}
+        </div>
+      )
+      i++
+      continue
+    }
+
+    // 普通段落：聚合连续的非空行
+    let para = trimmed
+    i++
+    while (i < lines.length && lines[i].trim() && !/^#/.test(lines[i].trim()) && !lines[i].trim().startsWith('> ')) {
+      para += ' ' + lines[i].trim()
+      i++
+    }
+    nodes.push(
+      <p key={i} className="text-sm text-ink leading-relaxed mb-1.5">
+        {parseInline(para)}
+      </p>
+    )
+  }
+  return nodes
+}
+
+// 行内 Markdown: **bold**
+function parseInline(text: string): React.ReactNode[] {
+  const parts = text.split(/(\*\*.*?\*\*)/g)
+  return parts.map((part, idx) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={idx} className="text-ink font-semibold">{part.slice(2, -2)}</strong>
+    }
+    return <span key={idx}>{part}</span>
+  })
+}
+
 // 涨跌配色状态机：盈利为红、亏损为绿、持平/无效为灰（与全站一致）
 type Trend = 'up' | 'down' | 'flat'
 const COLOR_UP = '#dc2626'
@@ -85,6 +174,97 @@ export function WealthDetail() {
     toastTimer.current = window.setTimeout(() => setToast(null), 2000)
   }, [])
 
+  // AI 分析
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiResult, setAiResult] = useState('')
+  const [aiError, setAiError] = useState('')
+  const [aiOpen, setAiOpen] = useState(false)
+  const aiAbortRef = useRef<AbortController | null>(null)
+  // ref 桥接：这些值在组件后面声明，但 runAiAnalyze 需要用到
+  const nameRef = useRef<string>('')
+  const curPriceRef = useRef<number | null>(null)
+  const holdingRef = useRef<any>(null)
+  const changePctRef = useRef<number | null>(null)
+  const quoteTimeRef = useRef<string>('')
+
+  const runAiAnalyze = useCallback(async () => {
+    if (!symbol || !market || aiLoading) return
+    setAiLoading(true)
+    setAiResult('')
+    setAiError('')
+    setAiOpen(true)
+
+    const controller = new AbortController()
+    aiAbortRef.current = controller
+
+    try {
+      const funcUrl = (import.meta.env.VITE_FUNCTIONS_URL || '').replace(/\/$/, '')
+      const resp = await fetch(`${funcUrl}/api/wealth/ai-analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol,
+          market,
+          asset_name: nameRef.current,
+          current_price: curPriceRef.current ?? 0,
+          cost_price: holdingRef.current?.cost_price ?? 0,
+          first_buy_date: holdingRef.current?.firstBuyDate ?? new Date().toISOString().slice(0, 10),
+          change_percent: changePctRef.current,
+        }),
+        signal: controller.signal,
+      })
+
+      if (!resp.ok) {
+        setAiError('分析暂时不可用，请稍后重试')
+        return
+      }
+
+      // 流式读取 SSE
+      const reader = resp.body?.getReader()
+      if (!reader) { setAiError('响应格式异常'); return }
+
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() ?? ''
+
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (!trimmed || !trimmed.startsWith('data: ')) continue
+          const data = trimmed.slice(6)
+          if (data === '[DONE]') continue
+          try {
+            const parsed = JSON.parse(data)
+            if (parsed.error) { setAiError(parsed.error); return }
+            if (parsed.content) {
+              setAiResult(prev => prev + parsed.content)
+            }
+          } catch {}
+        }
+      }
+    } catch (e: any) {
+      if (e.name !== 'AbortError') {
+        setAiError('分析暂时不可用，请稍后重试')
+      }
+    } finally {
+      setAiLoading(false)
+      aiAbortRef.current = null
+    }
+  }, [symbol, market, aiLoading])
+
+  const closeAi = useCallback(() => {
+    if (aiAbortRef.current) aiAbortRef.current.abort()
+    setAiOpen(false)
+    setAiResult('')
+    setAiError('')
+    setAiLoading(false)
+  }, [])
+
 
   // 直接复用 useWealthValuation 的 batch 结果，无需额外调 detail 接口
   const v = useMemo(
@@ -92,6 +272,27 @@ export function WealthDetail() {
     [results, market, symbol],
   )
   const holding = v?.holding
+  nameRef.current = v?.name || symbol!
+  curPriceRef.current = v?.current_price ?? null
+  holdingRef.current = holding
+  changePctRef.current = v?.change_percent ?? null
+  quoteTimeRef.current = v?.quote_time ?? ''
+
+  // 持仓基础字段
+  const name = v?.name || symbol!
+  const cur = (v?.currency ?? 'CNY') as Currency
+  const curPrice = v?.current_price ?? null
+  const mv = v?.market_value ?? null
+  const pl = v?.profit_loss ?? null
+  const pr = v?.profit_rate ?? null
+  const changePct = v?.change_percent ?? null
+  const td = v ? todayProfit(v) : null
+  // 涨跌色彩
+  const plColor = colorOf(trendOf(pl))
+  const plSign = signOf(pl)
+  const tdColor = colorOf(trendOf(td))
+  const changeColor = colorOf(trendOf(changePct))
+  const changeArrow = trendOf(changePct) === 'up' ? '▲' : trendOf(changePct) === 'down' ? '▼' : ''
 
   const loadHistory = useCallback(async () => {
     if (!symbol) return
@@ -122,23 +323,7 @@ export function WealthDetail() {
   useEffect(() => { loadHistory() }, [loadHistory])
   useEffect(() => { loadTxs() }, [loadTxs])
 
-  const name = v?.name || symbol
-  const cur = (v?.currency ?? 'CNY') as Currency
-  const mv = v?.market_value ?? null
-  const pl = v?.profit_loss ?? null
-  const pr = v?.profit_rate ?? null
-  const curPrice = v?.current_price ?? null
-  const changePct = v?.change_percent ?? null
-  // 今日收益：按资产自身币种计算（详情页不折算）
-  const td = v ? todayProfit(v) : null
-
-  // 涨跌颜色状态机：累计收益(pl/pr) 与 今日涨跌
-  const plColor = colorOf(trendOf(pl))
-  const plSign = signOf(pl)
-  const tdColor = colorOf(trendOf(td))
-  const tdSign = signOf(td)
-  const changeColor = colorOf(trendOf(changePct))
-  const changeArrow = trendOf(changePct) === 'up' ? '▲' : trendOf(changePct) === 'down' ? '▼' : ''
+  // 涨跌颜色复用（已在顶部定义）
 
 
   const onDelete = () => {
@@ -310,12 +495,27 @@ export function WealthDetail() {
 
   return (
     <div className="min-h-screen bg-bg px-4 pt-6 pb-24">
-      <div className="flex items-center mb-4">
-        <button onClick={() => navigate(-1)} className="text-ink-2 mr-3 text-xl">‹</button>
-        <div>
-          <h1 className="text-xl font-bold text-ink">{name}</h1>
-          <div className="text-xs text-ink-3">{symbol} · {marketLabel(market as any)}</div>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center">
+          <button onClick={() => navigate(-1)} className="text-ink-2 mr-3 text-xl">‹</button>
+          <div>
+            <h1 className="text-xl font-bold text-ink">{name}</h1>
+            <div className="text-xs text-ink-3">{symbol} · {marketLabel(market as any)}</div>
+          </div>
         </div>
+        {/* AI 分析入口 */}
+        <button
+          onClick={runAiAnalyze}
+          disabled={aiLoading}
+          className={`rounded-full px-3 py-1 text-sm font-medium inline-flex items-center gap-1.5 shrink-0 transition-all ${
+            aiLoading
+              ? 'bg-ink-3/10 text-ink-3 pointer-events-none'
+              : 'bg-brand-tint/40 text-ink active:scale-95'
+          }`}
+        >
+          <span>{aiLoading ? '⏳' : '🤖'}</span>
+          <span>{aiLoading ? '分析中...' : 'AI 分析'}</span>
+        </button>
       </div>
 
       {/* 方案二：左重右精 · 主次分明 · 响应式字号 */}
@@ -343,7 +543,7 @@ export function WealthDetail() {
                   className="font-semibold whitespace-nowrap"
                   style={{ color: plColor, fontSize: 'clamp(10px, 2.2vw, 14px)' }}
                 >
-                  {pr == null ? '' : `(${pl >= 0 ? '+' : ''}${(pr * 100).toFixed(2)}%)`}
+                  {pr == null ? '' : `(${(pl ?? 0) >= 0 ? '+' : ''}${(pr * 100).toFixed(2)}%)`}
                 </span>
               </div>
             </div>
@@ -670,6 +870,60 @@ export function WealthDetail() {
                 清仓后成本价将重置，历史记录保留但不再参与持仓计算，再次点击确认
               </div>
             )}
+          </div>
+        </>
+      )}
+
+      {/* AI 分析 BottomSheet */}
+      {aiOpen && (
+        <>
+          <div className="fixed inset-0 z-50 bg-black/30" onClick={closeAi} />
+          <div className="fixed bottom-0 left-0 right-0 z-50 bg-surface rounded-t-3xl px-5 pt-5 pb-8 shadow-[0_-8px_30px_rgba(0,0,0,0.08)] animate-slide-up max-h-[75vh] overflow-y-auto">
+            <div className="w-10 h-1 rounded-full bg-ink-3/20 mx-auto mb-4" />
+            <div className="flex items-center justify-between mb-4">
+              <div className="text-base font-bold text-ink">AI 辅助分析</div>
+              <button onClick={closeAi} className="w-7 h-7 flex items-center justify-center rounded-full bg-brand-tint text-ink-2 active:scale-95">
+                <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2}><path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" /></svg>
+              </button>
+            </div>
+
+            {/* 标的信息摘要 */}
+            <div className="rounded-xl bg-bg p-3 mb-3 text-xs text-ink-2">
+              <div className="flex gap-3 flex-wrap">
+                <span>📌 {name}</span>
+                <span>💵 成本 {fmtWithSymbol(holding?.cost_price ?? 0, cur)}</span>
+                <span style={{ color: plColor }}>📈 {pl == null ? '—' : `${plSign}${fmtWithSymbol(pl, cur)}`}</span>
+              </div>
+            </div>
+
+            {/* 流式内容区 */}
+            <div className="rounded-xl bg-bg p-4 min-h-[120px]">
+              {aiError ? (
+                <div className="text-sm text-ink-2 py-2">
+                  ⚠️ {aiError}
+                </div>
+              ) : aiLoading && !aiResult ? (
+                <div className="flex items-center gap-2 text-sm text-ink-2 py-2">
+                  <span className="inline-block w-2 h-2 rounded-full bg-brand animate-pulse" />
+                  <span>正在搜索新闻并分析...</span>
+                </div>
+              ) : (
+                <div className="text-sm text-ink leading-relaxed">
+                  {aiResult
+                    ? (aiLoading
+                      // 流式中：显示原始文本，避免不完整 Markdown 被错误解析
+                      ? <span className="whitespace-pre-wrap">{aiResult}<span className="inline-block w-2 h-4 ml-0.5 bg-ink animate-pulse align-middle" /></span>
+                      // 完成后：渲染 Markdown
+                      : renderMarkdown(aiResult))
+                    : '—'}
+                </div>
+              )}
+            </div>
+
+            {/* 免责声明 */}
+            <div className="mt-4 text-center text-[10px] text-ink-3">
+              本分析基于实时公开信息，仅供参考，不构成投资建议。
+            </div>
           </div>
         </>
       )}

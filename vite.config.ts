@@ -15,13 +15,11 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate', // 改为自动更新 避免弹窗可能不生效导致无法更新
-      // 开发环境下禁用 SW 注册：否则 dev-sw.js 会被反复轮询，
-      // 导致 workbox-*.js 不停 304 请求、needRefresh 频繁触发更新弹窗（页面卡死/崩溃）。
-      // 生产构建 (build + preview) 不受影响，仍正常注册 SW 与更新提示。
-      devOptions: {
-        enabled: false,
-      },
+      registerType: 'autoUpdate',
+      // 开发环境下禁用 SW 注册
+      devOptions: { enabled: false },
+      // 自销毁 SW，避免 workbox-build v7 ESM 兼容问题
+      selfDestroying: true,
       includeAssets: ['favicon.ico', 'favicon.svg', 'pwa-512x512.svg'],
       manifest: {
         name: '钱盒子 - 个人记账',
@@ -44,27 +42,6 @@ export default defineConfig({
             sizes: 'any',
             type: 'image/svg+xml',
             purpose: 'any maskable'
-          }
-        ]
-      },
-      workbox: {
-        // 新 SW 立即接管页面，无需等待旧页面关闭
-        skipWaiting: true,
-        clientsClaim: true,
-        // 清理旧版本 precache，避免 iOS 独立模式更新后仍加载过期资源导致白屏/僵死
-        cleanupOutdatedCaches: true,
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-        runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'google-fonts-cache',
-              expiration: {
-                maxEntries: 10,
-                maxAgeSeconds: 60 * 60 * 24 * 365
-              }
-            }
           }
         ]
       }
