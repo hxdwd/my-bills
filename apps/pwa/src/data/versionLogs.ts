@@ -18,6 +18,15 @@ export interface VersionLog {
 
 export const VERSION_LOGS: VersionLog[] = [
   {
+    version: '1.1.6',
+    date: '2026-08-05',
+    changes: [
+      '新增「AI 人生陪伴」：目标卡片按钮触发 AI 对话，根据互动记录智能判定拖延/迷茫/推进/危机状态',
+      '新增目标「源动力」：创建目标时可填写"最想看到的画面"，卡片底部灰色小字展示',
+      '优化超时保护：AI 分析接口增加缺失密钥的前置校验',
+    ],
+  },
+  {
     version: '1.1.5',
     date: '2026-07-31',
     changes: [

@@ -8,6 +8,25 @@ export interface LifeGoal {
   date: string // YYYY-MM-DD
   gradient: string // 对应 GRADIENTS 的 key
   createdAt: number
+  vision?: string // 源动力画面
+  status?: 'active' | 'done'
+}
+
+// 目标 AI 对话数据（独立 key='goal_ai_data'）
+export interface GoalAIData {
+  [goalId: string]: {
+    vision?: string
+    lastInteractionDate?: string // YYYY-MM-DD
+    milestoneFired?: string[] // ['10','50','90']
+    logs?: GoalAILog[]
+  }
+}
+
+export interface GoalAILog {
+  date: string
+  type: 'delay' | 'start' | 'progress' | 'crisis' | 'daily'
+  aiPrompt: string
+  userReply: string
 }
 
 export interface LifeData {

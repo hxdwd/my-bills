@@ -16,7 +16,21 @@ import {
   DEFAULT_LIFE_EXPECTANCY,
   type LifeData,
   type LifeGoal,
+  type GoalAIData,
+  type GoalAILog,
 } from '../data/lifeProgress'
+
+// 进度百分比：已走天数 / 总天数
+function goalProgress(g: LifeGoal): number {
+  const total = new Date(g.date).getTime() - g.createdAt
+  if (total <= 0) return 0
+  const elapsed = Date.now() - g.createdAt
+  return Math.min(100, Math.max(0, (elapsed / total) * 100))
+}
+
+function todayStr(): string {
+  return new Date().toISOString().slice(0, 10)
+}
 
 /* 数字滚动（老虎机效果） */
 function RollNumber({ value, className }: { value: number; className?: string }) {
@@ -96,19 +110,42 @@ function GranBar({ label, value, gradient }: { label: string; value: number; gra
 }
 
 /* 单次倒计时卡片 */
-function GoalCard({ goal, onRemove }: { goal: LifeGoal; onRemove: (id: string) => void }) {
+function GoalCard({ goal, aiData, onClick, onRemove }: {
+  goal: LifeGoal
+  aiData?: GoalAIData[string]
+  onClick: (g: LifeGoal) => void
+  onRemove: (id: string) => void
+}) {
   const haptic = useHaptic()
   const left = daysUntil(goal.date)
   const g = getGradient(goal.gradient)
   const grad = `linear-gradient(135deg, ${g.from}, ${g.to})`
   const expired = left < 0
   const today = left === 0
+  const done = goal.status === 'done'
+
+  // 金色呼吸点：3天后未互动且未完成
+  const showDot = !done && aiData?.lastInteractionDate
+    && (new Date(todayStr()).getTime() - new Date(aiData.lastInteractionDate).getTime()) >= 3 * 86400000
 
   return (
     <div
-      className="rounded-3xl p-4 shadow-soft text-white relative overflow-hidden"
+      className={`rounded-3xl p-4 shadow-soft text-white relative overflow-hidden cursor-pointer active:scale-[0.98] transition-transform ${done ? 'opacity-50' : ''}`}
       style={{ background: grad }}
+      onClick={() => { haptic(); onClick(goal) }}
     >
+      {/* 金色呼吸点 */}
+      {showDot && (
+        <div className="absolute top-3 right-3 w-1.5 h-1.5 rounded-full bg-[#F4D77C] animate-pulse" />
+      )}
+
+      {/* 已完成标记 */}
+      {done && (
+        <div className="absolute top-3 right-3 w-5 h-5 rounded-full bg-white/30 flex items-center justify-center">
+          <svg viewBox="0 0 16 16" className="w-3 h-3 text-white" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M3 8l4 4 6-8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        </div>
+      )}
+
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-2xl">{goal.emoji || '🎯'}</span>
@@ -116,10 +153,7 @@ function GoalCard({ goal, onRemove }: { goal: LifeGoal; onRemove: (id: string) =
         </div>
         <button
           className="text-white/70 text-xs shrink-0 active:scale-90"
-          onClick={() => {
-            haptic()
-            onRemove(goal.id)
-          }}
+          onClick={(e) => { e.stopPropagation(); haptic(); onRemove(goal.id) }}
         >
           删除
         </button>
@@ -127,13 +161,168 @@ function GoalCard({ goal, onRemove }: { goal: LifeGoal; onRemove: (id: string) =
       <div className="mt-3 flex items-end gap-1">
         <RollNumber value={Math.abs(left)} className="font-mono font-bold text-5xl leading-none tabular-nums" />
         <span className="mb-1 text-sm drop-shadow-sm">
-          {today ? '就是今天' : expired ? '天前' : '天后'}
+          {done ? '已抵达' : today ? '就是今天' : expired ? '天前' : '天后'}
         </span>
       </div>
       <div className="text-white/80 text-xs mt-1">
-        {today ? '今天，值得好好记住 🌟' : expired ? `已于 ${goal.date} 抵达` : `约定在 ${goal.date}`}
+        {done ? `🎉 于 ${goal.date} 抵达` : today ? '今天，值得好好记住 🌟' : expired ? `已于 ${goal.date} 抵达` : `约定在 ${goal.date}`}
       </div>
+      {/* 源动力锚点 */}
+      {goal.vision && (
+        <div className="text-white/50 text-[11px] mt-2 italic">"{goal.vision}"</div>
+      )}
     </div>
+  )
+}
+
+/* GoalChat 面板 */
+function GoalChatPanel({
+  goal, aiData, onClose, onUpdateData,
+}: {
+  goal: LifeGoal
+  aiData: GoalAIData[string]
+  onClose: () => void
+  onUpdateData: (d: GoalAIData[string]) => void
+}) {
+  const [msgs, setMsgs] = useState<Array<{ role: 'ai' | 'user'; text: string }>>([])
+  const [input, setInput] = useState('')
+  const [waiting, setWaiting] = useState(false)
+  const [status, setStatus] = useState<'active' | 'done'>((goal as any).status || 'active')
+  const [confirmDone, setConfirmDone] = useState(false)
+  const loadedRef = useRef(false)
+
+  const progress = goalProgress(goal)
+  const recentLogs = (aiData?.logs ?? []).slice(-5)
+
+  // 首次加载触发 AI
+  useEffect(() => {
+    if (loadedRef.current) return
+    loadedRef.current = true
+    triggerAI()
+  }, [])
+
+  async function triggerAI(userMsg?: string) {
+    setWaiting(true)
+    try {
+      if (userMsg) setMsgs(prev => [...prev, { role: 'user', text: userMsg }])
+      const funcUrl = (import.meta.env.VITE_FUNCTIONS_URL || '').replace(/\/$/, '')
+      const r = await fetch(`${funcUrl}/api/expend/goal-chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          goalId: goal.id,
+          goalName: goal.name,
+          vision: goal.vision || '',
+          goalDate: goal.date,
+          progressPct: progress,
+          lastInteractionDate: aiData?.lastInteractionDate ?? null,
+          milestoneFired: aiData?.milestoneFired ?? [],
+          userMessage: userMsg || undefined,
+          recentLogs,
+        }),
+      })
+      const j = await r.json()
+      if (j.aiMessage) {
+        setMsgs(prev => [...prev, { role: 'ai', text: j.aiMessage }])
+        // 更新数据
+        const t = j.type as GoalAILog['type']
+        const newLog: GoalAILog = { date: todayStr(), type: t, aiPrompt: j.aiMessage, userReply: userMsg || '' }
+        const updated: GoalAIData[string] = {
+          lastInteractionDate: todayStr(),
+          logs: [...(aiData?.logs ?? []), newLog],
+          // 所有非 daily 的状态类型触发后加入去重集合，下次不再重复
+          milestoneFired: t !== 'daily'
+            ? [...new Set([...(aiData?.milestoneFired ?? []), t])]
+            : (aiData?.milestoneFired ?? []),
+        }
+        onUpdateData(updated)
+      }
+    } catch { setMsgs(prev => [...prev, { role: 'ai', text: '稍等，我在听...' }]) }
+    finally { setWaiting(false) }
+  }
+
+  function handleSend() {
+    if (!input.trim() || waiting) return
+    const msg = input.trim()
+    setInput('')
+    triggerAI(msg)
+  }
+
+  function markDone() {
+    if (!confirmDone) { setConfirmDone(true); return }
+    setStatus('done')
+    setConfirmDone(false)
+    onUpdateData({ _done: true } as any)
+  }
+
+  return (
+    <>
+      <div className="fixed inset-0 z-50 bg-black/30" onClick={onClose} />
+      <div className="fixed bottom-0 left-0 right-0 z-50 bg-surface rounded-t-3xl px-5 pt-5 pb-8 shadow-[0_-8px_30px_rgba(0,0,0,0.08)] animate-slide-up flex flex-col" style={{ maxHeight: '80vh' }}>
+        <div className="w-10 h-1 rounded-full bg-ink-3/20 mx-auto mb-4" />
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">{goal.emoji}</span>
+            <span className="font-semibold text-ink">{goal.name}</span>
+          </div>
+          <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-full bg-brand-tint text-ink-2 active:scale-95">
+            <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2}><path d="M4 4l8 8M12 4l-8 8" /></svg>
+          </button>
+        </div>
+
+        {/* 源动力锚点 */}
+        {goal.vision && (
+          <div className="text-[11px] text-ink-3 italic mb-3 px-1">"你曾说过，{goal.vision}"</div>
+        )}
+
+        {/* 消息区 */}
+        <div className="flex-1 overflow-y-auto mb-3 space-y-3 min-h-[120px] max-h-[40vh]">
+          {msgs.map((m, i) => (
+            <div key={i} className={`text-sm leading-relaxed ${m.role === 'ai' ? 'text-ink' : 'text-ink-2 text-right'}`}>
+              <span className={m.role === 'ai' ? '' : 'bg-brand-tint/60 rounded-xl px-3 py-1.5 inline-block'}>{m.text}</span>
+            </div>
+          ))}
+          {waiting && <div className="text-ink-3 text-sm">...</div>}
+        </div>
+
+        {/* 输入框 */}
+        <div className="flex gap-2 mb-3">
+          <input
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSend()}
+            placeholder="说点什么..."
+            className="flex-1 rounded-xl bg-bg px-3 py-2.5 text-sm text-ink outline-none border border-brand-tint"
+          />
+          <button
+            onClick={handleSend}
+            disabled={!input.trim() || waiting}
+            className="rounded-xl bg-brand px-3 py-2.5 text-sm text-ink font-medium disabled:opacity-40 active:scale-95"
+          >
+            发送
+          </button>
+        </div>
+
+        {/* 状态切换器 */}
+        <div className="flex gap-2">
+          <button
+            onClick={() => { setStatus('active'); setConfirmDone(false) }}
+            className={`flex-1 rounded-xl py-2 text-xs font-medium transition-colors ${status === 'active' ? 'bg-brand-tint text-ink' : 'bg-bg text-ink-3'}`}
+          >
+            💪 正在努力
+          </button>
+          <button
+            onClick={markDone}
+            className={`flex-1 rounded-xl py-2 text-xs font-medium transition-colors ${status === 'done' ? 'bg-brand-tint text-ink' : 'bg-bg text-ink-3'}`}
+          >
+            {confirmDone ? '确认抵达？' : '🎉 已抵达'}
+          </button>
+        </div>
+        {confirmDone && (
+          <div className="text-center text-[10px] text-ink-3 mt-1">再点一次确认，这一刻会被好好记住</div>
+        )}
+      </div>
+    </>
   )
 }
 
@@ -152,6 +341,14 @@ export default function LifeProgress() {
   const [pullQuote, setPullQuote] = useState<string | null>(null)
   const pullStartY = useRef(0)
   const pulling = useRef(false)
+  // GoalChat
+  const [chatGoal, setChatGoal] = useState<LifeGoal | null>(null)
+  const [aiData, setAiData] = useState<GoalAIData>({})
+  // 状态切换回调
+  const handleGoalStatusChange = (goalId: string, status: 'active' | 'done') => {
+    const updated = (life.goals ?? []).map(g => g.id === goalId ? { ...g, status } : g)
+    persist({ ...life, goals: updated })
+  }
 
   // 下拉彩蛋：在页面顶部继续下拉时，浮现一句随机名言（不做刷新同步）
   function onPullStart(e: TouchEvent) {
@@ -180,6 +377,7 @@ export default function LifeProgress() {
   const [fEmoji, setFEmoji] = useState('🎯')
   const [fDate, setFDate] = useState('')
   const [fGrad, setFGrad] = useState(GRADIENTS[0].key)
+  const [fVision, setFVision] = useState('')
 
   // 首次引导表单
   const [bBirth, setBBirth] = useState('')
@@ -193,7 +391,10 @@ export default function LifeProgress() {
   )
   const gran = useMemo(() => computeGranularity(now), [now])
   const goals = useMemo(
-    () => [...(life.goals ?? [])].sort((a, b) => a.date.localeCompare(b.date)),
+    () => [...(life.goals ?? [])].sort((a, b) => {
+      if ((a.status === 'done') !== (b.status === 'done')) return a.status === 'done' ? -1 : 1
+      return a.date.localeCompare(b.date)
+    }),
     [life.goals]
   )
 
@@ -213,9 +414,11 @@ export default function LifeProgress() {
       .finally(() => {
         if (active) setLoading(false)
       })
-    return () => {
-      active = false
-    }
+    // 加载 goal_ai_data
+    getUserExpandValue('goal_ai_data')
+      .then((v: any) => { if (active) setAiData(v ?? {}) })
+      .catch(() => {})
+    return () => { active = false }
   }, [])
 
   // 「今天」进度条每秒跳动
@@ -237,6 +440,11 @@ export default function LifeProgress() {
     }
   }
 
+  async function persistAIData(d: GoalAIData) {
+    setAiData(d)
+    try { await upsertUserExpandValue('goal_ai_data', d) } catch {}
+  }
+
   function startLife() {
     if (!bBirth) return
     haptic()
@@ -248,6 +456,7 @@ export default function LifeProgress() {
     setFEmoji('🎯')
     setFDate('')
     setFGrad(GRADIENTS[0].key)
+    setFVision('')
     setSheetOpen(true)
   }
 
@@ -261,6 +470,8 @@ export default function LifeProgress() {
       date: fDate,
       gradient: fGrad,
       createdAt: Date.now(),
+      vision: fVision.trim() || undefined,
+      status: 'active',
     }
     persist({ ...life, goals: [...(life.goals ?? []), goal] })
     setSheetOpen(false)
@@ -378,7 +589,7 @@ export default function LifeProgress() {
             ) : (
               <div className="space-y-3">
                 {goals.map((g) => (
-                  <GoalCard key={g.id} goal={g} onRemove={removeGoal} />
+                  <GoalCard key={g.id} goal={g} aiData={aiData[g.id]} onClick={(g) => setChatGoal(g)} onRemove={removeGoal} />
                 ))}
               </div>
             )}
@@ -452,6 +663,20 @@ export default function LifeProgress() {
               ))}
             </div>
           </div>
+          <div>
+            <label className="block text-ink/60 text-sm mb-1">
+              如果这一天真的来了，你最想看到的画面是？
+            </label>
+            <textarea
+              value={fVision}
+              onChange={(e) => setFVision(e.target.value)}
+              placeholder="比如：和家人坐在新家的阳台上看夕阳..."
+              maxLength={100}
+              rows={2}
+              className="w-full rounded-2xl bg-ink/5 px-4 py-3 text-ink text-sm outline-none focus:ring-2 focus:ring-amber-300 resize-none"
+            />
+            <div className="text-ink-3 text-[10px] mt-0.5 text-right">{fVision.length}/100</div>
+          </div>
           <button
             disabled={!fName.trim() || !fDate}
             onClick={saveGoal}
@@ -461,6 +686,21 @@ export default function LifeProgress() {
           </button>
         </div>
       </BottomSheet>
+
+      {/* GoalChat */}
+      {chatGoal && (
+        <GoalChatPanel
+          goal={chatGoal}
+          aiData={aiData[chatGoal.id] || {}}
+          onClose={() => { setChatGoal(null) }}
+          onUpdateData={(d) => {
+            const updated = { ...aiData, [chatGoal.id]: d }
+            persistAIData(updated)
+            // 如果标记为 done，同时更新 goal
+            if ((d as any)._done) handleGoalStatusChange(chatGoal.id, 'done')
+          }}
+        />
+      )}
 
       <style>{`
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }

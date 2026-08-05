@@ -554,7 +554,7 @@ export function WealthHome() {
               onClick={() => { setFabOpen(false); navigate('/wealth/add') }}
               className="flex items-center gap-3 w-full h-11 px-3 rounded-xl hover:bg-brand-tint transition-colors text-left"
             >
-              <Upload size={16} className="text-brand shrink-0" />
+              <Upload size={18} className="text-brand shrink-0" />
               <span className="text-sm text-ink">导入持仓</span>
             </button>
 
@@ -563,7 +563,7 @@ export function WealthHome() {
               onClick={() => { setFabOpen(false); navigate('/wealth/liquidation') }}
               className="flex items-center gap-3 w-full h-11 px-3 rounded-xl hover:bg-brand-tint transition-colors text-left"
             >
-              <BarChart3 size={16} className="text-amber-500 shrink-0" />
+              <BarChart3 size={18} className="text-amber-500 shrink-0" />
               <span className="text-sm text-ink">清仓复盘</span>
             </button>
 
@@ -572,7 +572,7 @@ export function WealthHome() {
               onClick={() => { setFabOpen(false); alert('功能开发中，敬请期待') }}
               className="flex items-center gap-3 w-full h-11 px-3 rounded-xl hover:bg-brand-tint transition-colors text-left"
             >
-              <Sparkles size={16} className="text-purple-500 shrink-0" />
+              <Sparkles size={18} className="text-purple-500 shrink-0" />
               <span className="text-sm text-ink"> AI   诊断</span>
             </button>
           </div>

@@ -103,6 +103,8 @@ export const onRequestOptions = async () => new Response(null, { status: 204, he
 
 export const onRequestPost = async (context: any) => {
   const { request, env } = context
+  if (!env.DEEPSEEK_API_KEY) return j(500, 'DEEPSEEK_API_KEY not configured')
+
   let body: AiAnalyzeRequest
   try { body = await request.json() } catch { return j(400, 'Invalid JSON') }
   if (!body.symbol || !body.market || !body.asset_name) return j(400, 'Missing fields')
