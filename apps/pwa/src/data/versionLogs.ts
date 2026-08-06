@@ -18,6 +18,15 @@ export interface VersionLog {
 
 export const VERSION_LOGS: VersionLog[] = [
   {
+    version: '1.1.7',
+    date: '2026-08-06',
+    changes: [
+      '批量导入增强：支持选择投资账户（按市场分组）+ 持仓买入联动扣减账户余额',
+      '导入 AI 识别优化：Ticker 识别准确性提升 + 行情验证 + 市场分类修正',
+      '同步引擎新增孤儿记录清理：远程删除后本地自动同步删除',
+    ],
+  },
+  {
     version: '1.1.6',
     date: '2026-08-05',
     changes: [

@@ -181,6 +181,44 @@ async function pullTable(
 }
 
 /**
+ * Delete local records whose IDs are NOT in the remote dataset (orphans).
+ * Fetches only IDs from remote to compare with local IDs.
+ */
+async function cleanOrphans(tableName: TableName, userId: string): Promise<void> {
+  const table = (db as any)[tableName]
+  const uid = getSupabaseUserId() || userId
+  const supabaseUrl = (supabase as any)['supabaseUrl']
+  const supabaseKey = (supabase as any)['supabaseKey']
+  const filterCol = tableName === 'profiles' ? 'id' : 'user_id'
+  const profileFilter = `&${filterCol}=eq.${uid}`
+
+  // Fetch all remote IDs for this table
+  const remoteIds = new Set<string>()
+  const PAGE = 1000
+  let cursor = 0
+  while (true) {
+    const url = `${supabaseUrl}/rest/v1/${tableName}?select=id${profileFilter}&order=id.asc&limit=${PAGE}&offset=${cursor}`
+    const resp = await fetch(url, { headers: { 'apikey': supabaseKey, 'x-user-id': uid } })
+    if (!resp.ok) break
+    const data = await resp.json() as any[]
+    if (!data || data.length === 0) break
+    for (const row of data) remoteIds.add(row.id)
+    if (data.length < PAGE) break
+    cursor += PAGE
+  }
+
+  if (remoteIds.size === 0) return
+
+  // Find and delete local records not in remote
+  const localIds = await table.toCollection().primaryKeys()
+  const orphans = localIds.filter((id: string) => !remoteIds.has(id))
+  if (orphans.length > 0) {
+    await table.bulkDelete(orphans)
+    console.log(`[Sync] 清理 ${tableName} 孤儿记录: ${orphans.length} 条`)
+  }
+}
+
+/**
  * 从 Supabase 拉取所有表的变更，返回总拉取条数。
  * @param onProgress 可选回调，用于通知全局进度（按所有表汇总）
  */
@@ -202,6 +240,8 @@ async function pullAll(
       // 单表拉取时不传 onProgress（避免单表内部进度干扰全局汇总）
       const n = await pullTable(tableName, userId)
       fetchedCount += n
+      // 清理本地孤儿记录（远程已删除但本地残留）
+      if (n > 0) await cleanOrphans(tableName, userId)
       if (totalCount > 0 && onProgress) {
         const pct = Math.min(Math.round((fetchedCount / totalCount) * 100), 100)
         onProgress({ percent: pct, status: 'pulling' })

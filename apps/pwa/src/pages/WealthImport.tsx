@@ -3,32 +3,29 @@ import { useNavigate } from 'react-router-dom'
 import { ParsedHolding } from '../utils/holdingImport'
 import { searchQuote, fetchQuoteDetail, QuoteSearchResult } from '../utils/quoteApi'
 import { addHoldingTransaction } from '../db/wealthStore'
-import { fmtMoney as fmtMoneyUtil, Currency } from '../utils/currency'
+import { fmtMoney as fmtMoneyUtil } from '../utils/currency'
 import { Trash2, Check, Loader2, Upload } from 'lucide-react'
+import { useApp } from '../context/AppContext'
 
-// 市场 → 默认币种（与后端 marketCurrency 一致）
-function marketToCurrency(market: ImportRow['market']): Currency {
-  if (market === 'US') return 'USD'
-  if (market === 'HK') return 'HKD'
-  return 'CNY'
+// 市场 → 币种简称
+function mktCur(m: ImportRow['market']): string {
+  if (m === 'US') return 'USD '
+  if (m === 'HK') return 'HKD/CNY '
+  return 'CNY '
 }
 
 // 导入预览行：解析 + 匹配 + 计算后的可编辑流水
 interface ImportRow {
   id: string
   raw: ParsedHolding
-  // 匹配结果
   matched: QuoteSearchResult | null
   name: string
   symbol: string
   market: 'CN' | 'HK' | 'US' | 'FUND' | 'GOLD'
-  // 计算出的流水字段（可编辑）
   quantity: string
   price: string
   date: string
-  // 匹配到的当前净值/价格（用于盈亏核对）
   curPrice: number | null
-  // 状态
   resolving: boolean
   resolveError: string | null
   drop: boolean
@@ -134,6 +131,7 @@ async function resolveRow(raw: ParsedHolding): Promise<{
 
 export function WealthImport() {
   const navigate = useNavigate()
+  const { accounts, updateAccount } = useApp()
   const [text, setText] = useState('')
   const [rows, setRows] = useState<ImportRow[]>([])
   const [parsed, setParsed] = useState(false)
@@ -147,6 +145,43 @@ export function WealthImport() {
 
   // ====== 公共：调用 import-screenshot 接口（rawText 或 imageBase64）→ 解析结果 ======
   const apiBase = (import.meta as any).env?.VITE_FUNCTIONS_URL || ''
+
+  // 市场 → 可用投资账户
+  const getAccountsByMarket = (market: ImportRow['market']) => {
+    return accounts.filter(a => {
+      if (a.type !== 'investment') return false
+      const ac = a.currency || 'CNY'
+      if (market === 'US') return ac === 'USD'
+      if (market === 'HK') return ac === 'HKD' || ac === 'CNY'
+      return ac === 'CNY'
+    })
+  }
+
+  // 给一行的市场自动选第一个可用账户
+  const LAST_KEY = 'wealth_last_account_id'
+  const autoPickAccount = (market: ImportRow['market']): string => {
+    const available = getAccountsByMarket(market)
+    if (available.length === 0) return ''
+    const lastId = localStorage.getItem(LAST_KEY)
+    return available.find(a => a.id === lastId)?.id || available[0]?.id || ''
+  }
+
+  // 顶层账户映射：market → accountId（按市场分组选择，不放在每条记录里）
+  const [marketAccountMap, setMarketAccountMap] = useState<Record<string, string>>(() => {
+    try {
+      const saved = localStorage.getItem('wealth_import_accounts')
+      return saved ? JSON.parse(saved) : {}
+    } catch { return {} }
+  })
+
+  const saveMarketAccounts = (map: Record<string, string>) => {
+    setMarketAccountMap(map)
+    try { localStorage.setItem('wealth_import_accounts', JSON.stringify(map)) } catch {}
+  }
+
+  const setMarketAccount = (market: string, accountId: string) => {
+    saveMarketAccounts({ ...marketAccountMap, [market]: accountId })
+  }
 
   const callImportAPI = async (payload: { imageBase64?: string; rawText?: string }) => {
     const resp = await fetch(`${apiBase}/api/wealth/import-screenshot`, {
@@ -210,7 +245,7 @@ export function WealthImport() {
         return {
           ...r,
           matched: res.matched,
-          symbol: res.matched?.code || res.matched?.symbol || r.raw.name,
+          symbol: res.matched?.code || res.matched?.symbol || r.raw.symbol || r.raw.name,
           market: (res.matched?.market || r.raw.market) as ImportRow['market'],
           name: res.matched?.name || r.raw.name,
           quantity: res.quantity,
@@ -222,6 +257,17 @@ export function WealthImport() {
       })
     )
     setRows(settled)
+    // 为出现的每个市场自动填充账户（仅当尚未选择时）
+    const markets = [...new Set(settled.map(s => s.market))]
+    const next = { ...marketAccountMap }
+    let changed = false
+    for (const m of markets) {
+      if (!next[m]) {
+        const id = autoPickAccount(m)
+        if (id) { next[m] = id; changed = true }
+      }
+    }
+    if (changed) saveMarketAccounts(next)
   }
 
   // ====== 粘贴文本 → AI 识别 ======
@@ -290,8 +336,13 @@ export function WealthImport() {
     setSaveMsg(null)
     let ok = 0
     let fail = 0
+    // 按账户汇总扣款金额，最后一次性扣（避免多次更新同一账户）
+    const deductions: Record<string, number> = {}
     for (const r of valid) {
       try {
+        const accountId = marketAccountMap[r.market] || null
+        const acc = accountId ? accounts.find(a => a.id === accountId) : null
+        const assetCur = acc?.currency || (r.market === 'US' ? 'USD' : r.market === 'HK' ? 'HKD' : 'CNY')
         await addHoldingTransaction({
           symbol: r.symbol,
           market: r.market,
@@ -300,11 +351,29 @@ export function WealthImport() {
           quantity: parseFloat(r.quantity),
           price: parseFloat(r.price),
           date: r.date,
+          account_id: accountId,
+          asset_currency: assetCur,
+          is_active: true,
         })
+        if (accountId) {
+          deductions[accountId] = (deductions[accountId] || 0) + parseFloat(r.quantity) * parseFloat(r.price)
+        }
         ok++
       } catch {
         fail++
       }
+    }
+    // 资金联动：从各账户余额扣减
+    for (const [accountId, amount] of Object.entries(deductions)) {
+      const acc = accounts.find(a => a.id === accountId)
+      if (acc) {
+        await updateAccount(accountId, { balance: parseFloat((acc.balance - amount).toFixed(2)) })
+      }
+    }
+    // 记录最���使用的账户
+    const firstAccountId = Object.keys(deductions)[0]
+    if (firstAccountId) {
+      try { localStorage.setItem(LAST_KEY, firstAccountId) } catch {}
     }
     setSaving(false)
     setSaveMsg(`已导入 ${ok} 条${fail ? `，${fail} 条失败` : ''}`)
@@ -421,6 +490,45 @@ export function WealthImport() {
             <button onClick={() => { setParsed(false); setRows([]); setText('') }} className="text-xs text-ink-3 underline">重新粘贴</button>
           </div>
 
+          {/* 投资账户选择（按市场分组，紧凑单行） */}
+          {validCount > 0 && !rows.some(r => r.resolving) && (() => {
+            const markets = [...new Set(rows.filter(r => !r.drop && !r.resolving).map(r => r.market))]
+            if (markets.length === 0) return null
+            return (
+              <div className="">
+                {markets.map(m => {
+                  const accs = getAccountsByMarket(m)
+                  const selected = marketAccountMap[m] || ''
+                  const mktLabel = { US: '美股', HK: '港股', CN: 'A股', FUND: '基金', GOLD: '黄金' }[m] || m
+                  return (
+                    <div key={m} className="mb-2">
+                      <div className="text-xs text-ink-2 mb-1.5">{mktLabel}</div>
+                      {accs.length === 0 ? (
+                        <div className="text-xs text-red-400 bg-red-50 rounded-xl px-3 py-2.5">无{mktCur(m)}投资账户</div>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {accs.map(acc => (
+                            <button
+                              key={acc.id}
+                              onClick={() => setMarketAccount(m, acc.id)}
+                              className={`text-xs px-3 py-2 rounded-xl border transition-colors ${
+                                selected === acc.id
+                                  ? 'bg-brand border-brand-tint text-ink font-medium'
+                                  : 'bg-bg border-brand-tint text-ink-2'
+                              }`}
+                            >
+                              {acc.icon} {acc.name} ({acc.currency || 'CNY'})
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })()}
+
           {rows.length === 0 && <div className="text-center text-ink-3 text-sm py-6">未解析到持仓，换个格式试试</div>}
 
           {rows.map(r => (
@@ -470,31 +578,16 @@ export function WealthImport() {
               {!r.resolving && !r.drop && (
                 <div className="grid grid-cols-3 gap-2 mt-2">
                   <div>
-                    <div className="text-[10px] text-ink-3 mb-0.5">数量</div>
-                    <input
-                      type="number"
-                      value={r.quantity}
-                      onChange={e => updateRow(r.id, { quantity: e.target.value })}
-                      className="w-full bg-bg rounded-lg p-2 border border-brand-tint text-ink text-sm"
-                    />
+                    <div className="text-xs text-ink-2 mb-1.5">数量</div>
+                    <input type="number" value={r.quantity} onChange={e => updateRow(r.id, { quantity: e.target.value })} className="w-full bg-bg rounded-xl p-2.5 border border-brand-tint text-ink text-sm" />
                   </div>
                   <div>
-                    <div className="text-[10px] text-ink-3 mb-0.5">成本价</div>
-                    <input
-                      type="number"
-                      value={r.price}
-                      onChange={e => updateRow(r.id, { price: e.target.value })}
-                      className="w-full bg-bg rounded-lg p-2 border border-brand-tint text-ink text-sm"
-                    />
+                    <div className="text-xs text-ink-2 mb-1.5">成本价</div>
+                    <input type="number" value={r.price} onChange={e => updateRow(r.id, { price: e.target.value })} className="w-full bg-bg rounded-xl p-2.5 border border-brand-tint text-ink text-sm" />
                   </div>
                   <div>
-                    <div className="text-[10px] text-ink-3 mb-0.5">日期</div>
-                    <input
-                      type="date"
-                      value={r.date}
-                      onChange={e => updateRow(r.id, { date: e.target.value })}
-                      className="w-full bg-bg rounded-lg p-2 border border-brand-tint text-ink text-sm"
-                    />
+                    <div className="text-xs text-ink-2 mb-1.5">日期</div>
+                    <input type="date" value={r.date} onChange={e => updateRow(r.id, { date: e.target.value })} className="w-full bg-bg rounded-xl p-2.5 border border-brand-tint text-ink text-sm" />
                   </div>
                 </div>
               )}
