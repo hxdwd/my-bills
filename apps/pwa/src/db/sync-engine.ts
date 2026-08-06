@@ -197,9 +197,13 @@ async function cleanOrphans(tableName: TableName, userId: string): Promise<void>
   const PAGE = 1000
   let cursor = 0
   while (true) {
-    const url = `${supabaseUrl}/rest/v1/${tableName}?select=id${profileFilter}&order=id.asc&limit=${PAGE}&offset=${cursor}`
+    const url = `${supabaseUrl}/rest/v1/${remoteTable(tableName)}?select=id${profileFilter}&order=id.asc&limit=${PAGE}&offset=${cursor}`
     const resp = await fetch(url, { headers: { 'apikey': supabaseKey, 'x-user-id': uid } })
-    if (!resp.ok) break
+    if (!resp.ok) {
+      // 404 = table doesn't exist remotely yet, skip
+      if (resp.status === 404) return
+      break
+    }
     const data = await resp.json() as any[]
     if (!data || data.length === 0) break
     for (const row of data) remoteIds.add(row.id)
