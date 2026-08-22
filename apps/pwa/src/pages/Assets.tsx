@@ -2,17 +2,13 @@ import { useTheme } from '../context/ThemeContext'
 import { useApp, Account } from '../context/AppContext'
 import Card from '../components/ui/Card'
 import BottomSheet from '../components/ui/BottomSheet'
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { TrendingUp, TrendingDown, Plus, ChevronRight, Trash2, AlertCircle, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
-import { Pie } from 'react-chartjs-2'
-import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
+import { TrendingUp, TrendingDown, Plus, ChevronRight, Trash2, AlertCircle, ArrowUpDown, ArrowUp, ArrowDown, ChevronDown } from 'lucide-react'
 import { formatCurrency, formatTransferAmount } from '../utils/format'
 import { useWealthValuation } from '../hooks/useWealthValuation'
 import { toBase, fmtWithSymbol, Currency } from '../utils/currency'
 import { getAllTransactions } from '../db/wealthStore'
-
-ChartJS.register(ArcElement, Tooltip, Legend)
 
 const accountTypeOptions = [
   { icon: '💵', label: '现金', type: 'cash', color: '#2d8a5e' },
@@ -54,7 +50,8 @@ export default function AssetsPage() {
   const [showAddAccount, setShowAddAccount] = useState(false)
   const [editingAccount, setEditingAccount] = useState<Account | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
-  const [sortOrder, setSortOrder] = useState<'amount-desc' | 'amount-asc' | null>(null)
+  const [dailySortOrder, setDailySortOrder] = useState<'amount-desc' | 'amount-asc' | null>(null)
+  const [investSortOrder, setInvestSortOrder] = useState<'amount-desc' | 'amount-asc' | null>(null)
 
   // 账户信息视图（点击账户行打开，只读）：账户属性 + 相关转账 + 投资交易
   const [infoAccount, setInfoAccount] = useState<Account | null>(null)
@@ -83,6 +80,25 @@ export default function AssetsPage() {
   const [newAccountForm, setNewAccountForm] = useState(initNewAccountForm)
   const [editForm, setEditForm] = useState(initEditForm)
 
+  // 资产分布：展开的类别（'daily' | 'investment' | null），点击图例行/色块切换展开收起
+  const [expandedSection, setExpandedSection] = useState<'daily' | 'investment' | null>(null)
+  const toggleSection = (key: 'daily' | 'investment') => {
+    setExpandedSection(prev => prev === key ? null : key)
+  }
+
+  // 点击资产分布卡片外部任意位置时收起展开的下拉
+  const distributionRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!expandedSection) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (distributionRef.current && !distributionRef.current.contains(e.target as Node)) {
+        setExpandedSection(null)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [expandedSection])
+
   const totalLiabilities = getTotalLiabilities()
   const assetTrend = getAssetTrend(6)
 
@@ -90,15 +106,22 @@ export default function AssetsPage() {
   const assetAccountsRaw = accounts.filter(a => a.type !== 'credit' && a.type !== 'debt' && a.balance >= 0)
   const liabilityAccounts = accounts.filter(a => a.type === 'credit' || a.type === 'debt' || a.balance < 0)
 
-  const assetAccounts = useMemo(() => {
-    const sorted = [...assetAccountsRaw]
-    if (sortOrder === 'amount-desc') {
-      sorted.sort((a, b) => b.balance - a.balance)
-    } else if (sortOrder === 'amount-asc') {
-      sorted.sort((a, b) => a.balance - b.balance)
-    }
-    return sorted
-  }, [assetAccountsRaw, sortOrder])
+  const assetAccounts = useMemo(() => [...assetAccountsRaw], [assetAccountsRaw])
+
+  // 日常资金 / 投资组合各自独立排序（排序按钮分别控制）
+  const dailyAccounts = useMemo(() => {
+    const list = assetAccounts.filter(a => a.type !== 'investment')
+    if (dailySortOrder === 'amount-desc') list.sort((a, b) => b.balance - a.balance)
+    else if (dailySortOrder === 'amount-asc') list.sort((a, b) => a.balance - b.balance)
+    return list
+  }, [assetAccounts, dailySortOrder])
+
+  const investmentAccounts = useMemo(() => {
+    const list = assetAccounts.filter(a => a.type === 'investment')
+    if (investSortOrder === 'amount-desc') list.sort((a, b) => b.balance - a.balance)
+    else if (investSortOrder === 'amount-asc') list.sort((a, b) => a.balance - b.balance)
+    return list
+  }, [assetAccounts, investSortOrder])
 
   // 将各账户余额折算到 CNY
   const toCNY = (balance: number, currency?: string) => {
@@ -121,9 +144,18 @@ export default function AssetsPage() {
   }, [results])
 
   // 折算后总资产（所有币种折 CNY 汇总）
+  // 投资账户必须把「持仓市值」一并算入（与饼图 investTotalCNY 口径一致），
+  // 否则「总资产 / 净资产」会比日常资金+投资组合少算持仓这部分。
   const totalAssetsCNY = useMemo(
-    () => assetAccounts.reduce((sum, a) => sum + toCNY(a.balance, a.currency), 0),
-    [assetAccounts, rates],
+    () => assetAccounts.reduce((sum, a) => {
+      if (a.type !== 'investment') {
+        return sum + toCNY(a.balance, a.currency)
+      }
+      const hv = holdingsValueByAccount[a.id]
+      const holdingsVal = hv?.value ?? 0
+      return sum + toCNY(a.balance + holdingsVal, a.currency)
+    }, 0),
+    [assetAccounts, rates, holdingsValueByAccount],
   )
 
   const netAssetsCNY = totalAssetsCNY - totalLiabilities
@@ -194,52 +226,30 @@ export default function AssetsPage() {
     return balCny + hvCny
   }, [infoAccount, infoCcy, infoHoldingsValue, rates])
 
-  // 拆分：日常资金 vs 投资组合
-  const dailyAccounts = assetAccounts.filter(a => a.type !== 'investment')
-  const investmentAccounts = assetAccounts.filter(a => a.type === 'investment')
-
-  // 饼图数据：按类型聚合（日常资金 vs 投资组合），用折算 CNY
+  // 按类型聚合（日常资金 vs 投资组合），用折算 CNY
   const dailyTotalCNY = dailyAccounts.reduce((s, a) => s + toCNY(a.balance, a.currency), 0)
   const investTotalCNY = investmentAccounts.reduce((s, a) => {
     const hv = holdingsValueByAccount[a.id]
     return s + toCNY(a.balance + (hv?.value ?? 0), a.currency)
   }, 0)
-  const pieData = useMemo(() => ({
-    labels: ['日常资金', '投资组合'],
-    datasets: [{
-      data: [dailyTotalCNY, investTotalCNY],
-      backgroundColor: ['#1e88e5', '#9c27b0'],
-      borderWidth: 0,
-      hoverOffset: 4,
-    }],
-  }), [dailyTotalCNY, investTotalCNY])
 
-  const pieOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: { display: false },
-      tooltip: {
-        callbacks: {
-          label: (context: any) => ` ¥${context.raw.toLocaleString()}`
-        }
-      }
-    },
-    cutout: '65%',
+  // 资产分布：占比计算（0 保护）
+  const distTotal = dailyTotalCNY + investTotalCNY
+  const dailyPct = distTotal > 0 ? (dailyTotalCNY / distTotal) * 100 : 0
+  const investPct = distTotal > 0 ? (investTotalCNY / distTotal) * 100 : 0
+  const pctText = (p: number) => p > 0 ? `${p.toFixed(1)}%` : ''
+
+  // 排序：日常资金 / 投资组合分别控制
+  const handleSortToggle = (
+    setter: React.Dispatch<React.SetStateAction<'amount-desc' | 'amount-asc' | null>>,
+    order: 'amount-desc' | 'amount-asc' | null,
+  ) => {
+    setter(order === null ? 'amount-desc' : order === 'amount-desc' ? 'amount-asc' : null)
   }
 
-  // 排序
-  const handleSortToggle = () => {
-    setSortOrder(prev => {
-      if (prev === null) return 'amount-desc'
-      if (prev === 'amount-desc') return 'amount-asc'
-      return null
-    })
-  }
-
-  const getSortIcon = () => {
-    if (sortOrder === null) return <ArrowUpDown size={14} />
-    if (sortOrder === 'amount-desc') return <ArrowDown size={14} />
+  const getSortIcon = (order: 'amount-desc' | 'amount-asc' | null) => {
+    if (order === null) return <ArrowUpDown size={14} />
+    if (order === 'amount-desc') return <ArrowDown size={14} />
     return <ArrowUp size={14} />
   }
 
@@ -471,62 +481,192 @@ export default function AssetsPage() {
           </div>
         </Card>
 
-        {/* Asset Distribution — 按类型聚合：日常资金 vs 投资组合 */}
-        <Card className="!p-4">
+        {/* Asset Distribution — 按类型聚合：日常资金 vs 投资组合（图例 + 极细堆叠条形图 + 下拉明细） */}
+        <Card className="!p-4" ref={distributionRef}>
           <h3 className={`font-semibold mb-3 ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
             资产分布
           </h3>
-          <div className="flex items-center gap-4">
-            <div className="w-32 h-32">
-              <Pie data={pieData} options={pieOptions} />
-            </div>
-            <div className="flex-1 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#1e88e5' }} />
-                  <span className={`text-sm ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>日常资金</span>
-                </div>
-                <span className={`text-sm font-mono ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
+
+          {/* 顶部图例区：两行，整行可点击（圆点 + 名称 + 金额 + 展开箭头） */}
+          <div className="space-y-2.5">
+            {/* 日常资金 */}
+            <button
+              onClick={() => toggleSection('daily')}
+              className={`w-full flex items-center justify-between gap-2 p-1 -m-1 rounded-lg transition-colors text-left
+                ${theme === 'dark' ? 'hover:bg-surface' : 'hover:bg-[#faf9f5]'}`}
+            >
+              <span className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: '#1e88e5' }} />
+                <span className={`text-sm ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>日常资金</span>
+              </span>
+              <span className="flex items-center gap-1 min-w-0">
+                <span className={`font-mono font-medium amount-fluid break-amount truncate ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
                   ¥{dailyTotalCNY.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#9c27b0' }} />
-                  <span className={`text-sm ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>投资组合</span>
-                </div>
-                <span className={`text-sm font-mono ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
+                <ChevronDown
+                  size={14}
+                  className={`shrink-0 transition-transform duration-300 ${theme === 'dark' ? 'text-ink-3' : 'text-ink-3'} ${
+                    expandedSection === 'daily' ? 'rotate-180' : ''
+                  }`}
+                />
+              </span>
+            </button>
+
+            {/* 投资组合 */}
+            <button
+              onClick={() => toggleSection('investment')}
+              className={`w-full flex items-center justify-between gap-2 p-1 -m-1 rounded-lg transition-colors text-left
+                ${theme === 'dark' ? 'hover:bg-surface' : 'hover:bg-[#faf9f5]'}`}
+            >
+              <span className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: '#9c27b0' }} />
+                <span className={`text-sm ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>投资组合</span>
+              </span>
+              <span className="flex items-center gap-1 min-w-0">
+                <span className={`font-mono font-medium amount-fluid break-amount truncate ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
                   ¥{investTotalCNY.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
+                <ChevronDown
+                  size={14}
+                  className={`shrink-0 transition-transform duration-300 ${theme === 'dark' ? 'text-ink-3' : 'text-ink-3'} ${
+                    expandedSection === 'investment' ? 'rotate-180' : ''
+                  }`}
+                />
+              </span>
+            </button>
+          </div>
+
+          {/* 中部极细堆叠条形图：高度 12px，小圆角，百分比居中 */}
+          <div className="mt-3 flex w-full overflow-hidden rounded-md" style={{ height: 12 }}>
+            {dailyPct > 0 && (
+              <div
+                className="flex items-center justify-center overflow-hidden"
+                style={{ width: `${dailyPct}%`, backgroundColor: '#1e88e5' }}
+              >
+                <span className="text-[10px] leading-none font-mono text-white whitespace-nowrap px-1">
+                  {pctText(dailyPct)}
+                </span>
               </div>
+            )}
+            {investPct > 0 && (
+              <div
+                className="flex items-center justify-center overflow-hidden"
+                style={{ width: `${investPct}%`, backgroundColor: '#9c27b0' }}
+              >
+                <span className="text-[10px] leading-none font-mono text-white whitespace-nowrap px-1">
+                  {pctText(investPct)}
+                </span>
+              </div>
+            )}
+            {distTotal <= 0 && (
+              <div className="flex items-center justify-center w-full" style={{ backgroundColor: '#e5e3dc' }}>
+                <span className="text-[10px] leading-none font-mono text-ink-3">0%</span>
+              </div>
+            )}
+          </div>
+
+          {/* 向下平滑展开的明细区 */}
+          {/* 日常资金明细：各子账户（图标 + 名称 + 金额） */}
+          <div
+            className="overflow-hidden transition-[max-height] duration-300 ease-out"
+            style={{ maxHeight: expandedSection === 'daily' ? 500 : 0 }}
+          >
+            <div className="mt-3 border-t border-[#f0eee6] dark:border-[#3d3d3a] pt-1 space-y-0.5">
+              {dailyAccounts.length === 0 ? (
+                <div className={`text-xs py-2 text-center ${theme === 'dark' ? 'text-ink-3' : 'text-ink-3'}`}>暂无账户</div>
+              ) : dailyAccounts.map((acc) => {
+                const cny = toCNY(acc.balance, acc.currency)
+                return (
+                  <div
+                    key={acc.id}
+                    className="flex items-center gap-2.5 py-1.5 cursor-pointer"
+                    onClick={() => handleOpenInfo(acc)}
+                  >
+                    <span className="text-base w-5 text-center shrink-0">{acc.icon}</span>
+                    <span className={`flex-1 text-sm truncate ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
+                      {acc.name}
+                    </span>
+                    <span className={`text-xs font-mono shrink-0 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
+                      ¥{cny.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* 投资组合明细：先各投资账户（图标 + 名称 + 金额），再账户内缩进列持仓标的 */}
+          <div
+            className="overflow-hidden transition-[max-height] duration-300 ease-out"
+            style={{ maxHeight: expandedSection === 'investment' ? 500 : 0 }}
+          >
+            <div className="mt-3 border-t border-[#f0eee6] dark:border-[#3d3d3a] pt-1 space-y-2">
+              {investmentAccounts.length === 0 ? (
+                <div className={`text-xs py-2 text-center ${theme === 'dark' ? 'text-ink-3' : 'text-ink-3'}`}>暂无投资账户</div>
+              ) : investmentAccounts.map((acc) => {
+                const c = (acc.currency || 'CNY')
+                const hv = holdingsValueByAccount[acc.id]
+                const holdingsVal = hv?.value ?? 0
+                const totalNetCNY = toCNY(acc.balance, c) + toCNY(holdingsVal, c)
+                const holdings = results.filter(r => r.holding?.accountId === acc.id)
+                return (
+                  <div key={acc.id}>
+                    <div
+                      className="flex items-center gap-2.5 py-1.5 cursor-pointer"
+                      onClick={() => handleOpenInfo(acc)}
+                    >
+                      <span className="text-base w-5 text-center shrink-0">{acc.icon}</span>
+                      <span className={`flex-1 text-sm truncate ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
+                        {acc.name}
+                      </span>
+                      <span className={`text-xs font-mono shrink-0 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
+                        ¥{totalNetCNY.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    {/* 账户内缩进持仓标的：名称 + 原始币种金额 */}
+                    {holdings.map((r) => {
+                      const hv2 = r.converted_value ?? r.market_value ?? 0
+                      const hSym = currencySymbol[r.currency || 'CNY'] || '¥'
+                      return (
+                        <div
+                          key={`${r.symbol}-${r.market}`}
+                          className="flex items-center gap-2 py-1 pl-7"
+                        >
+                          <span className={`flex-1 text-xs truncate ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
+                            {r.name || r.symbol}
+                          </span>
+                          <span className={`text-[11px] font-mono shrink-0 ${theme === 'dark' ? 'text-ink-3' : 'text-ink-3'}`}>
+                            {hSym}{hv2.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              })}
             </div>
           </div>
         </Card>
 
         {/* 日常资金 */}
-        {/* 排序按钮 */}
-        {assetAccounts.length > 0 && (
-          <div className="flex justify-end mb-1">
-            <button
-              onClick={handleSortToggle}
-              className={`inline-flex items-center gap-1 text-xs px-3 py-1 rounded-full transition-colors ${
-                sortOrder !== null
-                  ? 'bg-brand text-white'
-                  : theme === 'dark' ? 'bg-surface text-ink-2 hover:text-ink' : 'bg-brand-tint text-ink-2 hover:text-ink'
-              }`}
-            >
-              {getSortIcon()}
-              <span>金额排序</span>
-            </button>
-          </div>
-        )}
-
-        {/* 日常资金 */}
         {dailyAccounts.length > 0 && (
           <div>
-            <h3 className={`text-sm font-medium mb-2 px-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
-              日常资金
-            </h3>
+            <div className="flex items-center justify-between mb-2 px-1">
+              <h3 className={`text-sm font-medium ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
+                日常资金
+              </h3>
+              <button
+                onClick={() => handleSortToggle(setDailySortOrder, dailySortOrder)}
+                className={`inline-flex items-center gap-1 text-xs px-3 py-1 rounded-full transition-colors ${
+                  dailySortOrder !== null
+                    ? 'bg-brand text-white'
+                    : theme === 'dark' ? 'bg-surface text-ink-2 hover:text-ink' : 'bg-brand-tint text-ink-2 hover:text-ink'
+                }`}
+              >
+                {getSortIcon(dailySortOrder)}
+                <span>金额排序</span>
+              </button>
+            </div>
             <Card className="!p-0 divide-y divide-[#f0eee6] dark:divide-[#3d3d3a]">
               {dailyAccounts.map((acc) => {
                 const c = (acc.currency || 'CNY')
@@ -586,15 +726,31 @@ export default function AssetsPage() {
         {/* 投资组合 */}
         {investmentAccounts.length > 0 && (
           <div>
-            <h3 className={`text-sm font-medium mb-2 px-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
-              投资组合
-            </h3>
+            <div className="flex items-center justify-between mb-2 px-1">
+              <h3 className={`text-sm font-medium ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
+                投资组合
+              </h3>
+              <button
+                onClick={() => handleSortToggle(setInvestSortOrder, investSortOrder)}
+                className={`inline-flex items-center gap-1 text-xs px-3 py-1 rounded-full transition-colors ${
+                  investSortOrder !== null
+                    ? 'bg-brand text-white'
+                    : theme === 'dark' ? 'bg-surface text-ink-2 hover:text-ink' : 'bg-brand-tint text-ink-2 hover:text-ink'
+                }`}
+              >
+                {getSortIcon(investSortOrder)}
+                <span>金额排序</span>
+              </button>
+            </div>
             <Card className="!p-0 divide-y divide-[#f0eee6] dark:divide-[#3d3d3a]">
               {investmentAccounts.map((acc) => {
                 const c = (acc.currency || 'CNY')
                 const hv = holdingsValueByAccount[acc.id]
                 const holdingsVal = hv?.value ?? 0
                 const totalNet = acc.balance + holdingsVal
+                // 币种结算转换：非 CNY 账户第一行展示折算 CNY 金额，第二行展示原本货币金额
+                const isOtherCurrency = c !== 'CNY'
+                const totalNetCNY = toCNY(acc.balance, c) + toCNY(holdingsVal, c)
                 const sym = currencySymbol[c] || '¥'
                 return (
                   <div
@@ -626,9 +782,20 @@ export default function AssetsPage() {
                       </div>
                     </div>
                     <div className="text-right shrink-0 min-w-0">
-                      <div className={`font-mono font-bold amount-fluid break-amount ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
-                        {sym}{totalNet.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </div>
+                      {isOtherCurrency ? (
+                        <>
+                          <div className={`font-mono font-bold amount-fluid break-amount ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
+                            ¥{totalNetCNY.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                          <div className={`text-[11px] font-mono mt-0.5 break-amount ${theme === 'dark' ? 'text-ink-3' : 'text-ink-3'}`}>
+                            {sym}{totalNet.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                        </>
+                      ) : (
+                        <div className={`font-mono font-bold amount-fluid break-amount ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
+                          {sym}{totalNet.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )

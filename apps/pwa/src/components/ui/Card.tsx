@@ -1,4 +1,4 @@
-import { ReactNode } from 'react'
+import { ReactNode, forwardRef } from 'react'
 
 interface CardProps {
   children: ReactNode
@@ -7,9 +7,13 @@ interface CardProps {
   hoverable?: boolean
 }
 
-export default function Card({ children, className = '', onClick, hoverable = false }: CardProps) {
+const Card = forwardRef<HTMLDivElement, CardProps>(function Card(
+  { children, className = '', onClick, hoverable = false },
+  ref
+) {
   return (
     <div
+      ref={ref}
       onClick={onClick}
       className={`
         bg-surface rounded-3xl p-5 shadow-soft transition-all duration-200
@@ -20,4 +24,6 @@ export default function Card({ children, className = '', onClick, hoverable = fa
       {children}
     </div>
   )
-}
+})
+
+export default Card

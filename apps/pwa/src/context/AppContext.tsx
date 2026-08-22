@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode, useCallback, useMemo, useRef } from 'react'
+import { createContext, useContext, useState, useEffect, ReactNode, useCallback, useRef } from 'react'
 import { setSupabaseUserId } from '../services/supabase'
 import { useAuthStore } from '../stores/useAuthStore'
 import type { AccountRecord, CategoryRecord, TransactionRecord, TransferRecord, BudgetRecord, SubCategoryRecord, TagRecord } from '../db/database'
@@ -377,52 +377,9 @@ function mapTag(record: TagRecord): Tag {
   }
 }
 
-// ============================================================
-// 账户余额动态计算 (从 transactions 实时汇总)
-// ============================================================
-
 // 保留两位小数的浮点数修正
 function round2(num: number): number {
   return Math.round(num * 100) / 100
-}
-
-function calculateAccountBalances(
-  accounts: Account[],
-  transactions: Transaction[],
-  transfers: Transaction[]
-): Account[] {
-  // 以账户自身 balance 作为初始余额（开户时的初始金额），在此之上叠加交易
-  const balanceMap = new Map<string, number>()
-  accounts.forEach(a => balanceMap.set(a.id, a.balance))
-
-  // 1. 消费/收入（transactions 流，单账户单币种）
-  transactions.forEach(t => {
-    const accountId = t.accountId
-    if (!balanceMap.has(accountId)) return
-
-    if (t.type === 'income') {
-      balanceMap.set(accountId, (balanceMap.get(accountId) || 0) + t.amount)
-    } else if (t.type === 'expense') {
-      balanceMap.set(accountId, (balanceMap.get(accountId) || 0) - t.amount)
-    }
-  })
-
-  // 2. 转账（独立 transfers 流）：按各账户自身币种加减（from 减源账户，to 加目标账户）
-  transfers.forEach(t => {
-    const fromAmt = t.fromAmount ?? t.amount
-    const toAmt = t.toAmount ?? t.amount
-    if (t.accountId && balanceMap.has(t.accountId)) {
-      balanceMap.set(t.accountId, (balanceMap.get(t.accountId) || 0) - fromAmt)
-    }
-    if (t.toAccountId && balanceMap.has(t.toAccountId)) {
-      balanceMap.set(t.toAccountId, (balanceMap.get(t.toAccountId) || 0) + toAmt)
-    }
-  })
-
-  return accounts.map(a => ({
-    ...a,
-    balance: round2(balanceMap.get(a.id) || 0),
-  }))
 }
 
 // ============================================================
@@ -452,12 +409,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ============================================================
   // 从 IndexedDB 加载所有数据
   // ============================================================
-
-  // 账户余额动态计算需放在 loadData / buildDerivationMaps 之前初始化，
-  // 否则它们闭包引用 accountsWithBalance 会触发暂时性死区(TDZ)崩溃。
-  const accountsWithBalance = useMemo(() => {
-    return calculateAccountBalances(accounts, transactions, transfers)
-  }, [accounts, transactions, transfers])
 
   const loadData = useCallback(async () => {
     if (!userId) {
@@ -597,9 +548,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ============================================================
 
   // 构建 account/category/subCategory 的查找 Map
-  // 注意：账户名只用 accounts state（名称不随余额变化），不要用 accountsWithBalance，
-  // 否则 transactions 变化 → accountsWithBalance 引用变 → 本回调引用变 →
-  // recomputeTransactions 引用变 → 自动重算 effect 自我触发陷入无限循环。
+  // 注意：账户名只用 accounts state，不随交易变化，避免本回调引用变动引发无限循环。
   const buildDerivationMaps = useCallback(() => {
     const accountNameMap = new Map<string, string>()
     accounts.forEach(a => accountNameMap.set(a.id, a.name))
@@ -710,6 +659,50 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [userId])
 
   // ============================================================
+  // 账户余额联动：记账/转账时对账户 balance 做增减（方案A：余额为用户维护的独立数字，
+  // 不再由「本金+流水」动态叠加。历史导入流水只进报表，不碰余额。）
+  // ============================================================
+
+  /**
+   * 对若干账户施加余额增减（delta 可正可负），并同步落库。
+   * 合并同一账户的多次增减后，基于最新 accounts 一次性计算新余额，
+   * 先落库、再更新内存 state。副作用在 setState 之外执行，避免严格模式重复调用。
+   */
+  const applyAccountBalanceDelta = useCallback(async (entries: { accountId?: string; delta: number }[]) => {
+    const valid = entries.filter(e => e.accountId)
+    if (valid.length === 0) return
+
+    // 合并同一账户的多次增减
+    const deltaMap = new Map<string, number>()
+    valid.forEach(e => {
+      const id = e.accountId!
+      deltaMap.set(id, (deltaMap.get(id) || 0) + e.delta)
+    })
+
+    // 基于当前 accounts 计算新余额（合并后的净 delta）
+    const next = accounts.map(a => {
+      const d = deltaMap.get(a.id)
+      if (d === undefined || d === 0) return a
+      return { ...a, balance: round2(a.balance + d) }
+    })
+
+    // 落库 + 同步（fire-and-forget，不阻塞 UI）
+    for (const [id, d] of deltaMap) {
+      if (d === 0) continue
+      const acc = next.find(a => a.id === id)
+      if (!acc) continue
+      localAccounts.update(id, { balance: acc.balance }).catch(e =>
+        console.error('更新账户余额落库失败:', e)
+      )
+      syncEngine.syncAfterWrite('accounts', userId).catch(e =>
+        console.error('同步账户余额失败:', e)
+      )
+    }
+
+    setAccounts(next)
+  }, [userId, accounts])
+
+  // ============================================================
   // CRUD: 添加交易 (本地优先 + 后台同步)
   // ============================================================
 
@@ -722,8 +715,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     // 转账：独立写入 transfers 表（不计入消费，支持多币种）
     if (t.type === 'transfer') {
-      const fromAcc = accountsWithBalance.find(a => a.id === t.accountId)
-      const toAcc = accountsWithBalance.find(a => a.id === t.toAccountId)
+      const fromAcc = accounts.find(a => a.id === t.accountId)
+      const toAcc = accounts.find(a => a.id === t.toAccountId)
       const fromCurrency = fromAcc?.currency || 'CNY'
       const toCurrency = toAcc?.currency || 'CNY'
       const fromAmount = t.fromAmount ?? t.amount
@@ -747,12 +740,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       try {
         const accountInfoMap = new Map<string, { name: string; currency: string }>()
-        accountsWithBalance.forEach(a => accountInfoMap.set(a.id, { name: a.name, currency: a.currency || 'CNY' }))
+        accounts.forEach(a => accountInfoMap.set(a.id, { name: a.name, currency: a.currency || 'CNY' }))
         const newTransfer = mapTransfer(record, accountInfoMap)
         setTransfers(prev => [newTransfer, ...prev].sort(compareTransactions))
       } catch (mapErr) {
         console.error('构建转账 UI 数据失败（不影响已保存）:', mapErr)
       }
+
+      // 联动账户余额：转出账户减 fromAmount，转入账户加 toAmount
+      applyAccountBalanceDelta([
+        { accountId: t.accountId, delta: -fromAmount },
+        { accountId: t.toAccountId, delta: toAmount },
+      ])
 
       syncEngine.syncAfterWrite('transfers', userId).catch(err => {
         console.error('后台同步转账失败:', err)
@@ -776,12 +775,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       location: null,
     })
 
+    // 联动账户余额：收入 + amount，支出 - amount
+    applyAccountBalanceDelta([{
+      accountId: t.accountId,
+      delta: t.type === 'income' ? t.amount : -t.amount,
+    }])
+
     // 2. 构建 UI 数据并立即更新 state
     // 注意：本地写入已成功（record 已落库），UI 映射层即使异常也只影响展示，
     // 绝不能因此让 addTransaction 抛错导致上层误报「保存失败」。
     try {
       const accountInfoMap = new Map<string, { name: string; currency: string }>()
-      accountsWithBalance.forEach(a => accountInfoMap.set(a.id, { name: a.name, currency: a.currency || 'CNY' }))
+      accounts.forEach(a => accountInfoMap.set(a.id, { name: a.name, currency: a.currency || 'CNY' }))
       const categoryMap = new Map<string, { name: string; icon: string }>()
       categories.expense.forEach(c => categoryMap.set(c.id, { name: c.name, icon: c.icon }))
       categories.income.forEach(c => categoryMap.set(c.id, { name: c.name, icon: c.icon }))
@@ -800,7 +805,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       console.error('后台同步交易失败:', err)
     })
     return record.id
-  }, [userId, accountsWithBalance, categories, subCategories])
+  }, [userId, accounts, categories, subCategories])
 
 
   // ============================================================
@@ -811,7 +816,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!userId) throw new Error('未登录')
 
     const existing = transactions.find(t => t.id === id) || transfers.find(t => t.id === id)
-    const isTransfer = existing?.source === 'transfer'
+    if (!existing) return
+    const isTransfer = existing.source === 'transfer'
 
     // 1. 立即从 IndexedDB 标记删除
     if (isTransfer) {
@@ -820,18 +826,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
       await localTransactions.remove(id)
     }
 
-    // 2. 更新本地 state
+    // 2. 反向回补账户余额（删除一笔流水 = 撤销它对余额的影响）
+    if (isTransfer) {
+      const fromAmt = existing.fromAmount ?? existing.amount
+      const toAmt = existing.toAmount ?? existing.amount
+      applyAccountBalanceDelta([
+        { accountId: existing.accountId, delta: fromAmt },
+        { accountId: existing.toAccountId, delta: -toAmt },
+      ])
+    } else {
+      applyAccountBalanceDelta([{
+        accountId: existing.accountId,
+        delta: existing.type === 'income' ? -existing.amount : existing.amount,
+      }])
+    }
+
+    // 3. 更新本地 state
     if (isTransfer) {
       setTransfers(prev => prev.filter(t => t.id !== id))
     } else {
       setTransactions(prev => prev.filter(t => t.id !== id))
     }
 
-    // 3. 后台同步
+    // 4. 后台同步
     syncEngine.syncAfterWrite(isTransfer ? 'transfers' : 'transactions', userId).catch(err => {
       console.error('后台同步删除交易失败:', err)
     })
-  }, [userId, transactions, transfers])
+  }, [userId, transactions, transfers, accounts])
 
   // ============================================================
   // CRUD: 更新交易
@@ -849,8 +870,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     // 转账：更新 transfers 表
     if (isTransfer) {
-      const fromAcc = accountsWithBalance.find(a => a.id === (data.accountId ?? existing.accountId))
-      const toAcc = accountsWithBalance.find(a => a.id === (data.toAccountId ?? existing.toAccountId))
+      const fromAcc = accounts.find(a => a.id === (data.accountId ?? existing.accountId))
+      const toAcc = accounts.find(a => a.id === (data.toAccountId ?? existing.toAccountId))
       const fromCurrency = fromAcc?.currency || existing.fromCurrency || 'CNY'
       const toCurrency = toAcc?.currency || existing.toCurrency || 'CNY'
       const fromAmount = data.fromAmount ?? data.amount ?? existing.fromAmount ?? existing.amount ?? 0
@@ -874,6 +895,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
         transaction_time: timeToDb(data.time) ?? timeToDb(existing.time)!,
         note: data.note !== undefined ? (data.note || null) : (existing.note || null),
       })
+
+      // 联动余额：先撤销旧转账对余额的影响，再施加新转账的影响
+      const newFromId = data.accountId ?? existing.accountId
+      const newToId = data.toAccountId ?? existing.toAccountId
+      const oldFromAmt = existing.fromAmount ?? existing.amount ?? 0
+      const oldToAmt = existing.toAmount ?? existing.amount ?? 0
+      const deltas: { accountId?: string; delta: number }[] = []
+      // 撤销旧
+      if (existing.accountId) deltas.push({ accountId: existing.accountId, delta: oldFromAmt })
+      if (existing.toAccountId) deltas.push({ accountId: existing.toAccountId, delta: -oldToAmt })
+      // 施加新
+      if (newFromId) deltas.push({ accountId: newFromId, delta: -fromAmount })
+      if (newToId) deltas.push({ accountId: newToId, delta: toAmount })
+      applyAccountBalanceDelta(deltas)
+
       syncEngine.syncAfterWrite('transfers', userId).catch(err => {
         console.error('后台同步更新转账失败:', err)
       })
@@ -905,20 +941,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (data.date !== undefined) dbUpdates.transaction_date = data.date
     if (data.time !== undefined) dbUpdates.transaction_time = data.time.length <= 5 ? data.time + ':00' : data.time
 
-    // 2. 更新 IndexedDB
+    // 2. 联动余额：先撤销旧流水影响，再施加新流水影响
+    const oldType = existing.type
+    const newType = data.type === 'transfer' ? 'expense' : (data.type ?? existing.type)
+    const oldAmount = existing.amount
+    const newAmount = data.amount ?? existing.amount
+    const newAccountId = data.accountId ?? existing.accountId
+    const deltas: { accountId?: string; delta: number }[] = []
+    if (existing.accountId) {
+      deltas.push({ accountId: existing.accountId, delta: oldType === 'income' ? -oldAmount : oldAmount })
+    }
+    if (newAccountId) {
+      deltas.push({ accountId: newAccountId, delta: newType === 'income' ? newAmount : -newAmount })
+    }
+    applyAccountBalanceDelta(deltas)
+
+    // 3. 更新 IndexedDB
     await localTransactions.update(id, dbUpdates)
 
-    // 3. 更新本地 state：先合入 data，再用最新字典重算全部派生显示字段
+    // 4. 更新本地 state：先合入 data，再用最新字典重算全部派生显示字段
     setTransactions(prev => {
       const merged = prev.map(t => t.id === id ? { ...t, ...data } : t)
       return recomputeTransactions(merged)
     })
 
-    // 4. 后台同步
+    // 5. 后台同步
     syncEngine.syncAfterWrite('transactions', userId).catch(err => {
       console.error('后台同步更新交易失败:', err)
     })
-  }, [userId, transactions, transfers, accountsWithBalance, recomputeTransactions])
+  }, [userId, transactions, transfers, accounts, recomputeTransactions])
 
   // ============================================================
   // CRUD: 账户
@@ -1244,19 +1295,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [userId])
 
   // ============================================================
-  // 计算属性 (使用 accountsWithBalance 替代 accounts)
+  // 计算属性 (账户余额即用户维护的独立数字，直接读 accounts)
   // ============================================================
 
   const getTotalAssets = useCallback(() => {
     // 总资产 = 所有非负债账户的余额总和（正负都算）
-    return accountsWithBalance
+    return accounts
       .filter(a => a.type !== 'credit' && a.type !== 'debt')
       .reduce((sum, a) => sum + a.balance, 0)
-  }, [accountsWithBalance])
+  }, [accounts])
 
   const getTotalLiabilities = useCallback(() => {
-    return Math.abs(accountsWithBalance.filter(a => a.balance < 0).reduce((sum, a) => sum + a.balance, 0))
-  }, [accountsWithBalance])
+    return Math.abs(accounts.filter(a => a.balance < 0).reduce((sum, a) => sum + a.balance, 0))
+  }, [accounts])
 
   const getNetAssets = useCallback(() => {
     return getTotalAssets() - getTotalLiabilities()
@@ -1329,7 +1380,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const now = new Date()
     const labels: string[] = []
     const values: number[] = []
-    const currentTotal = accountsWithBalance.filter(a => a.balance > 0).reduce((sum, a) => sum + a.balance, 0)
+    const currentTotal = accounts.filter(a => a.balance > 0).reduce((sum, a) => sum + a.balance, 0)
 
     for (let i = months - 1; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
@@ -1350,7 +1401,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       values.push(Math.max(0, currentTotal - netChange))
     }
     return { labels, values }
-  }, [accountsWithBalance, transactions])
+  }, [accounts, transactions])
 
   const getMonthlyTrend = useCallback((months: number = 7): { labels: string[]; income: number[]; expense: number[] } => {
     const now = new Date()
@@ -1523,7 +1574,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   return (
     <AppContext.Provider value={{
-      accounts: accountsWithBalance,
+      accounts: accounts,
       categories,
       transactions,
       transfers,
