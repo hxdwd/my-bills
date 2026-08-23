@@ -9,6 +9,7 @@ import { formatCurrency, formatTransferAmount } from '../utils/format'
 import { useWealthValuation } from '../hooks/useWealthValuation'
 import { toBase, fmtWithSymbol, Currency } from '../utils/currency'
 import { getAllTransactions } from '../db/wealthStore'
+import { computeTotalAssetsCNY } from '../utils/assetCalc'
 
 const accountTypeOptions = [
   { icon: '💵', label: '现金', type: 'cash', color: '#2d8a5e' },
@@ -146,16 +147,10 @@ export default function AssetsPage() {
   // 折算后总资产（所有币种折 CNY 汇总）
   // 投资账户必须把「持仓市值」一并算入（与饼图 investTotalCNY 口径一致），
   // 否则「总资产 / 净资产」会比日常资金+投资组合少算持仓这部分。
+  // 统一使用共享函数 computeTotalAssetsCNY（与首页口径一致，以资产页为准）
   const totalAssetsCNY = useMemo(
-    () => assetAccounts.reduce((sum, a) => {
-      if (a.type !== 'investment') {
-        return sum + toCNY(a.balance, a.currency)
-      }
-      const hv = holdingsValueByAccount[a.id]
-      const holdingsVal = hv?.value ?? 0
-      return sum + toCNY(a.balance + holdingsVal, a.currency)
-    }, 0),
-    [assetAccounts, rates, holdingsValueByAccount],
+    () => computeTotalAssetsCNY(assetAccounts, rates, results),
+    [assetAccounts, rates, results],
   )
 
   const netAssetsCNY = totalAssetsCNY - totalLiabilities
@@ -579,8 +574,9 @@ export default function AssetsPage() {
                 return (
                   <div
                     key={acc.id}
-                    className="flex items-center gap-2.5 py-1.5 cursor-pointer"
                     onClick={() => handleOpenInfo(acc)}
+                    className="flex items-center gap-2.5 py-1.5 px-2 rounded-lg cursor-pointer transition-colors"
+                    style={{ backgroundColor: `${acc.color}14` }}
                   >
                     <span className="text-base w-5 text-center shrink-0">{acc.icon}</span>
                     <span className={`flex-1 text-sm truncate ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
@@ -612,8 +608,9 @@ export default function AssetsPage() {
                 return (
                   <div key={acc.id}>
                     <div
-                      className="flex items-center gap-2.5 py-1.5 cursor-pointer"
                       onClick={() => handleOpenInfo(acc)}
+                      className="flex items-center gap-2.5 py-1.5 px-2 rounded-lg cursor-pointer transition-colors"
+                      style={{ backgroundColor: `${acc.color}14` }}
                     >
                       <span className="text-base w-5 text-center shrink-0">{acc.icon}</span>
                       <span className={`flex-1 text-sm truncate ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
@@ -630,7 +627,7 @@ export default function AssetsPage() {
                       return (
                         <div
                           key={`${r.symbol}-${r.market}`}
-                          className="flex items-center gap-2 py-1 pl-7"
+                          className="flex items-center gap-2 py-1 pl-7 pr-2"
                         >
                           <span className={`flex-1 text-xs truncate ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
                             {r.name || r.symbol}

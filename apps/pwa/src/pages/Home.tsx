@@ -9,6 +9,8 @@ import { formatCurrency } from '../utils/format'
 import { VERSION_LOGS, type VersionLog } from '../data/versionLogs'
 import { TrendingUp, TrendingDown, PiggyBank, ChevronRight, Sparkles, PieChart, Search, Flame } from 'lucide-react'
 import { useHabitAllDone } from '../hooks/useHabitBadge'
+import { useWealthValuation } from '../hooks/useWealthValuation'
+import { computeTotalAssetsCNY } from '../utils/assetCalc'
 
 // 记录用户上次已看到的版本号，用于「更新后首页提示」
 const LAST_SEEN_VERSION_KEY = 'mybills:lastSeenVersion'
@@ -36,14 +38,16 @@ interface HomePageProps {
 export default function HomePage({ onAddTransaction }: HomePageProps = {}) {
   const navigate = useNavigate()
   const {
-    getTotalAssets,
     getMonthlyIncome,
     getMonthlyExpense,
     getBudgetProgress,
     transactions,
     categories,
+    accounts,
   } = useApp()
   const user = useAuthStore(state => state.user)
+  // 持仓估值与汇率（首页总资产需与资产页口径一致：余额折 CNY + 投资账户持仓市值）
+  const { rates, results } = useWealthValuation()
   // 魔性打卡：今日未完成习惯 → 火焰图标的红点亮起
   const { allDone } = useHabitAllDone()
 
@@ -64,7 +68,7 @@ export default function HomePage({ onAddTransaction }: HomePageProps = {}) {
     }
   }, [])
 
-  const totalAssets = getTotalAssets()
+  const totalAssets = computeTotalAssetsCNY(accounts, rates, results)
   const monthlyIncome = getMonthlyIncome()
   const monthlyExpense = getMonthlyExpense()
   const balance = monthlyIncome - monthlyExpense
