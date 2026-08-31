@@ -293,7 +293,7 @@ async function fetchGold(_symbol: string): Promise<NormalizedQuote> {
   const d = json?.data
   if (!d) throw new Error('gold no data')
   const price = parseFloat(d.f43) / 100
-  if (!isFinite(price) || price <= 0) throw new Error('gold price NaN')
+  if (!isFinite(price) || !isPlausibleGoldPrice(price)) throw new Error(`gold price invalid: ${price}`)
   // f170 是涨跌幅 × 100（如 -104 表示 -1.04%），需 /10000 转为小数（如 -0.0104）与其它适配器一致
   const changePercent = parseFloat(d.f170) / 10000
   return {
@@ -305,10 +305,18 @@ async function fetchGold(_symbol: string): Promise<NormalizedQuote> {
   }
 }
 
+// 黄金价格合理性校验：AU9999 现货单位元/克，国内金价长期在 300~5000 区间。
+// 用于拦截数据源字段错位/脏值（曾把新浪 parts[7]=1000 当现价入库，真实价约 951）。
+function isPlausibleGoldPrice(price: number): boolean {
+  return isFinite(price) && price > 0 && price >= 300 && price <= 5000
+}
+
 // 黄金备用源：新浪 SGE_AU9999（上金所黄金9999现货，元/克，人民币计价）
 // 接口：https://hq.sinajs.cn/list=SGE_AU9999  返回 GBK
-// 返回形如 var hq_str_SGE_AU9999="AU9999,沪金99,Au99.99,今开,昨收,最高,最低,现价,...";
-// 实际字段：0=AU9999 1=沪金99 2=Au99.99(名称) 3=今开 4=昨收 7=现价
+// 实测字段（2026-08-31 与东方财富交叉验证）：
+//   0=AU9999 1=沪金99 2=Au99.99(名称) 3=今开 4=昨收 5=最高 6=最低 7=买价? 8=现价 9=卖价? ...
+//   parts[17] = 新浪自带涨跌幅（如 "-4.37%"），与东财口径一致。
+// 注意：parts[7]（约1000）不是现价！曾误用导致金价虚高到 1000 元/克。
 async function fetchGoldSina(_symbol: string): Promise<NormalizedQuote> {
   const url = 'https://hq.sinajs.cn/list=SGE_AU9999'
   const res = await fetchWithTimeout(
@@ -322,11 +330,13 @@ async function fetchGoldSina(_symbol: string): Promise<NormalizedQuote> {
   const m = text.match(/="(.+)";/)
   if (!m) throw new Error('goldSina parse empty')
   const parts = m[1].split(',')
-  // 现价 fields[7]，昨收 fields[4]
-  const price = parseFloat(parts[7])
-  if (!isFinite(price) || price <= 0) throw new Error('goldSina price NaN')
-  const prevClose = parseFloat(parts[4])
-  const changePercent = isFinite(prevClose) && prevClose > 0 ? (price - prevClose) / prevClose : 0
+  // 现价 fields[8]（与东财 f43/100=951.61 吻合）；涨跌幅直接用新浪自带的 parts[17]
+  const price = parseFloat(parts[8])
+  if (!isFinite(price) || !isPlausibleGoldPrice(price)) throw new Error(`goldSina price invalid: ${price}`)
+  // 新浪自带涨跌幅字段形如 "-4.37%"，转小数（-0.0437）
+  const pctStr = String(parts[17] ?? '').replace('%', '').trim()
+  const pctNum = parseFloat(pctStr)
+  const changePercent = isFinite(pctNum) ? pctNum / 100 : 0
   return {
     price,
     name: '黄金',

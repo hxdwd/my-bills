@@ -228,6 +228,8 @@ function CalendarSheet({
   const [viewY, setViewY] = useState(now.getFullYear())
   const [viewM, setViewM] = useState(now.getMonth())
   const todayStr = toLocalDateStr(now)
+  // 选中的日期（点击日期格触发，展示当天饮食明细）
+  const [selectedDate, setSelectedDate] = useState<string | null>(null)
 
   const colorOfItem = useCallback(
     (id: string) => items.find((i) => i.id === id)?.color ?? BRAND,
@@ -306,19 +308,29 @@ function CalendarSheet({
           ))}
         </div>
 
-        {/* 日期格 */}
+        {/* 日期格：点击弹出当天饮食明细 */}
         <div className="grid grid-cols-7 gap-1 text-center">
           {cells.map((d, idx) => {
             if (d === null) return <div key={`e${idx}`} />
             const ds = toLocalDateStr(new Date(viewY, viewM, d))
             const isToday = ds === todayStr
+            const isSelected = ds === selectedDate
             const recs = allRecs.filter((r) => r.date === ds)
             const dotColor = recs.length ? colorOfItem(recs[0].itemId) : null
             return (
-              <div key={ds} className="flex flex-col items-center py-1.5">
+              <button
+                key={ds}
+                onClick={() => setSelectedDate(isSelected ? null : ds)}
+                className="flex flex-col items-center py-1.5 rounded-lg active:scale-95 transition-transform"
+                aria-label={`${d}日${recs.length ? `，${recs.length}条记录` : ''}`}
+              >
                 <span
                   className={`text-sm ${
-                    isToday ? 'flex h-7 w-7 items-center justify-center rounded-full bg-brand text-ink font-semibold' : 'text-ink'
+                    isToday
+                      ? 'flex h-7 w-7 items-center justify-center rounded-full bg-brand text-ink font-semibold'
+                      : isSelected
+                      ? 'flex h-7 w-7 items-center justify-center rounded-full bg-brand/20 text-ink font-semibold ring-1 ring-brand'
+                      : 'text-ink'
                   }`}
                 >
                   {d}
@@ -333,10 +345,48 @@ function CalendarSheet({
                     }}
                   />
                 )}
-              </div>
+              </button>
             )
           })}
         </div>
+
+        {/* 选中日期：当天饮食明细 */}
+        {selectedDate && (
+          <div className="rounded-2xl bg-bg p-3.5 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-ink">
+                {selectedDate.slice(5, 7)}月{selectedDate.slice(8, 10)}日 饮食
+              </span>
+              <span className="text-xs text-ink-2">{allRecs.filter((r) => r.date === selectedDate).length} 条</span>
+            </div>
+            {allRecs.filter((r) => r.date === selectedDate).length === 0 ? (
+              <p className="text-xs text-ink-2 text-center py-2">这一天没有饮食记录</p>
+            ) : (
+              <div className="space-y-1.5">
+                {allRecs
+                  .filter((r) => r.date === selectedDate)
+                  .map((r) => {
+                    const item = items.find((i) => i.id === r.itemId)
+                    return (
+                      <div key={`${r.itemId}-${r.name}-${r.date}`} className="flex items-center gap-2.5 py-1">
+                        <span className="text-base w-5 text-center shrink-0">{item?.icon ?? '🍽️'}</span>
+                        <span className="flex-1 text-sm truncate text-ink">
+                          {r.name}
+                        </span>
+                        {item && (
+                          <span
+                            className="shrink-0 w-2 h-2 rounded-full"
+                            style={{ background: item.color }}
+                            aria-hidden
+                          />
+                        )}
+                      </div>
+                    )
+                  })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* 当月统计 */}
         <div className="grid grid-cols-3 gap-2 pt-2 text-center">
