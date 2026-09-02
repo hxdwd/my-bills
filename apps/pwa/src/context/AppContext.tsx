@@ -795,7 +795,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       const newTransaction = mapTransaction(record, categoryMap, subCategoryMap)
 
-      setTransactions(prev => [newTransaction, ...prev])
+      // 必须按日期排序归位（与转账分支一致），否则补录历史日期的交易会被顶到数组头部，
+      // 首页「最近交易」/交易列表等处直接取 transactions 顺序会误显示最新。
+      setTransactions(prev => [newTransaction, ...prev].sort(compareTransactions))
     } catch (mapErr) {
       console.error('构建交易 UI 数据失败（不影响已保存）:', mapErr)
     }
@@ -959,10 +961,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // 3. 更新 IndexedDB
     await localTransactions.update(id, dbUpdates)
 
-    // 4. 更新本地 state：先合入 data，再用最新字典重算全部派生显示字段
+    // 4. 更新本地 state：先合入 data，再用最新字典重算全部派生显示字段。
+    //    编辑可能改动日期，需按日期重排序，否则修改日期的交易会在首页/交易列表误置顶。
     setTransactions(prev => {
       const merged = prev.map(t => t.id === id ? { ...t, ...data } : t)
-      return recomputeTransactions(merged)
+      return recomputeTransactions(merged).sort(compareTransactions)
     })
 
     // 5. 后台同步
