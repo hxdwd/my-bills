@@ -41,12 +41,15 @@ type TimeRange = 'month' | 'year'
 
 export default function ReportsPage() {
   const { theme } = useTheme()
-  // 小屏手机：金额隐藏小数位（取整），配合 amount-fluid 缩放字号，保证任何宽度完整展示不省略
+  // 小屏手机：金额隐藏小数位（取整后不保留 .00），数字节点单行不换行 + 随屏缩放字号，
+  // 保证任何宽度完整展示、不省略也不折行。注意不能用 formatCurrency——它强制保留两位小数。
   const isSmallScreen = useIsSmallScreen(375)
-  const fmtSummary = (amount: number) =>
-    isSmallScreen
-      ? formatCurrency(Math.round(amount), false, false)
+  const fmtSummary = (amount: number) => {
+    const rounded = Math.round(amount)
+    return isSmallScreen
+      ? rounded.toLocaleString('zh-CN')
       : formatCurrency(amount, false, false)
+  }
   const {
     categories, subCategories, transactions, bigExpenseThreshold,
     getMonthSummary, getMonthWeekExpense, getYearMonthExpense, getYearMonthDetail,
@@ -531,19 +534,19 @@ export default function ReportsPage() {
           <div className="grid grid-cols-3 gap-3">
             <Card className="!p-3 text-center min-w-0">
               <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>收入</div>
-              <div className="font-bold font-amount amount-fluid text-[#dc2626]">
+              <div className="font-bold font-amount whitespace-nowrap text-[#dc2626]" style={{ fontSize: 'clamp(10px, 3.2vw, 20px)' }}>
                 {fmtSummary(monthSummary.income)}
               </div>
             </Card>
             <Card className="!p-3 text-center min-w-0">
               <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>支出</div>
-              <div className="font-bold font-amount amount-fluid text-[#16a34a]">
+              <div className="font-bold font-amount whitespace-nowrap text-[#16a34a]" style={{ fontSize: 'clamp(10px, 3.2vw, 20px)' }}>
                 {fmtSummary(monthSummary.expense)}
               </div>
             </Card>
             <Card className="!p-3 text-center min-w-0">
               <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>结余</div>
-              <div className={`font-bold font-amount amount-fluid ${(monthSummary.income - monthSummary.expense) >= 0 ? 'text-[#dc2626]' : 'text-[#16a34a]'}`}>
+              <div className={`font-bold font-amount whitespace-nowrap ${(monthSummary.income - monthSummary.expense) >= 0 ? 'text-[#dc2626]' : 'text-[#16a34a]'}`} style={{ fontSize: 'clamp(10px, 3.2vw, 20px)' }}>
                 {fmtSummary(monthSummary.income - monthSummary.expense)}
               </div>
             </Card>
@@ -557,19 +560,19 @@ export default function ReportsPage() {
               <div className="grid grid-cols-3 gap-3">
                 <Card className="!p-3 text-center min-w-0">
                   <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>年收入</div>
-                  <div className="font-bold font-amount amount-fluid text-[#dc2626]">
+                  <div className="font-bold font-amount whitespace-nowrap text-[#dc2626]" style={{ fontSize: 'clamp(10px, 3.2vw, 20px)' }}>
                     {fmtSummary(totalIncome)}
                   </div>
                 </Card>
                 <Card className="!p-3 text-center min-w-0">
                   <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>年支出</div>
-                  <div className="font-bold font-amount amount-fluid text-[#16a34a]">
+                  <div className="font-bold font-amount whitespace-nowrap text-[#16a34a]" style={{ fontSize: 'clamp(10px, 3.2vw, 20px)' }}>
                     {fmtSummary(totalExpense2)}
                   </div>
                 </Card>
                 <Card className="!p-3 text-center min-w-0">
                   <div className={`text-xs mb-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>年结余</div>
-                  <div className={`font-bold font-amount amount-fluid ${totalBalance >= 0 ? 'text-[#dc2626]' : 'text-[#16a34a]'}`}>
+                  <div className={`font-bold font-amount whitespace-nowrap ${totalBalance >= 0 ? 'text-[#dc2626]' : 'text-[#16a34a]'}`} style={{ fontSize: 'clamp(10px, 3.2vw, 20px)' }}>
                     {fmtSummary(totalBalance)}
                   </div>
                 </Card>
