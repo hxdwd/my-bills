@@ -1423,24 +1423,48 @@ export default function SearchPage() {
                 </div>
                 )}
 
-                {/* 子分类：编辑模式点击打开选择（非转账） */}
+                {/* 子分类：编辑模式右侧横向胶囊单选（逻辑对齐记一笔：点击选中/再点取消，选中带X） */}
                 {(editType !== 'transfer') && (
-                  <div className="flex items-center justify-between gap-3 px-4 py-3">
-                    <span className="text-sm text-ink-2 shrink-0">子分类</span>
-                    {editMode ? (
-                      <button
-                        onClick={() => setEditPicker('subcategory')}
-                        className="flex items-center gap-1 text-sm text-ink"
-                      >
-                        {editSubcategoryId ? (subCategories.find(s => s.id === editSubcategoryId)?.name || '无') : '无'}
-                        <span className="text-ink-2">›</span>
-                      </button>
-                    ) : selectedTx.subcategoryName ? (
-                      <span className="text-sm text-ink">{selectedTx.subcategoryName}</span>
-                    ) : (
-                      <span className="text-sm text-ink-2">—</span>
-                    )}
-                  </div>
+                  editMode ? (
+                    <div className="flex items-start justify-between gap-3 px-4 py-3">
+                      <span className="text-sm text-ink-2 shrink-0 pt-1.5">子分类</span>
+                      <div className="flex-1 min-w-0">
+                        {editSubcats.length > 0 ? (
+                          <div className="flex flex-wrap gap-2 justify-end">
+                            {editSubcats.map(sub => {
+                              const isSelected = editSubcategoryId === sub.id
+                              return (
+                                <button
+                                  key={sub.id}
+                                  onClick={() => setEditSubcategoryId(isSelected ? undefined : sub.id)}
+                                  className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm transition-all active:scale-95 ${
+                                    isSelected
+                                      ? 'text-white ring-2 ring-offset-1 ring-current'
+                                      : 'bg-bg text-ink-2 hover:bg-brand-tint'
+                                  }`}
+                                  style={isSelected ? { backgroundColor: sub.color || '#818cf8' } : undefined}
+                                >
+                                  {isSelected && <X size={12} className="hover:bg-white/20 rounded-full" />}
+                                  {sub.name}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-ink-2 text-right block pt-1">该分类暂无子分类</span>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between gap-3 px-4 py-3">
+                      <span className="text-sm text-ink-2 shrink-0">子分类</span>
+                      {selectedTx.subcategoryName ? (
+                        <span className="text-sm text-ink">{selectedTx.subcategoryName}</span>
+                      ) : (
+                        <span className="text-sm text-ink-2">—</span>
+                      )}
+                    </div>
+                  )
                 )}
 
                 {/* 标签：转账表无此字段，不展示 */}
@@ -1649,11 +1673,11 @@ export default function SearchPage() {
         </div>
       </BottomSheet>
 
-      {/* 通用选择（编辑模式下选择分类 / 子分类 / 账户） */}
+      {/* 通用选择（编辑模式下选择分类 / 账户；子分类已改为内嵌横向胶囊，不再弹层） */}
       <BottomSheet
         isOpen={editPicker !== null}
         onClose={() => setEditPicker(null)}
-        title={editPicker === 'category' ? '选择分类' : editPicker === 'subcategory' ? '选择子分类' : '选择账户'}
+        title={editPicker === 'category' ? '选择分类' : '选择账户'}
       >
         <div className="p-4 space-y-2">
           {editPicker === 'category' && categories.expense.concat(categories.income).map(c => (
@@ -1668,31 +1692,6 @@ export default function SearchPage() {
               {editCategoryId === c.id && <Check size={16} />}
             </button>
           ))}
-          {editPicker === 'subcategory' && (
-            <>
-              <button
-                onClick={() => { setEditSubcategoryId(undefined); setEditPicker(null) }}
-                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm ${
-                  !editSubcategoryId ? 'bg-brand text-ink' : 'bg-surface text-ink hover:bg-brand-tint'
-                }`}
-              >
-                <span>无</span>
-                {!editSubcategoryId && <Check size={16} />}
-              </button>
-              {editSubcats.map(s => (
-                <button
-                  key={s.id}
-                  onClick={() => { setEditSubcategoryId(s.id); setEditPicker(null) }}
-                  className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm ${
-                    editSubcategoryId === s.id ? 'bg-brand text-ink' : 'bg-surface text-ink hover:bg-brand-tint'
-                  }`}
-                >
-                  <span>{s.name}</span>
-                  {editSubcategoryId === s.id && <Check size={16} />}
-                </button>
-              ))}
-            </>
-          )}
           {editPicker === 'account' && accounts.map(a => (
             <button
               key={a.id}

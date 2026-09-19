@@ -5,24 +5,22 @@ import { useApp } from '../context/AppContext'
 import Card from '../components/ui/Card'
 import TransactionItem from '../components/ui/TransactionItem'
 import BottomSheet from '../components/ui/BottomSheet'
-import TagSelectModal from '../components/TagSelectModal'
 import { recordTagUsage } from '../utils/tagUsage'
 import { useAuthStore } from '../stores/useAuthStore'
-import { formatCurrency } from '../utils/format'
-import { 
-  ArrowLeft, 
-  Calendar, 
-  ChevronDown, 
-  Wallet, 
-  FileText, 
-  Trash2,
-  Clock,
-  Tag,
-  Plus,
-  X
-} from 'lucide-react'
+import { formatCurrency, formatTransferAmount } from '../utils/format'
+import { ArrowLeft, Trash2, X, Pencil, Check } from 'lucide-react'
 
 type FilterMode = 'all' | 'month'
+
+// YYYY-MM-DD -> "X月X日"（与详情展示格式保持一致）
+function formatDateDisplay(dateStr: string): string {
+  const parts = dateStr.split('-')
+  if (parts.length !== 3) return dateStr
+  const m = parseInt(parts[1], 10)
+  const d = parseInt(parts[2], 10)
+  if (isNaN(m) || isNaN(d)) return dateStr
+  return `${m}月${d}日`
+}
 
 export default function TransactionListPage() {
   const navigate = useNavigate()
@@ -38,7 +36,6 @@ export default function TransactionListPage() {
   } = useApp()
   
   const [filterMode, setFilterMode] = useState<FilterMode>('all')
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1)
   
   // 分页：按日期分组懒加载，首屏只渲染前若干组，避免整表一次性挂载卡顿
@@ -49,31 +46,25 @@ export default function TransactionListPage() {
     setVisibleGroups(PAGE_SIZE)
   }, [filterMode, selectedMonth])
   
-  // 查看/编辑详情
+  // 查看/编辑详情（打开 = selectedTransaction 非 null）
   const [selectedTransaction, setSelectedTransaction] = useState<typeof transactions[0] | null>(null)
-  const [showDetailSheet, setShowDetailSheet] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [editMode, setEditMode] = useState(false)
-  
-  // 编辑表单
-  const [editAmount, setEditAmount] = useState('')
-  const [editNote, setEditNote] = useState('')
-  const [editSubCategoryId, setEditSubCategoryId] = useState<string | undefined>(undefined)
-  const [editTagIds, setEditTagIds] = useState<string[]>([])
-  // 标签选择弹窗
-  const [showEditTagSelect, setShowEditTagSelect] = useState(false)
 
-  // 生成可用月份列表（从交易记录中提取）
-  const availableMonths = useMemo(() => {
-    const months = new Set<string>()
-    const now = new Date()
-    // 默认包含最近12个月
-    for (let i = 0; i < 12; i++) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-      months.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
-    }
-    return Array.from(months).sort().reverse()
-  }, [])
+  // 编辑表单（字段与搜索页详情编辑保持一致）
+  const [editAmount, setEditAmount] = useState('')
+  const [editAmountError, setEditAmountError] = useState('')
+  const [editNote, setEditNote] = useState('')
+  const [editType, setEditType] = useState<'expense' | 'income' | 'transfer'>('expense')
+  const [editCategoryId, setEditCategoryId] = useState('')
+  const [editSubcategoryId, setEditSubcategoryId] = useState<string | undefined>(undefined)
+  const [editAccountId, setEditAccountId] = useState('')
+  const [editDate, setEditDate] = useState('')
+  const [editTime, setEditTime] = useState('')
+  const [editTagIds, setEditTagIds] = useState<string[]>([])
+  const [showTagSelect, setShowTagSelect] = useState(false)
+  // 通用选择（编辑模式选择分类 / 账户）
+  const [editPicker, setEditPicker] = useState<null | 'category' | 'account'>(null)
 
   // 筛选交易
   const filteredTransactions = useMemo(() => {
@@ -118,10 +109,13 @@ export default function TransactionListPage() {
   }
 
   // 当前交易分类下的子分类列表
-  const currentSubCategories = useMemo(() => {
-    if (!selectedTransaction) return []
-    return subCategories.filter(s => s.categoryId === selectedTransaction.categoryId)
-  }, [selectedTransaction, subCategories])
+  // 当前编辑分类下的子分类列表（按 order 排序，逻辑与搜索页一致）
+  const editSubcats = useMemo(
+    () => subCategories
+      .filter(s => s.categoryId === editCategoryId)
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
+    [subCategories, editCategoryId]
+  )
 
   // 标签字典（O(1) 查找，避免逐条 .find）
   const tagMap = useMemo(() => {
@@ -130,25 +124,30 @@ export default function TransactionListPage() {
     return m
   }, [tags])
 
-  // 点击交易
-  const handleTransactionClick = (t: typeof transactions[0]) => {
+  // 点击交易 → 打开详情（查看态）
+  const openDetail = (t: typeof transactions[0]) => {
     setSelectedTransaction(t)
-    setEditAmount(t.amount.toString())
-    setEditNote(t.note || '')
-    setEditSubCategoryId(t.subcategoryId || undefined)
-    setEditTagIds(t.tags || [])
+    setEditType(t.type)
     setEditMode(false)
-    setShowDetailSheet(true)
+    setShowDeleteConfirm(false)
+    setEditPicker(null)
   }
 
-  // 从标签选择弹窗选中标签（点击即选中、记录最近使用、关闭弹窗）
-  const handleSelectEditTag = (tagId: string) => {
-    setEditTagIds(prev =>
-      prev.includes(tagId) ? prev : [...prev, tagId]
-    )
-    const uid = useAuthStore.getState().user?.id
-    if (uid) recordTagUsage(uid, tagId)
-    setShowEditTagSelect(false)
+  // 进入编辑：用选中交易预填（字段与搜索页完全一致）
+  const enterEdit = (t: typeof transactions[0]) => {
+    setEditAmount(String(t.amount))
+    setEditAmountError('')
+    setEditNote(t.note || '')
+    setEditType(t.type)
+    setEditCategoryId(t.categoryId)
+    setEditSubcategoryId(t.subcategoryId || undefined)
+    setEditAccountId(t.accountId)
+    setEditDate(t.transactionDate || '')
+    setEditTime(t.time || '')
+    setEditTagIds(t.tags || [])
+    setEditMode(true)
+    setShowDeleteConfirm(false)
+    setEditPicker(null)
   }
 
   // 取消某个已选标签（仅取消选择，不删库）
@@ -156,33 +155,67 @@ export default function TransactionListPage() {
     setEditTagIds(prev => prev.filter(id => id !== tagId))
   }
 
-  // 保存编辑
-  const handleSaveEdit = async () => {
+  // 添加标签并记录最近使用
+  const addEditTag = (tagId: string) => {
+    if (!editTagIds.includes(tagId)) setEditTagIds(prev => [...prev, tagId])
+    const uid = useAuthStore.getState().user?.id
+    if (uid) recordTagUsage(uid, tagId)
+  }
+
+  // 保存编辑（提交字段与搜索页一致）
+  const saveEdit = async () => {
     if (!selectedTransaction) return
     const newAmount = parseFloat(editAmount)
-    if (isNaN(newAmount) || newAmount <= 0) return
-    
+    if (isNaN(newAmount) || newAmount <= 0) {
+      setEditAmountError('请输入大于 0 的金额')
+      return
+    }
+    const isTransfer = editType === 'transfer'
+    const newCat = !isTransfer ? categories.expense.concat(categories.income).find(c => c.id === editCategoryId) : undefined
     try {
       await updateTransaction(selectedTransaction.id, {
+        type: editType,
         amount: newAmount,
         note: editNote || undefined,
-        subcategoryId: editSubCategoryId,
+        categoryId: isTransfer ? '' : editCategoryId,
+        subcategoryId: isTransfer ? undefined : editSubcategoryId,
+        accountId: editAccountId,
+        toAccountId: isTransfer ? editAccountId : undefined,
+        date: editDate,
+        time: editTime,
         tags: editTagIds,
       })
-      setShowDetailSheet(false)
-      setSelectedTransaction(null)
+      // 同步刷新弹窗内该条数据
+      setSelectedTransaction(prev => prev ? {
+        ...prev,
+        type: editType,
+        amount: newAmount,
+        note: editNote || '',
+        categoryId: isTransfer ? '' : editCategoryId,
+        categoryName: isTransfer ? '转账' : (newCat?.name || prev.categoryName),
+        categoryIcon: isTransfer ? '🔄' : (newCat?.icon || prev.categoryIcon),
+        categoryColor: isTransfer ? '#5b8dee' : (newCat?.color || prev.categoryColor),
+        subcategoryId: isTransfer ? undefined : editSubcategoryId,
+        subcategoryName: isTransfer ? undefined : (editSubcategoryId ? (subCategories.find(s => s.id === editSubcategoryId)?.name || '') : ''),
+        accountId: editAccountId,
+        accountName: accounts.find(a => a.id === editAccountId)?.name || prev.accountName,
+        date: formatDateDisplay(editDate),
+        transactionDate: editDate,
+        time: editTime,
+        tags: editTagIds,
+      } : prev)
+      setEditMode(false)
     } catch (err) {
       console.error('更新失败:', err)
     }
   }
 
-  // 删除交易
-  const handleDelete = async () => {
+  // 确认删除
+  const confirmDelete = async () => {
     if (!selectedTransaction) return
     try {
       await deleteTransaction(selectedTransaction.id)
       setShowDeleteConfirm(false)
-      setShowDetailSheet(false)
       setSelectedTransaction(null)
     } catch (err) {
       console.error('删除失败:', err)
@@ -302,7 +335,7 @@ export default function TransactionListPage() {
                           amount={t.amount}
                           type={t.type}
                           tags={transactionTags}
-                          onClick={() => handleTransactionClick(t)}
+                          onClick={() => openDetail(t)}
                         />
                       )
                     })}
@@ -328,285 +361,373 @@ export default function TransactionListPage() {
         )}
       </main>
 
-      {/* 交易详情/编辑弹窗 */}
+      {/* ========== 交易详情（查看 + 编辑）—— 与搜索页完全一致的逻辑 ========== */}
       <BottomSheet
-        isOpen={showDetailSheet}
-        onClose={() => { setShowDetailSheet(false); setEditMode(false); }}
+        isOpen={!!selectedTransaction}
+        onClose={() => { setSelectedTransaction(null); setEditMode(false); setShowDeleteConfirm(false); setEditPicker(null) }}
         title={editMode ? '编辑交易' : '交易详情'}
       >
-        {selectedTransaction && (
-          <div className="p-4 space-y-4">
-            {!editMode ? (
-              <>
-                {/* 查看模式 */}
-                <div className="text-center py-4">
-                  <div className="text-4xl mb-2">
-                    {getCategory(selectedTransaction).icon}
+        {selectedTransaction && (() => {
+          const cat = getCategory(selectedTransaction)
+          const txTags = (editMode ? editTagIds : selectedTransaction.tags || [])
+            .map((id: string) => tags.find(t => t.id === id))
+            .filter(Boolean) as { id: string; name: string; color: string }[]
+          const amountColor = selectedTransaction.type === 'income' ? 'text-danger' : selectedTransaction.type === 'expense' ? 'text-ink' : 'text-[#5b8dee]'
+          const typeLabel = selectedTransaction.type === 'expense' ? '支出' : selectedTransaction.type === 'income' ? '收入' : '转账'
+          return (
+            <div className="p-4 space-y-4">
+              {/* 金额（编辑模式可输入） */}
+              <div className="text-center py-2">
+                <div className="text-4xl mb-2">{cat.icon}</div>
+                {editMode ? (
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    value={editAmount}
+                    onChange={e => { setEditAmount(e.target.value); if (editAmountError) setEditAmountError('') }}
+                    className="w-44 text-center text-3xl font-bold font-mono bg-brand-tint border border-[#e6e3da] rounded-xl px-3 py-1.5 outline-none"
+                  />
+                ) : (
+                  <div className={`font-bold font-mono amount-fluid-lg ${amountColor}`}>
+                    {selectedTransaction.type === 'transfer'
+                      ? formatTransferAmount(selectedTransaction as any)
+                      : formatCurrency(
+                          selectedTransaction.type === 'expense'
+                            ? -Math.abs(selectedTransaction.amount)
+                            : Math.abs(selectedTransaction.amount),
+                          true,
+                          false
+                        )}
                   </div>
-                  <div className={`font-bold font-mono amount-fluid-lg ${
-                    selectedTransaction.type === 'income' ? 'text-danger' : 
-                    selectedTransaction.type === 'expense' ? 'text-ink' : 'text-[#5b8dee]'
-                  }`}>
-                    {formatCurrency(
-                      selectedTransaction.type === 'expense'
-                        ? -Math.abs(selectedTransaction.amount)
-                        : Math.abs(selectedTransaction.amount),
-                      selectedTransaction.type !== 'transfer',
-                      false
-                    )}
-                  </div>
-                  <div className={`text-sm mt-1 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
-                    {selectedTransaction.type === 'expense' ? '支出' : selectedTransaction.type === 'income' ? '收入' : '转账'}
-                  </div>
-                </div>
+                )}
+                <div className="text-sm text-ink-2 mt-1">{typeLabel}</div>
+                {editAmountError && (
+                  <div className="text-xs text-danger mt-1">{editAmountError}</div>
+                )}
+              </div>
 
-                {/* 详情字段 */}
-                <div className={`rounded-xl p-4 space-y-3 ${theme === 'dark' ? 'bg-[var(--bg-secondary)]' : 'bg-[var(--bg-secondary)]'}`}>
-                  <div className="flex items-center justify-between">
-                    <span className={`text-sm ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>分类</span>
-                    <span className={`text-sm ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
-                      {getCategory(selectedTransaction).icon} {selectedTransaction.categoryName}
-                    </span>
-                  </div>
-                  {selectedTransaction.type !== 'transfer' && selectedTransaction.subcategoryName && (
-                    <div className="flex items-center justify-between">
-                      <span className={`text-sm ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>子分类</span>
-                      <span className={`text-sm ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
-                        {selectedTransaction.subcategoryName}
-                      </span>
-                    </div>
+              {/* 类型：编辑模式可切换（支出 / 收入 / 转账） */}
+              {editMode && (
+                <div className="flex gap-2 px-4 pb-1">
+                  {([['expense', '支出'], ['income', '收入'], ['transfer', '转账']] as const).map(([val, label]) => (
+                    <button
+                      key={val}
+                      onClick={() => setEditType(val)}
+                      className={`flex-1 py-2 rounded-full text-sm font-medium border transition-colors ${
+                        editType === val
+                          ? 'bg-brand text-ink border-brand-strong'
+                          : 'bg-surface text-ink-2 border-[#e6e3da]'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* 字段 */}
+              <div className="rounded-2xl bg-surface shadow-soft divide-y divide-[#f0eee6] overflow-hidden">
+                {/* 分类：编辑模式点击打开选择（转账不显示） */}
+                {editType !== 'transfer' && (
+                <div className="flex items-center justify-between gap-3 px-4 py-3">
+                  <span className="text-sm text-ink-2 shrink-0">分类</span>
+                  {editMode ? (
+                    <button
+                      onClick={() => setEditPicker('category')}
+                      className="flex items-center gap-1 text-sm text-ink"
+                    >
+                      {categories.expense.concat(categories.income).find(c => c.id === editCategoryId)?.icon} {categories.expense.concat(categories.income).find(c => c.id === editCategoryId)?.name}
+                      <span className="text-ink-2">›</span>
+                    </button>
+                  ) : (
+                    <span className="text-sm text-ink">{cat.icon} {selectedTransaction.categoryName}</span>
                   )}
-                  {selectedTransaction.tags && selectedTransaction.tags.length > 0 && (
-                    <div className="flex items-center justify-between">
-                      <span className={`text-sm ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>标签</span>
-                      <div className="flex gap-1 flex-wrap justify-end">
-                        {selectedTransaction.tags.map(tagId => {
-                          const tag = tags.find(t => t.id === tagId);
-                          return tag ? (
-                            <span
-                              key={tagId}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs text-white"
-                              style={{ backgroundColor: tag.color }}
-                            >
-                              {tag.name}
-                            </span>
-                          ) : null;
-                        })}
+                </div>
+                )}
+
+                {/* 子分类：编辑模式右侧横向胶囊单选（对齐记一笔：点击选中/再点取消，选中带X） */}
+                {(editType !== 'transfer') && (
+                  editMode ? (
+                    <div className="flex items-start justify-between gap-3 px-4 py-3">
+                      <span className="text-sm text-ink-2 shrink-0 pt-1.5">子分类</span>
+                      <div className="flex-1 min-w-0">
+                        {editSubcats.length > 0 ? (
+                          <div className="flex flex-wrap gap-2 justify-end">
+                            {editSubcats.map(sub => {
+                              const isSelected = editSubcategoryId === sub.id
+                              return (
+                                <button
+                                  key={sub.id}
+                                  onClick={() => setEditSubcategoryId(isSelected ? undefined : sub.id)}
+                                  className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm transition-all active:scale-95 ${
+                                    isSelected
+                                      ? 'text-white ring-2 ring-offset-1 ring-current'
+                                      : 'bg-bg text-ink-2 hover:bg-brand-tint'
+                                  }`}
+                                  style={isSelected ? { backgroundColor: sub.color || '#818cf8' } : undefined}
+                                >
+                                  {isSelected && <X size={12} className="hover:bg-white/20 rounded-full" />}
+                                  {sub.name}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-ink-2 text-right block pt-1">该分类暂无子分类</span>
+                        )}
                       </div>
                     </div>
-                  )}
-                  <div className="flex items-center justify-between">
-                    <span className={`text-sm ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>账户</span>
-                    <span className={`text-sm ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
-                      {selectedTransaction.accountName}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className={`text-sm ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>日期</span>
-                    <span className={`text-sm ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
-                      {selectedTransaction.date} {selectedTransaction.time}
-                    </span>
-                  </div>
-                  {selectedTransaction.note && (
-                    <div className="flex items-center justify-between">
-                      <span className={`text-sm ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>备注</span>
-                      <span className={`text-sm ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
-                        {selectedTransaction.note}
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                {/* 操作按钮 */}
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => { setEditMode(true); setShowDeleteConfirm(false); }}
-                    className="flex-1 py-3 rounded-xl bg-brand text-white font-medium hover:bg-[#b55335] transition-colors"
-                  >
-                    修改
-                  </button>
-                  <button
-                    onClick={() => setShowDeleteConfirm(true)}
-                    className="flex-1 py-3 rounded-xl bg-danger/10 text-danger font-medium hover:bg-danger/20 transition-colors"
-                  >
-                    删除
-                  </button>
-                </div>
-
-                {/* 删除确认 */}
-                {showDeleteConfirm && (
-                  <div className={`p-4 rounded-xl ${theme === 'dark' ? 'bg-surface' : 'bg-white'}`}>
-                    <p className={`text-sm text-center mb-3 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
-                      确定要删除这笔交易吗？此操作不可撤销。
-                    </p>
-                    <div className="flex gap-3">
-                      <button
-                        onClick={() => setShowDeleteConfirm(false)}
-                        className={`flex-1 py-2 rounded-lg text-sm ${
-                          theme === 'dark' ? 'bg-[#4a4a47] text-ink-2' : 'bg-brand-tint text-ink-2'
-                        }`}
-                      >
-                        取消
-                      </button>
-                      <button
-                        onClick={handleDelete}
-                        className="flex-1 py-2 rounded-lg bg-danger text-white text-sm"
-                      >
-                        确认删除
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </>
-            ) : (
-              <>
-                {/* 编辑模式 */}
-                <div>
-                  <label className={`text-sm mb-2 block ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
-                    金额
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <span className={`text-2xl ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>¥</span>
-                    <input
-                      type="number"
-                      value={editAmount}
-                      onChange={(e) => setEditAmount(e.target.value)}
-                      className={`flex-1 px-4 py-3 rounded-xl text-2xl font-mono ${
-                        theme === 'dark' ? 'bg-[var(--bg-secondary)] text-ink' : 'bg-[var(--bg-secondary)] text-ink'
-                      } focus:outline-none focus:ring-2 focus:ring-brand/40`}
-                      step="0.01"
-                      min="0.01"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className={`text-sm mb-2 block ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
-                    备注
-                  </label>
-                  <textarea
-                    value={editNote}
-                    onChange={(e) => setEditNote(e.target.value)}
-                    placeholder="添加备注..."
-                    rows={3}
-                    className={`w-full px-4 py-3 rounded-xl resize-none ${
-                      theme === 'dark' ? 'bg-[var(--bg-secondary)] text-ink placeholder-[var(--text-tertiary)]' : 'bg-[var(--bg-secondary)] text-ink placeholder-[var(--text-tertiary)]'
-                    } focus:outline-none focus:ring-2 focus:ring-brand/40`}
-                  />
-                </div>
-
-                {selectedTransaction.type !== 'transfer' && (
-                  <div>
-                    <label className={`text-sm mb-2 block ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
-                      子分类
-                    </label>
-                    <div className="flex flex-wrap gap-2">
-                      {currentSubCategories.length > 0 ? (
-                        currentSubCategories.map((sub) => {
-                          const isSelected = editSubCategoryId === sub.id
-                          return (
-                            <button
-                              key={sub.id}
-                              type="button"
-                              onClick={() => setEditSubCategoryId(isSelected ? undefined : sub.id)}
-                              className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-sm transition-all ${
-                                isSelected
-                                  ? 'text-white ring-2 ring-offset-1 ring-current'
-                                  : 'bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:bg-[var(--surface-warm)]'
-                              }`}
-                              style={isSelected ? { backgroundColor: sub.color || '#818cf8' } : undefined}
-                            >
-                              {sub.name}
-                            </button>
-                          )
-                        })
+                  ) : (
+                    <div className="flex items-center justify-between gap-3 px-4 py-3">
+                      <span className="text-sm text-ink-2 shrink-0">子分类</span>
+                      {selectedTransaction.subcategoryName ? (
+                        <span className="text-sm text-ink">{selectedTransaction.subcategoryName}</span>
                       ) : (
-                        <span className={`text-xs py-1.5 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
-                          该分类暂无子分类
-                        </span>
+                        <span className="text-sm text-ink-2">—</span>
                       )}
                     </div>
+                  )
+                )}
+
+                {/* 标签：转账表无此字段，不展示 */}
+                {selectedTransaction.type !== 'transfer' && (
+                <div className="flex items-start justify-between gap-3 px-4 py-3">
+                  <span className="text-sm text-ink-2 shrink-0 pt-0.5">标签</span>
+                  {editMode ? (
+                    <div className="flex gap-1 flex-wrap justify-end">
+                      {txTags.map(tag => (
+                        <button
+                          key={tag.id}
+                          onClick={() => removeEditTag(tag.id)}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs text-ink"
+                          style={{ backgroundColor: tag.color ? tag.color + '33' : '#FFF7E6' }}
+                        >
+                          {tag.name} <X size={11} />
+                        </button>
+                      ))}
+                      <button
+                        onClick={() => setShowTagSelect(true)}
+                        className="inline-flex items-center px-2 py-0.5 rounded-full text-xs border border-dashed border-[#cfc9ba] text-ink-2"
+                      >
+                        + 添加
+                      </button>
+                    </div>
+                  ) : txTags.length > 0 ? (
+                    <div className="flex gap-1 flex-wrap justify-end">
+                      {txTags.map(tag => (
+                        <span
+                          key={tag.id}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs text-ink"
+                          style={{ backgroundColor: tag.color ? tag.color + '33' : '#FFF7E6' }}
+                        >
+                          {tag.name}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="text-sm text-ink-2">—</span>
+                  )}
+                </div>
+                )}
+
+                {/* 账户：转账在查看态展示转出/转入账户、手续费、汇率；编辑态沿用账户选择 */}
+                {selectedTransaction.type === 'transfer' && !editMode ? (
+                  <>
+                    <div className="flex items-center justify-between gap-3 px-4 py-3">
+                      <span className="text-sm text-ink-2 shrink-0">转出账户</span>
+                      <span className="text-sm text-ink">{selectedTransaction.accountName}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 px-4 py-3">
+                      <span className="text-sm text-ink-2 shrink-0">转入账户</span>
+                      <span className="text-sm text-ink">{selectedTransaction.toAccountName}</span>
+                    </div>
+                    {(selectedTransaction.fee ?? 0) > 0 && (
+                      <div className="flex items-center justify-between gap-3 px-4 py-3">
+                        <span className="text-sm text-ink-2 shrink-0">手续费</span>
+                        <span className="text-sm text-ink">{formatCurrency(selectedTransaction.fee ?? 0, false, false)}</span>
+                      </div>
+                    )}
+                    {selectedTransaction.fromCurrency && selectedTransaction.toCurrency && selectedTransaction.fromCurrency !== selectedTransaction.toCurrency && (selectedTransaction as any).exchangeRate != null && (
+                      <div className="flex items-center justify-between gap-3 px-4 py-3">
+                        <span className="text-sm text-ink-2 shrink-0">汇率</span>
+                        <span className="text-sm text-ink">{(selectedTransaction as any).exchangeRate}</span>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="flex items-center justify-between gap-3 px-4 py-3">
+                    <span className="text-sm text-ink-2 shrink-0">账户</span>
+                    {editMode ? (
+                      <button
+                        onClick={() => setEditPicker('account')}
+                        className="flex items-center gap-1 text-sm text-ink"
+                      >
+                        {accounts.find(a => a.id === editAccountId)?.name}
+                        <span className="text-ink-2">›</span>
+                      </button>
+                    ) : (
+                      <span className="text-sm text-ink">{selectedTransaction.accountName}</span>
+                    )}
                   </div>
                 )}
 
-                {/* 标签（全局自由标签，多选；仅展示已选，与记一笔一致） */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className={`flex items-center gap-2 text-sm block ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
-                      <Tag size={16} />
-                      标签
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setShowEditTagSelect(true)}
-                      className={`text-sm transition-colors ${theme === 'dark' ? 'text-ink-2 hover:text-ink' : 'text-ink-2 hover:text-ink'}`}
-                    >
-                      + 添加标签
-                    </button>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {editTagIds.length > 0 ? (
-                      editTagIds.map((tagId) => {
-                        const tag = tags.find((t: any) => t.id === tagId)
-                        if (!tag) return null
-                        return (
-                          <span
-                            key={tagId}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-sm text-white"
-                            style={{ backgroundColor: tag.color || '#818cf8' }}
-                          >
-                            <Tag size={12} />
-                            {tag.name}
-                            <button
-                              type="button"
-                              onClick={() => removeEditTag(tagId)}
-                              className="ml-0.5 -mr-1 p-0.5 rounded-full hover:bg-white/20 transition-colors"
-                              aria-label="删除标签"
-                            >
-                              <X size={12} />
-                            </button>
-                          </span>
-                        )
-                      })
-                    ) : (
-                      <span className={`text-xs py-1.5 ${theme === 'dark' ? 'text-ink-2' : 'text-ink-2'}`}>
-                        点击"添加标签"选择或新建
-                      </span>
-                    )}
-                  </div>
+                {/* 日期 + 时间：编辑模式可改（统一卡片输入框） */}
+                <div className="flex items-center justify-between gap-3 px-4 py-3">
+                  <span className="text-sm text-ink-2 shrink-0">日期</span>
+                  {editMode ? (
+                    <div className="flex gap-2">
+                      <input
+                        type="date"
+                        value={editDate}
+                        onChange={e => setEditDate(e.target.value)}
+                        className="px-3 py-1.5 rounded-xl bg-brand-tint border border-[#e6e3da] text-sm text-ink outline-none"
+                      />
+                      <input
+                        type="time"
+                        value={editTime}
+                        onChange={e => setEditTime(e.target.value)}
+                        className="px-3 py-1.5 rounded-xl bg-brand-tint border border-[#e6e3da] text-sm text-ink outline-none"
+                      />
+                    </div>
+                  ) : (
+                    <span className="text-sm text-ink">{selectedTransaction.date} {selectedTransaction.time}</span>
+                  )}
                 </div>
 
-                {/* 分类和账户信息（只读提示） */}
-                <div className={`p-3 rounded-xl text-xs ${theme === 'dark' ? 'bg-[var(--bg-secondary)] text-[var(--text-secondary)]' : 'bg-[var(--bg-secondary)] text-[var(--text-secondary)]'}`}>
-                  分类: {selectedTransaction.categoryName} · 账户: {selectedTransaction.accountName} · 日期: {selectedTransaction.date}
+                {/* 备注：编辑模式可输入（统一卡片输入框） */}
+                <div className="flex items-start justify-between gap-3 px-4 py-3">
+                  <span className="text-sm text-ink-2 shrink-0 pt-0.5">备注</span>
+                  {editMode ? (
+                    <input
+                      value={editNote}
+                      onChange={e => setEditNote(e.target.value)}
+                      placeholder="添加备注"
+                      className="flex-1 text-sm text-ink text-right bg-brand-tint border border-[#e6e3da] rounded-xl px-3 py-1.5 outline-none"
+                    />
+                  ) : selectedTransaction.note ? (
+                    <span className="text-sm text-ink text-right">{selectedTransaction.note}</span>
+                  ) : (
+                    <span className="text-sm text-ink-2 text-right">—</span>
+                  )}
                 </div>
+              </div>
 
+              {/* 操作按钮 */}
+              {!editMode ? (
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-surface text-danger border border-[#e6e3da] flex items-center justify-center gap-1.5"
+                  >
+                    <Trash2 size={15} /> 删除
+                  </button>
+                  <button
+                    onClick={() => enterEdit(selectedTransaction)}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-brand text-ink hover:bg-brand-strong flex items-center justify-center gap-1.5"
+                  >
+                    <Pencil size={15} /> 编辑
+                  </button>
+                </div>
+              ) : (
                 <div className="flex gap-3">
                   <button
                     onClick={() => setEditMode(false)}
-                    className="flex-1 py-3 rounded-xl bg-[var(--bg-secondary)] text-[var(--text-secondary)] font-medium transition-colors"
+                    className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-surface text-ink-2 border border-[#e6e3da]"
                   >
                     取消
                   </button>
                   <button
-                    onClick={handleSaveEdit}
-                    className="flex-1 py-3 rounded-xl bg-brand text-ink font-medium hover:bg-brand-strong transition-colors"
+                    onClick={saveEdit}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-brand text-ink hover:bg-brand-strong flex items-center justify-center gap-1.5"
                   >
-                    保存
+                    <Check size={15} /> 保存
                   </button>
                 </div>
-              </>
-            )}
-          </div>
-        )}
+              )}
+
+              {/* 删除确认 */}
+              {showDeleteConfirm && (
+                <div className="rounded-xl p-4 bg-[#fff1f0] border border-[#ffd6d6] text-center space-y-3">
+                  <p className="text-sm text-ink">确定删除这条交易吗？此操作不可撤销。</p>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setShowDeleteConfirm(false)}
+                      className="flex-1 py-2 rounded-xl text-sm font-medium bg-surface text-ink-2 border border-[#e6e3da]"
+                    >
+                      取消
+                    </button>
+                    <button
+                      onClick={confirmDelete}
+                      className="flex-1 py-2 rounded-xl text-sm font-medium bg-danger text-white"
+                    >
+                      删除
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })()}
       </BottomSheet>
 
-      {/* 标签选择弹窗（编辑交易时复用记账页逻辑） */}
-      <TagSelectModal
-        visible={showEditTagSelect}
-        onClose={() => setShowEditTagSelect(false)}
-        onSelect={handleSelectEditTag}
-      />
+      {/* 标签选择（编辑模式下添加标签） */}
+      <BottomSheet isOpen={showTagSelect} onClose={() => setShowTagSelect(false)} title="选择标签">
+        <div className="p-4">
+          <div className="flex flex-wrap gap-2">
+            {tags.map(tag => {
+              const active = editTagIds.includes(tag.id)
+              return (
+                <button
+                  key={tag.id}
+                  onClick={() => (active ? removeEditTag(tag.id) : addEditTag(tag.id))}
+                  className="px-3 py-1.5 rounded-full text-sm border"
+                  style={{
+                    backgroundColor: active ? (tag.color ? tag.color + '33' : '#FFF7E6') : 'transparent',
+                    borderColor: active ? (tag.color || '#f5c451') : '#e6e3da',
+                    color: '#3a3a3a',
+                  }}
+                >
+                  {tag.name}{active ? ' ✓' : ''}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      </BottomSheet>
+
+      {/* 通用选择（编辑模式下选择分类 / 账户；子分类已改为内嵌横向胶囊，不再弹层） */}
+      <BottomSheet
+        isOpen={editPicker !== null}
+        onClose={() => setEditPicker(null)}
+        title={editPicker === 'category' ? '选择分类' : '选择账户'}
+      >
+        <div className="p-4 space-y-2">
+          {editPicker === 'category' && categories.expense.concat(categories.income).map(c => (
+            <button
+              key={c.id}
+              onClick={() => { setEditCategoryId(c.id); setEditSubcategoryId(undefined); setEditPicker(null) }}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm ${
+                editCategoryId === c.id ? 'bg-brand text-ink' : 'bg-surface text-ink hover:bg-brand-tint'
+              }`}
+            >
+              <span>{c.icon} {c.name}</span>
+              {editCategoryId === c.id && <Check size={16} />}
+            </button>
+          ))}
+          {editPicker === 'account' && accounts.map(a => (
+            <button
+              key={a.id}
+              onClick={() => { setEditAccountId(a.id); setEditPicker(null) }}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm ${
+                editAccountId === a.id ? 'bg-brand text-ink' : 'bg-surface text-ink hover:bg-brand-tint'
+              }`}
+            >
+              <span>{a.name}</span>
+              {editAccountId === a.id && <Check size={16} />}
+            </button>
+          ))}
+        </div>
+      </BottomSheet>
     </div>
   )
 }

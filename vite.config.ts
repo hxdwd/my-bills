@@ -57,5 +57,8 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // 显式监听所有网卡（IPv4 + IPv6）。Vite 默认只绑 IPv6 [::1]，
+    // 浏览器把 localhost 解析成 127.0.0.1 时会导致打不开。
+    host: '0.0.0.0',
   },
 })
