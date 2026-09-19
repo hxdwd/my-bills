@@ -86,11 +86,41 @@ export interface QuoteHistoryQuery {
   symbol: string
   market?: Market
   period?: HistoryPeriod
+  /** 区间查询（YYYY-MM-DD，含端点）。start/end 同时给出时优先于 period */
+  start?: string
+  end?: string
 }
 
 export interface HistoryPoint {
   date: string
   price: number
+}
+
+// ============ 接口五：批量历史走势 ============
+// 组合收益曲线需要对多只持仓一次性取历史价，避免前端发起 N 次单只请求。
+
+export interface HistoryBatchItem {
+  symbol: string
+  market?: Market
+}
+
+export interface HistoryBatchRequest {
+  items: HistoryBatchItem[]
+  period?: HistoryPeriod
+  /** 区间查询（YYYY-MM-DD，含端点）。start/end 同时给出时优先于 period */
+  start?: string
+  end?: string
+}
+
+export interface HistorySeries {
+  symbol: string
+  market: Market
+  /** 日线序列（升序）；该标的取数失败时为空数组 */
+  points: HistoryPoint[]
+}
+
+export interface HistoryBatchResponseData {
+  results: HistorySeries[]
 }
 
 // ============ 统一响应外壳 ============

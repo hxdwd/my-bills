@@ -486,3 +486,109 @@ export async function fetchHistory(
   }
   return out
 }
+
+// 6 位 A股代码 → 东财 secid（6/9 开头为沪市 1.，其余为深市 0.）
+function eastmoneySecid(code: string): string | null {
+  const m = /(?:sh|sz|bj)?(\d{6})/.exec(code.trim())
+  if (!m) return null
+  const num = m[1]
+  return `${/^[69]/.test(num) ? '1' : '0'}.${num}`
+}
+
+/**
+ * 按日期区间取历史（start/end 均为 YYYY-MM-DD，含端点）。
+ * 各数据源能力不同，这里统一成"给定区间"的入口：
+ * - A股：东方财富 K线（支持 beg/end；**新浪 K线只能取"最近 N 条"**，无法定位历史区间）
+ * - 基金：东方财富历史净值（支持 startDate/endDate）
+ * - 美股/港股：Yahoo period1/period2
+ * - 黄金：Yahoo GC=F 区间，再按 AU9999 当前价等比缩放（与 fetchHistory 口径一致）
+ */
+export async function fetchHistoryRange(
+  symbol: string,
+  market: Market,
+  start: string,
+  end: string
+): Promise<Array<{ date: string; price: number }>> {
+  const p = parseSymbol(symbol, market)
+
+  // A股：东财 K线（日线 klt=101、前复权 fqt=1）
+  if (market === 'CN') {
+    const secid = eastmoneySecid(p.sina)
+    if (!secid) throw new Error(`cnRange secid invalid: ${symbol}`)
+    const url =
+      `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${secid}` +
+      `&klt=101&fqt=1&beg=${start.replace(/-/g, '')}&end=${end.replace(/-/g, '')}` +
+      `&fields1=f1,f2,f3&fields2=f51,f52,f53`
+    const res = await fetchWithTimeout(url, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+    if (!res.ok) throw new Error(`cnRange http ${res.status}`)
+    const json = (await res.json()) as any
+    const klines: string[] = json?.data?.klines ?? []
+    const out: Array<{ date: string; price: number }> = []
+    for (const k of klines) {
+      const parts = String(k).split(',')
+      const price = parseFloat(parts[2]) // 日期,开,收,高,低,量
+      if (parts[0] && isFinite(price)) out.push({ date: parts[0].slice(0, 10), price })
+    }
+    return out
+  }
+
+  // 基金：东财历史净值（startDate/endDate）
+  if (market === 'FUND') {
+    const code = p.cacheKeySymbol
+    const url =
+      `https://api.fund.eastmoney.com/f10/lsjz?fundCode=${code}&pageIndex=1&pageSize=200` +
+      `&startDate=${start}&endDate=${end}`
+    const res = await fetchWithTimeout(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0', Referer: 'https://fundf10.eastmoney.com/' },
+    })
+    if (!res.ok) throw new Error(`fundRange http ${res.status}`)
+    const json = (await res.json()) as any
+    const list: any[] = json?.Data?.LSJZList ?? []
+    const out: Array<{ date: string; price: number }> = []
+    for (const row of list) {
+      const price = parseFloat(row.FSZ || row.DWJZ)
+      if (isFinite(price)) out.push({ date: String(row.FSRQ).slice(0, 10), price })
+    }
+    out.reverse() // 接口返回降序，转升序
+    return out
+  }
+
+  // 美股 / 港股 / 黄金：Yahoo period1/period2
+  const isGold = market === 'GOLD'
+  const ySym = isGold ? 'GC=F' : p.yahoo
+  const t1 = Math.floor(new Date(`${start}T00:00:00Z`).getTime() / 1000)
+  const t2 = Math.floor(new Date(`${end}T23:59:59Z`).getTime() / 1000)
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ySym}?period1=${t1}&period2=${t2}&interval=1d`
+  const yRes = await fetchWithTimeout(
+    url,
+    { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AssetValuation/1.0)' } },
+    isGold ? 8000 : undefined
+  )
+  if (!yRes.ok) throw new Error(`rangeHist yahoo http ${yRes.status}`)
+  const yJson = (await yRes.json()) as any
+  const yResult = yJson?.chart?.result?.[0]
+  if (!yResult) throw new Error('rangeHist yahoo no result')
+  const timestamps: number[] = yResult.timestamp ?? []
+  const closes: number[] = yResult.indicators?.quote?.[0]?.close ?? []
+  const series: Array<{ date: string; price: number }> = []
+  for (let i = 0; i < timestamps.length; i++) {
+    const c = closes[i]
+    if (typeof c === 'number' && isFinite(c)) {
+      series.push({ date: new Date(timestamps[i] * 1000).toISOString().slice(0, 10), price: c })
+    }
+  }
+
+  // 黄金：GC=F 是美元/盎司，按当前 AU9999（元/克）等比缩放，保证量纲与详情页一致
+  if (isGold) {
+    if (series.length === 0) return []
+    const base = await fetchGold(symbol)
+    const lastClose = series[series.length - 1].price
+    if (!isFinite(lastClose) || lastClose <= 0) throw new Error('rangeHist gold base close invalid')
+    return series.map(s => ({
+      date: s.date,
+      price: Math.round((base.price * s.price / lastClose) * 100) / 100,
+    }))
+  }
+
+  return series
+}

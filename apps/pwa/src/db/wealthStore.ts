@@ -301,6 +301,79 @@ export async function getLiquidatedHoldings(): Promise<LiquidatedHolding[]> {
   return result
 }
 
+/** 已实现（清仓）收益事件：每笔卖出锁定的盈亏（按标的计价币种） */
+export interface RealizedEvent {
+  date: string      // 卖出日 YYYY-MM-DD
+  symbol: string
+  market: Market
+  name: string      // 标的名称（清仓记录列表展示用）
+  currency: string  // 标的计价币种（USD/HKD/CNY），折算本位币用
+  amount: number    // 该笔已实现盈亏（标的计价币种）
+}
+
+/** 市场默认计价币种（与后端 marketCurrency 保持一致） */
+export function marketCurrencyOf(market: Market): string {
+  if (market === 'US') return 'USD'
+  if (market === 'HK') return 'HKD'
+  return 'CNY'
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100
+}
+
+/**
+ * 计算「已实现（清仓）收益」：逐笔卖出按加权成本结算锁定盈亏。
+ *
+ * 关键约束：成本冲减口径**必须与 aggregateHoldings 完全一致**
+ * （冲减均价 = 当前剩余总成本 / 累计买入数量）。因为「持仓收益 = 市值 − 剩余成本」，
+ * 若两边冲减口径不同，会出现「持仓收益 + 清仓收益 ≠ 实际总收益」的对不上问题。
+ * 口径一致时，两者之和恒等于「Σ卖出回款 + 期末市值 − Σ买入成本」。
+ *
+ * 注意：这里必须遍历**全部流水**（含清仓归档 is_active=false 的记录），
+ * 这是与 aggregateHoldings（只算 is_active）最大的不同。
+ */
+export function computeRealizedProfit(txs: HoldingTransactionRecord[]): RealizedEvent[] {
+  const sorted = [...txs].sort((a, b) => a.date.localeCompare(b.date) || a.created_at.localeCompare(b.created_at))
+  const state = new Map<string, { buyQuantity: number; totalCost: number }>()
+  const events: RealizedEvent[] = []
+
+  for (const t of sorted) {
+    // 跳过清仓节点（archiveHolding 写入的 quantity=0 占位记录）
+    if (!t.quantity || t.quantity <= 0) continue
+    const key = `${t.market}:${t.symbol}`
+    let s = state.get(key)
+    if (!s) {
+      s = { buyQuantity: 0, totalCost: 0 }
+      state.set(key, s)
+    }
+    if (t.direction === 'buy') {
+      s.buyQuantity += t.quantity
+      s.totalCost += t.quantity * t.price
+    } else {
+      const avg = s.buyQuantity > 0 ? s.totalCost / s.buyQuantity : t.price
+      const realized = t.quantity * (t.price - avg)
+      s.totalCost -= t.quantity * avg
+      if (s.totalCost < 0) s.totalCost = 0
+      events.push({
+        date: t.date,
+        symbol: t.symbol,
+        market: t.market,
+        name: t.name || t.symbol,
+        currency: marketCurrencyOf(t.market),
+        amount: round2(realized),
+      })
+    }
+  }
+  return events
+}
+
+/** 读取全部流水并计算已实现（清仓）收益事件 */
+export async function getRealizedProfitEvents(): Promise<RealizedEvent[]> {
+  const txs = await getAllTransactions()
+  return computeRealizedProfit(txs)
+}
+
 // 取 user_id（复用 auth store）
 async function getCurrentUserId(): Promise<string> {
   try {

@@ -55,7 +55,7 @@ export function WealthCategory() {
           </div>
         </div>
         <div className="flex-1 bg-surface rounded-2xl p-3 border border-brand-tint">
-          <div className="text-xs text-ink-2 mb-1">累计收益</div>
+          <div className="text-xs text-ink-2 mb-1">持仓收益</div>
           <div className="text-lg font-bold amount-fluid-sm" style={{ color: totalProfit >= 0 ? '#dc2626' : '#16a34a' }}>
             {totalProfit >= 0 ? '+' : ''}{fmtMoney(totalProfit)}
           </div>

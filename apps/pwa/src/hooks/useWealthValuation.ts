@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { fetchBatchValuation } from '../utils/quoteApi'
 import { aggregateHoldings, Holding } from '../db/wealthStore'
-import type { ValuationResult, Currency } from '../utils/quoteApi'
-import { BASE_CURRENCIES, convert, toBase } from '../utils/currency'
+import type { ValuationResult } from '../utils/quoteApi'
+import { BASE_CURRENCIES, convert, toBase, Currency } from '../utils/currency'
 
 export interface ValuationWithHolding extends ValuationResult {
   holding: Holding

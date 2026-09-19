@@ -12,11 +12,17 @@
 ## 前端 UI 一致性（硬约束）
 - 做任何组件前，**先读现有同类组件**（Card/Modal/Button 等）的真实 className，照着它的圆角/底色/阴影/间距范式写，**禁止自创碎块样式**（如自己拼 border + 小圆角，而全站是 rounded-3xl + bg-surface + shadow-soft）。
 - 同一语义的控件在视觉上要紧凑统一，不要为了"功能清晰"就把简单东西拆成多个带底色的方块。
+- **并列的多张指标卡字号必须一致，不给某张卡"主指标特权"**。财富页四卡（总市值/今日收益/持仓收益/清仓收益）统一用 `.amount-fluid-lg`（390px 视口 ≈21.84px）；曾因总市值走 `large` 分支用 lg、其余用 `.amount-fluid-sm`，导致同屏出现 21.84px vs 12.09px（差 1.8 倍）——这两个类的 vw 系数是 5.6 与 3.1，天然差近一倍，不可混用。
+- `.amount-fluid-lg` 支持 `--amount-scale` CSS 变量（默认 1）用于超长数字兜底：单卡约容 11 个等宽字符，超出时按 `11/len` 等比缩小（下限 0.6），见 `WealthHome` 的 `amountScale`。用 CSS 变量而非内联 `font-size`，是为了让移动端 media query 仍生效。
 
 ## 长按/连发类交互的标准实现
 - **把"单步"和"长按连发"拆到不同元素上**，不要叠加在同一个按钮：单步控件只绑 `onClick`（确定性单次）；长按连发控件只绑按下/松开事件、不绑 `onClick`。这样从结构上根除双发，不需要 suppressClick 之类的补丁。
 - 连发用 `setTimeout` 延迟（~450ms）启动 `setInterval`，松手清掉二者。
 - 触屏用 `onTouchStart + preventDefault` 阻止后续 click 补发。
+
+## React 异步 effect 的正确写法（硬约束）
+- **不要在 effect 里用 `let cancelled` 来丢弃异步更新**。本项目 `main.tsx` 启用了 `StrictMode`，effect 会执行两次：第二次常因 `useRef` 守卫提前 return，此时第一次的结果若被 `cancelled` 判定失效，所有 `setState` 被跳过 → UI 永久停在 loading（财富页收益曲线踩过此坑）。
+- 正确做法：`useRef` 保存「当前请求的 key」，异步返回后判 `ref.current === myKey` 再写入；key 变化即天然作废旧结果，无需 cancelled 标记。
 
 ## 用户提示词的执行策略（防 AI 夹带私货）
 
@@ -60,6 +66,28 @@
   - 用户原则：有分歧疑惑的问题**必须问**，不要自行处理。
 - **版本号机制（已修复"关于版本不随发布更新"）**：`package.json` 的 `version` 是**唯一真相源**。`vite.config.ts` 用 `define: { __APP_VERSION__: JSON.stringify(pkg.version) }` 注入；`apps/pwa/src/vite-env.d.ts` 声明 `declare const __APP_VERSION__: string`；`Settings.tsx` 的 `APP_VERSION = __APP_VERSION__`，"关于"与 footer 均用之。**每次发布：bump `package.json` version + 在 `VERSION_LOGS` 头部追加一条**，版本号自动跟随，无需手改显示处。注意 `import.meta.env.VITE_*` 这种 define 键不稳，必须用裸全局 `__APP_VERSION__`。
 - **版本更新说明（CHANGELOG）维护约定**：入口在设置页"其他"板块的"版本更新"（BottomSheet 展示），数据在 `apps/pwa/src/pages/Settings.tsx` 顶部的 `VERSION_LOGS` 常量。**每次发布(push)在数组【头部】追加一条**，其 `version` 应与 `package.json` 的 `version` 一致。内容**只面向用户**说明"新增/优化/修复了什么功能"，**绝不泄露开发细节**。目前种子为 v1.0.1–v1.1.0 共 10 条，日期取自真实 git 提交历史（2026-07-06 首发 ~ 2026-07-18），功能均对应真实提交。
+
+## 账户余额模型（my-bills，架构约定，勿改回）
+- **账户余额是用户维护的独立数字**，`accounts.balance` 直接就是「当前余额」，**不再用「本金 + 流水净额」动态叠加**（曾因历史导入流水收支不严格合一，导致余额被流水反复污染、编辑余额不生效）。
+- 记账/转账时由 `applyAccountBalanceDelta` 显式增减 `balance`：收入 `+amount`、支出 `-amount`、转账转出账户 `-fromAmount`、转入账户 `+toAmount`；删除交易反向回补；更新交易先撤旧再施新。
+- `getTotalAssets/getTotalLiabilities/getAssetTrend` 等计算属性**直接读 `accounts`**，不再有 `accountsWithBalance` 中间层。
+- 历史导入的流水（SQL 脚本直插 transactions 表）**只进报表/统计，不碰余额**，这是预期行为，不是 bug。
+
+## 财富收益模型（my-bills，架构约定，勿改回）
+- **财富页收益卡片只有两个终值口径：`持仓收益`（当前持仓浮盈）与 `清仓收益`（已实现收益），不再出现「累计收益」**。用户明确否决「累计收益 = 持仓 + 清仓」这种需要心算相加的展示（参考券商 App 的「持仓盈亏 + 已实现盈亏」并列，而非基金平台的「持有收益 + 累计收益」）。
+- **成本冲减口径必须与 `aggregateHoldings` 完全一致**（冲减均价 = 当前剩余总成本 / 累计买入数量）。这是硬约束：持仓收益 = 市值 − 剩余成本，若两边冲减口径不同，「持仓收益 + 清仓收益」会对不上实际总收益；口径一致时两者之和恒等于「Σ卖出回款 + 期末市值 − Σ买入成本」。
+- **已实现收益（`computeRealizedProfit`）必须遍历全部流水（含清仓归档 `is_active=false` 的记录）**，这是它与 `aggregateHoldings`（只算 `is_active !== false`）最大的不同；同时要跳过 `archiveHolding` 写入的 `quantity=0` 清仓节点。
+- **两个收益卡片的内容必须区分（用户明确要求，勿做成一样）**：`持仓收益` → **走势曲线**（只画当前持仓的逐日浮盈，单线）；`清仓收益` → **逐笔清仓记录列表**（支持时间段筛选 + 收益升/降序切换，折算本位币比较，附原币种小字）。两者都用底部弹窗（`BottomSheet`）呈现，不是内联展开。
+- **列表/筛选类控件必须照抄 `Search.tsx` 筛选面板的样式，禁止自创**（用户明确要求"UI 要统一、文字提示简洁、不许风格东一块西一块"）：chip = `px-4 py-2 rounded-full text-sm font-medium border`，选中 `bg-brand text-ink border-brand-strong`、未选 `bg-surface text-ink-2 border-[#e6e3da]`；分组标题 = `text-sm font-medium text-ink mb-2`；date input = `px-3 py-2.5 rounded-xl bg-surface border border-[#e6e3da] text-sm text-ink outline-none`。
+- **持仓收益曲线**：持仓量 `q(t)` / 成本 `C(t)` 由本地流水按日重建（0 请求）；历史价走批量接口 `POST /api/quote/history-batch`（`runHistoryBatch`，内部限量并发 6，N 只持仓 → 1 次请求）；缺失日（周末/假期/停牌）用最近交易日价**前向填充**；Y 轴用 `LineChart` 的 `yTickFormatter` 按整轴量级统一单位（默认 `formatCompact` 会在同一轴混出「1.20万」与「10,000.00」）。
+- **曲线时间档位：「近一周」/「近一月」/ 滚轮选任意自然月**（不再有「近3月」——一次性拉 90 天属大批量）。用户说的**「一周」指 5 个交易日、不是 5 个自然日**：做法是请求 15 个自然日以保证覆盖 5 个交易日，再前端 `slice(-5)` 展示（**接口无需改动**）。
+- **月份选择器不要用 `input[type=date]`**（会带出具体日期、精度不对），改用 `WheelPicker` 年+月双滚轮 + 下拉浮层（照抄 `Reports.tsx` 490-528 的写法：透明遮罩关闭 + `absolute top-full` 浮层 + 两列 `w-[80px] visibleCount={3}`）。
+- **历史行情支持按日期区间查询**（`fetchHistoryRange`；接口 `start`/`end` 优先于 `period`，缓存 key 含区间）：A股走**东方财富 K线**（`push2his.eastmoney.com/api/qt/stock/kline/get?secid=1.600519&klt=101&fqt=1&beg=YYYYMMDD&end=YYYYMMDD`，因为**新浪 K线只能取「最近 N 条」、无法定位历史区间**）；美股/港股/黄金走 Yahoo `period1`/`period2`；基金走东财 `lsjz` 的 `startDate`/`endDate`。
+- **曲线交互（`LineChart` + `ProfitTrend`）：必须「铺满容器宽度 + 左右滑动平移时间窗口」，禁止做成「内容超宽横向滚动」**。用户先后否决过两种错误做法：①把内容宽写死 → 大屏右侧大片空白；②内容超宽可横向滚动 → **小屏只能看到一部分数据**。正确做法：图表宽度恒等于容器宽（X 轴 `autoSkip` 自动抽稀标签），水平拖动（≥40px 阈值，`touch-action: pan-y`）由调用方**整体平移数据窗口**：每次 15 天，向前看更早、向后看更晚且不超过今天（滑动后清掉 chip 选中态，mode 置 `custom`）。
+- **滑动/切月都只请求目标区间**：段结果按「标的 + 区间」缓存在内存与 localStorage（纯历史区间永久有效、含今天的当天有效），来回滑动命中缓存即 0 请求。Y 轴用 canvas 原生绘制即可（不滚动自然不会跑，无需 DOM 复刻）。
+- **月份滚轮必须防抖，避免"滚一次发一次请求"**：滚动过程中只更新「待选月份」（chip 实时反馈、**不发请求**），停止 400ms 后才真正加载；收起浮层时若有待选值则**立即应用**（不必等防抖）。实测：滚 3 次 → 原来 3 次请求，现在只 1 次。
+- **历史请求统一透传 `AbortSignal`**（`fetchQuoteHistoryBatch(items, { start, end, signal })`）：新请求发起前 `abort()` 旧的，`AbortError` 静默忽略。注意 `quoteApi` 的网络错误兜底 catch 里要先判断 `e?.name === 'AbortError'` 再抛中文提示，否则取消会被误报成"连接失败"。
+- **筛选类 UI 的 className 统一收在 `apps/pwa/src/utils/ui.ts`**（`filterChipCls` / `FILTER_LABEL_CLS` / `FILTER_INPUT_CLS`，源自 `Search.tsx` 筛选面板）。新做筛选控件直接用这些，**不要各处复制粘贴或自创**。
 
 ## Supabase RLS 约定（my-bills，硬约束）
 - 本项目的离线同步引擎（sync-engine.ts）用**anon key + 自定义请求头 `x-user-id`** 直连 REST，并不携带已登录用户的 JWT。因此**所有表的 RLS 策略必须用 `public.get_current_user_id()`（读取 `x-user-id` 头），绝不能写 `auth.uid() = user_id`**——后者返回 anon key 的 sub（或 null），插入/更新会被 42501 RLS 拦截报 401。

@@ -547,7 +547,7 @@ export function WealthDetail() {
       {/* 方案二：左重右精 · 主次分明 · 响应式字号 */}
       <div className="bg-surface rounded-3xl p-4 border border-brand-tint mb-3">
         <div className="flex items-center justify-between">
-          {/* 左侧：超大总市值 + 累计收益 */}
+          {/* 左侧：超大总市值 + 持仓收益 */}
           <div className="min-w-0 flex-1">
             <div className="text-ink-2 mb-1" style={{ fontSize: 'clamp(10px, 2vw, 13px)' }}>当前市值</div>
             <div
@@ -557,7 +557,7 @@ export function WealthDetail() {
               {mv == null ? '—' : fmtWithSymbol(mv, cur)}
             </div>
             <div className="mt-2">
-              <div className="text-ink-2 mb-0.5" style={{ fontSize: 'clamp(10px, 2vw, 13px)' }}>累计收益</div>
+              <div className="text-ink-2 mb-0.5" style={{ fontSize: 'clamp(10px, 2vw, 13px)' }}>持仓收益</div>
               <div className="flex items-baseline gap-1.5 flex-wrap">
                 <span
                   className="font-bold font-amount whitespace-nowrap"

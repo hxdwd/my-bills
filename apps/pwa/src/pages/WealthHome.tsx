@@ -1,11 +1,15 @@
 import { useMemo, useState, useRef, useEffect } from 'react'
+import type { CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useWealthValuation, todayProfit, toBaseCurrency, ValuationWithHolding } from '../hooks/useWealthValuation'
-import { marketToCategory, marketLabel, AssetCategory } from '../db/wealthStore'
+import { useWealthValuation, todayProfit, toBaseCurrency } from '../hooks/useWealthValuation'
+import { marketToCategory, marketLabel, AssetCategory, getRealizedProfitEvents, RealizedEvent } from '../db/wealthStore'
 import type { Market } from '../utils/quoteApi'
-import { fmtMoney as fmtMoneyUtil, CURRENCY_SYMBOL, CURRENCY_LABEL, BASE_CURRENCIES, Currency } from '../utils/currency'
+import { fmtMoney as fmtMoneyUtil, CURRENCY_SYMBOL, CURRENCY_LABEL, BASE_CURRENCIES, Currency, toBase } from '../utils/currency'
 import CashIcon from '../components/ui/CashIcon'
-import { MoreHorizontal, Upload, BarChart3, Sparkles } from 'lucide-react'
+import BottomSheet from '../components/ui/BottomSheet'
+import { ProfitTrend } from '../components/wealth/ProfitTrend'
+import { RealizedList } from '../components/wealth/RealizedList'
+import { MoreHorizontal, Upload, BarChart3, Sparkles, ChevronRight } from 'lucide-react'
 
 const CAT_META: Record<AssetCategory, { label: string; color: string }> = {
   stock: { label: '股票', color: '#c96442' },
@@ -22,11 +26,6 @@ function catTint(color: string): string {
   return `rgba(${r}, ${g}, ${b}, 0.1)`
 }
 
-function fmtMoney(n: number | null | undefined): string {
-  if (n == null || isNaN(n)) return '—'
-  return n.toLocaleString('zh-CN', { maximumFractionDigits: 2 })
-}
-
 // 红绿着色
 function colorOf(n: number | null | undefined): string {
   if (n == null || isNaN(n) || n === 0) return '#6b7280'
@@ -37,14 +36,41 @@ function sign(n: number | null | undefined): string {
   return n >= 0 ? '+' : ''
 }
 
-function Card({ title, value, sub, color, large }: { title: string; value: string; sub?: string; color?: string; large?: boolean }) {
-  return (
-    <div className="flex-1 bg-surface rounded-2xl p-3 border border-brand-tint">
-      <div className="text-xs text-ink-2 mb-1">{title}</div>
-      <div className={`font-amount whitespace-nowrap ${large ? 'text-xl font-extrabold amount-fluid-lg' : 'text-lg font-bold amount-fluid-sm'}`} style={{ color }}>{value}</div>
+// 四张卡片统一用大档流体字号（.amount-fluid-lg）。
+// 兜底：等宽字体下单卡约可容 11 个字符，超出时按比例缩小，避免 nowrap 撑破卡片。
+const AMOUNT_MAX_CHARS = 11
+function amountScale(value: string): number {
+  const len = value.length
+  if (len <= AMOUNT_MAX_CHARS) return 1
+  return Math.max(0.6, AMOUNT_MAX_CHARS / len)
+}
+
+function Card({ title, value, sub, color, onClick }: {
+  title: string; value: string; sub?: string; color?: string
+  /** 传入则卡片可点击（弹出对应收益详情） */
+  onClick?: () => void
+}) {
+  const cls = `w-full text-left bg-surface rounded-2xl p-3 border border-brand-tint transition-colors ${
+    onClick ? 'cursor-pointer active:scale-[0.98]' : ''
+  }`
+  const body = (
+    <>
+      <div className="text-xs text-ink-2 mb-1 flex items-center justify-between gap-1">
+        <span className="truncate">{title}</span>
+        {onClick && <ChevronRight size={12} className="shrink-0 text-ink-3" />}
+      </div>
+      <div
+        className="font-amount font-bold amount-fluid-lg leading-tight"
+        style={{ color, '--amount-scale': amountScale(value) } as CSSProperties}
+      >
+        {value}
+      </div>
       {sub && <div className="text-[10px] text-ink-3 mt-0.5">{sub}</div>}
-    </div>
+    </>
   )
+  return onClick
+    ? <button type="button" onClick={onClick} className={cls}>{body}</button>
+    : <div className={cls}>{body}</div>
 }
 
 type FilterCat = 'all' | AssetCategory | Market
@@ -52,9 +78,22 @@ type SortKey = 'market_value' | 'profit_loss' | 'profit_rate'
 type ViewMode = 'today' | 'total'
 
 export function WealthHome() {
-  const { results, lastUpdated, error, refresh, rates, baseCurrency, setBaseCurrency, summary } = useWealthValuation()
+  const { results, holdings, lastUpdated, error, refresh, rates, baseCurrency, setBaseCurrency, summary } = useWealthValuation()
   const navigate = useNavigate()
   const [refreshing, setRefreshing] = useState(false)
+  // 收益详情弹窗：'holding'（持仓收益走势）/ 'realized'（清仓收益记录）/ null（关闭）
+  const [profitSheet, setProfitSheet] = useState<'holding' | 'realized' | null>(null)
+
+  // 已实现（清仓）收益事件：纯本地流水计算，不发起网络请求。
+  // 依赖 lastUpdated，每次估值刷新后重算（清仓/编辑流水后能及时反映）。
+  const [realized, setRealized] = useState<RealizedEvent[]>([])
+  useEffect(() => {
+    let cancelled = false
+    getRealizedProfitEvents()
+      .then(ev => { if (!cancelled) setRealized(ev) })
+      .catch(() => { /* 读取失败不阻塞首页展示 */ })
+    return () => { cancelled = true }
+  }, [lastUpdated])
   const [filter, setFilter] = useState<FilterCat>('all')
   const [sortKey, setSortKey] = useState<SortKey>('market_value')
   const [fabOpen, setFabOpen] = useState(false)
@@ -112,7 +151,7 @@ export function WealthHome() {
   const toggleViewMode = () => {
     const next: ViewMode = viewMode === 'today' ? 'total' : 'today'
     setViewMode(next)
-    const label = next === 'today' ? '当日收益视角' : '累计收益视角'
+    const label = next === 'today' ? '当日收益视角' : '持仓收益视角'
     setViewToast('')
     if (viewToastTimer.current) clearTimeout(viewToastTimer.current)
     setViewToast(label)
@@ -141,6 +180,11 @@ export function WealthHome() {
 
   // 按本位币折算后的汇总（各币种→本位币合计）
   const { baseMV, basePL } = summary()
+  // 清仓收益（已实现）：按标的币种逐笔折算到本位币后求和
+  const realizedTotal = useMemo(
+    () => realized.reduce((s, e) => s + toBase(e.amount, e.currency as Currency, baseCurrency, rates), 0),
+    [realized, baseCurrency, rates],
+  )
   const todayTotal = useMemo(
     () => results.reduce((s, r) => {
       const cur = (r.converted_currency ?? r.currency ?? 'CNY') as Currency
@@ -172,13 +216,13 @@ export function WealthHome() {
     const sorted = [...arr]
     sorted.sort((a, b) => {
       if (sortKey === 'profit_rate') {
-        // 当日视角按涨跌幅，累计视角按累计收益率
+        // 当日视角按涨跌幅，持仓视角按持仓收益率
         const va = viewMode === 'today' ? (a.change_percent ?? -Infinity) : (a.profit_rate ?? -Infinity)
         const vb = viewMode === 'today' ? (b.change_percent ?? -Infinity) : (b.profit_rate ?? -Infinity)
         return vb - va
       }
       if (sortKey === 'profit_loss') {
-        // 当日视角按今日收益额，累计视角按累计盈亏
+        // 当日视角按今日收益额，持仓视角按持仓盈亏
         const va = viewMode === 'today' ? todayProfit(a) : (a.profit_loss ?? -Infinity)
         const vb = viewMode === 'today' ? todayProfit(b) : (b.profit_loss ?? -Infinity)
         return vb - va
@@ -311,12 +355,40 @@ export function WealthHome() {
         <div className="fixed inset-0 z-20" onClick={toggleCurrencyPop} aria-hidden />
       )}
 
-      {/* 三卡片（按本位币折算合计） */}
-      <div className="flex gap-2 mb-4">
-        <Card title={`总市值 (${CURRENCY_SYMBOL[baseCurrency]})`} value={fmtMoneyUtil(baseMV, 0)} large />
+      {/* 四卡片（按本位币折算合计）：总市值 / 今日收益 / 持仓收益 / 清仓收益
+          后两者可点击，点击弹出对应的收益详情弹窗 */}
+      <div className="grid grid-cols-2 gap-2 mb-4">
+        <Card title={`总市值 (${CURRENCY_SYMBOL[baseCurrency]})`} value={fmtMoneyUtil(baseMV, 0)} />
         <Card title="今日收益" value={`${sign(todayTotal)}${fmtMoneyUtil(todayTotal, 0)}`} color={colorOf(todayTotal)} />
-        <Card title="累计收益" value={`${sign(basePL)}${fmtMoneyUtil(basePL, 0)}`} color={colorOf(basePL)} />
+        <Card
+          title="持仓收益"
+          value={`${sign(basePL)}${fmtMoneyUtil(basePL, 0)}`}
+          color={colorOf(basePL)}
+          onClick={() => setProfitSheet('holding')}
+        />
+        <Card
+          title="清仓收益"
+          value={`${sign(realizedTotal)}${fmtMoneyUtil(realizedTotal, 0)}`}
+          color={colorOf(realizedTotal)}
+          onClick={() => setProfitSheet('realized')}
+        />
       </div>
+
+      {/* 收益详情弹窗（底部上滑）：持仓收益 → 走势曲线；清仓收益 → 逐笔记录 */}
+      <BottomSheet
+        isOpen={profitSheet !== null}
+        onClose={() => setProfitSheet(null)}
+        title={profitSheet === 'realized' ? '清仓收益记录' : '持仓收益走势'}
+      >
+        {profitSheet === 'holding' && (
+          <div className="px-4 pt-3 pb-4">
+            <ProfitTrend holdings={holdings} base={baseCurrency} rates={rates} />
+          </div>
+        )}
+        {profitSheet === 'realized' && (
+          <RealizedList events={realized} base={baseCurrency} rates={rates} />
+        )}
+      </BottomSheet>
 
 
       {error && <div className="text-xs text-red-500 mb-3">{error}</div>}
@@ -389,13 +461,13 @@ export function WealthHome() {
         </div>
 
         <div className="flex items-center gap-1">
-          {/* 视角切换按钮：眼睛图标，有神/无神区分当日/累计 */}
+          {/* 视角切换按钮：眼睛图标，有神/无神区分当日/持仓 */}
           <div className="relative">
             <button
               onClick={toggleViewMode}
               data-testid="view-mode-toggle"
-              title={viewMode === 'today' ? '当前：当日收益视角，点击切换' : '当前：累计收益视角，点击切换'}
-              aria-label={viewMode === 'today' ? '切换至累计收益视角' : '切换至当日收益视角'}
+              title={viewMode === 'today' ? '当前：当日收益视角，点击切换' : '当前：持仓收益视角，点击切换'}
+              aria-label={viewMode === 'today' ? '切换至持仓收益视角' : '切换至当日收益视角'}
               className="w-7 h-7 flex items-center justify-center rounded-lg text-ink-3 hover:text-ink hover:bg-brand-tint transition-colors"
             >
               {viewMode === 'today' ? (

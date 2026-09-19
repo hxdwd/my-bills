@@ -1,5 +1,5 @@
 import type { ApiResponse, HistoryPoint, Market, HistoryPeriod } from '../../../src/types/api'
-import { runHistory } from '../../../src/core/valuation/index'
+import { runHistory, runHistoryRange } from '../../../src/core/valuation/index'
 
 export const onRequestGet = async (context: any) => {
   const { request, env } = context
@@ -8,13 +8,18 @@ export const onRequestGet = async (context: any) => {
   const symbol = url.searchParams.get('symbol')
   const market = (url.searchParams.get('market') as Market) || undefined
   const period = (url.searchParams.get('period') as HistoryPeriod) || '1m'
+  // start/end 同时给出时按日期区间取（优先于 period）
+  const start = url.searchParams.get('start') || undefined
+  const end = url.searchParams.get('end') || undefined
 
   if (!symbol) {
     return json({ code: 400, message: '缺少必填参数 symbol' }, 400)
   }
 
   try {
-    const data: HistoryPoint[] = await runHistory(symbol, market, period, env.QUOTE_CACHE)
+    const data: HistoryPoint[] = start && end
+      ? await runHistoryRange(symbol, market, start, end, env.QUOTE_CACHE)
+      : await runHistory(symbol, market, period, env.QUOTE_CACHE)
     return json({ code: 0, message: 'ok', data }, 200)
   } catch (e: any) {
     console.error('[history] error', e)

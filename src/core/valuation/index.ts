@@ -6,6 +6,8 @@ import type {
   Currency,
   BatchResponseData,
   QuoteCacheValue,
+  HistorySeries,
+  HistoryBatchItem,
 } from '../../types/api'
 import { parseSymbol, quoteCacheKey, historyCacheKey } from './parser'
 import {
@@ -19,7 +21,7 @@ import {
   setGoldCache,
   FxCache,
 } from './cache'
-import { fetchQuote, fetchHistory, getAdapters } from './adapter'
+import { fetchQuote, fetchHistory, fetchHistoryRange, getAdapters } from './adapter'
 import { log } from './logger'
 
 const SUPPORTED_CURRENCIES: Currency[] = ['CNY', 'USD', 'HKD']
@@ -357,6 +359,76 @@ export async function runHistory(
     console.error('[history] fetchHistory failed', p.market, symbol, period, e?.message || e)
     return []
   }
+}
+
+// 按日期区间取历史走势（缓存 key 含区间，与 period 档位互不干扰）。
+// 前端按月选择 / 滑动加载相邻时段时使用，避免一次性拉大区间。
+export async function runHistoryRange(
+  symbol: string,
+  market: Market | undefined,
+  start: string,
+  end: string,
+  kv: KVNamespace
+): Promise<Array<{ date: string; price: number }>> {
+  const p = parseSymbol(symbol, market)
+  const key = `history:${p.market}:${p.cacheKeySymbol}:${start}_${end}`
+  const cached = await getHistoryCache(kv, key)
+  if (cached) {
+    try {
+      return JSON.parse(cached)
+    } catch {
+      // 忽略损坏缓存，继续回源
+    }
+  }
+  try {
+    const data = await fetchHistoryRange(symbol, p.market, start, end)
+    if (data.length > 0) {
+      await setHistoryCache(kv, key, JSON.stringify(data))
+    }
+    return data
+  } catch (e: any) {
+    console.error('[historyRange] fetchHistoryRange failed', p.market, symbol, start, end, e?.message || e)
+    return []
+  }
+}
+
+// 批量历史走势：对多只持仓一次性取日线，避免前端发起 N 次单只请求。
+// 内部限量并发（默认 6），防止瞬时打爆外部数据源；单只失败只返回空点序列，
+// 不阻塞其它标的（缺失标的由前端按「无数据」处理）。
+// 传入 range 时按日期区间取，否则按 period 档位取。
+export async function runHistoryBatch(
+  items: HistoryBatchItem[],
+  period: string,
+  kv: KVNamespace,
+  concurrency = 6,
+  range?: { start: string; end: string }
+): Promise<HistorySeries[]> {
+  const total = items.length
+  const out: HistorySeries[] = new Array(total)
+  let cursor = 0
+
+  async function worker(): Promise<void> {
+    while (true) {
+      const idx = cursor++
+      if (idx >= total) return
+      const it = items[idx]
+      const market = parseSymbol(it.symbol, it.market).market
+      try {
+        const points = range
+          ? await runHistoryRange(it.symbol, it.market, range.start, range.end, kv)
+          : await runHistory(it.symbol, it.market, period, kv)
+        out[idx] = { symbol: it.symbol, market, points }
+      } catch (e: any) {
+        console.error('[historyBatch] item failed', it.market, it.symbol, e?.message || e)
+        out[idx] = { symbol: it.symbol, market, points: [] }
+      }
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(Math.max(concurrency, 1), total) }, () => worker())
+  await Promise.all(workers)
+  // 极端情况下（worker 异常）过滤空洞，保证返回结构完整
+  return out.filter((r): r is HistorySeries => Boolean(r))
 }
 
 function round2(n: number): number {

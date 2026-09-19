@@ -74,8 +74,11 @@ async function requestJSON<T>(init: RequestInit & { path: string }): Promise<T> 
       method: init.method || 'GET',
       headers: { 'Content-Type': 'application/json', ...(init.headers || {}) },
       body: init.body,
+      signal: init.signal,
     })
-  } catch {
+  } catch (e: any) {
+    // 主动取消（AbortController）：原样抛出，由调用方识别并忽略
+    if (e?.name === 'AbortError') throw e
     // fetch 本身 reject：网络不通 / 服务未启动（浏览器原生 "Failed to fetch"）
     console.log(`[perf] ${init.method || 'GET'} ${init.path} failed ${(performance.now() - _t0).toFixed(0)}ms`)
     throw new Error(QUOTE_NETWORK_ERROR)
@@ -94,8 +97,8 @@ async function requestJSON<T>(init: RequestInit & { path: string }): Promise<T> 
   return json.data as T
 }
 
-async function postJSON<T>(path: string, body: unknown): Promise<T> {
-  return requestJSON<T>({ path, method: 'POST', body: JSON.stringify(body) })
+async function postJSON<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+  return requestJSON<T>({ path, method: 'POST', body: JSON.stringify(body), signal })
 }
 
 async function getJSON<T>(path: string): Promise<T> {
@@ -135,4 +138,25 @@ export type HistoryPeriod = '1m' | '3m' | '1y'
 export function fetchQuoteHistory(symbol: string, market?: Market, period: HistoryPeriod = '1m'): Promise<HistoryPoint[]> {
   const qs = `?symbol=${encodeURIComponent(symbol)}&period=${period}${market ? `&market=${market}` : ''}`
   return getJSON<HistoryPoint[]>(`/api/quote/history${qs}`)
+}
+
+// 批量历史走势返回结构：后端一次并发取多只标的的日线，前端 N 只持仓只需 1 次请求。
+export interface HistorySeries {
+  symbol: string
+  market: Market
+  /** 升序日线序列；该标的取数失败时为空数组 */
+  points: HistoryPoint[]
+}
+
+/** 批量历史走势：一次请求取多只标的的日线（组合收益曲线用）。
+ * 传 start+end 时按日期区间取（按月查看 / 滑动加载相邻时段），否则按 period 档位取。
+ * 传 signal 可取消在途请求（切档/滚动时避免无用请求堆积）。 */
+export function fetchQuoteHistoryBatch(
+  items: { symbol: string; market?: Market }[],
+  opts: { period?: HistoryPeriod; start?: string; end?: string; signal?: AbortSignal } = {},
+): Promise<HistorySeries[]> {
+  if (items.length === 0) return Promise.resolve([])
+  const { period = '1m', start, end, signal } = opts
+  return postJSON<{ results: HistorySeries[] }>('/api/quote/history-batch', { items, period, start, end }, signal)
+    .then(d => Array.isArray(d?.results) ? d.results : [])
 }

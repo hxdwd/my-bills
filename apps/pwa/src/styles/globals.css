@@ -104,7 +104,9 @@ select {
    注：圆心数字额外由 JS 按容器/字符数动态缩字号（见 DonutChart），此处不再折行，
    改为单行 nowrap——宁可缩小也不断词，保证财务数字不被错误折行。 */
 .amount-fluid-lg {
-  font-size: clamp(14px, 6.4vw, 28px);
+  /* --amount-scale：调用方可在数字过长时按比例缩小（默认 1，不影响既有调用）。
+     用变量而不是内联 font-size，是为了让下面的移动端 media query 依然生效。 */
+  font-size: calc(clamp(14px, 6.4vw, 28px) * var(--amount-scale, 1));
   white-space: nowrap;
   min-width: 0;
 }
@@ -122,7 +124,7 @@ select {
     letter-spacing: -0.02em;
   }
   .amount-fluid-lg {
-    font-size: clamp(13px, 5.6vw, 24px);
+    font-size: calc(clamp(13px, 5.6vw, 24px) * var(--amount-scale, 1));
     letter-spacing: -0.02em;
   }
 }
