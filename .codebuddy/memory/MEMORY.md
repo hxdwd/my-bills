@@ -65,6 +65,7 @@
   - 生成脚本命名 `gen_import_sql_<批次>.py`，写入 tags 的白名单写死在脚本里，可复跑。
   - 用户原则：有分歧疑惑的问题**必须问**，不要自行处理。
 - **版本号机制（已修复"关于版本不随发布更新"）**：`package.json` 的 `version` 是**唯一真相源**。`vite.config.ts` 用 `define: { __APP_VERSION__: JSON.stringify(pkg.version) }` 注入；`apps/pwa/src/vite-env.d.ts` 声明 `declare const __APP_VERSION__: string`；`Settings.tsx` 的 `APP_VERSION = __APP_VERSION__`，"关于"与 footer 均用之。**每次发布：bump `package.json` version + 在 `VERSION_LOGS` 头部追加一条**，版本号自动跟随，无需手改显示处。注意 `import.meta.env.VITE_*` 这种 define 键不稳，必须用裸全局 `__APP_VERSION__`。
+- **push 必须显式写 SSH 地址**：`origin` 配置的是 `git@github.com:hxdwd/my-bills.git`，但在没有 upstream 的情况下直接 `git push` 会落到 HTTPS 凭据并报 `Invalid username or token. Password authentication is not supported for Git operations`。改用 `git push git@github.com:hxdwd/my-bills.git main` 即可（SSH key 正常，可用 `ssh -T git@github.com` 自检）。
 - **版本更新说明（CHANGELOG）维护约定**：入口在设置页"其他"板块的"版本更新"（BottomSheet 展示），数据在 `apps/pwa/src/pages/Settings.tsx` 顶部的 `VERSION_LOGS` 常量。**每次发布(push)在数组【头部】追加一条**，其 `version` 应与 `package.json` 的 `version` 一致。内容**只面向用户**说明"新增/优化/修复了什么功能"，**绝不泄露开发细节**。目前种子为 v1.0.1–v1.1.0 共 10 条，日期取自真实 git 提交历史（2026-07-06 首发 ~ 2026-07-18），功能均对应真实提交。
 
 ## 账户余额模型（my-bills，架构约定，勿改回）
