@@ -104,6 +104,11 @@
 - `Calendar.tsx` 按「M月D日」分组**忽略年份**，跨年同月会被并进当月。
 - `useHabitBadge.anyHabitEnabled` 恒为 `true`（`results` 恒等于 `HABITS` 长度）。
 - `lib/db/local-operations.ts` 有 15 条 `markDirty()` 返回类型不匹配的 tsc 报错（`{_sync_status,_updated_at_local}` 推不出记录类型），属长期噪音，不是新问题。
+
+### 项目约定
+- **`docs/summary.md` 是「时间倒序」：最新一天的记录放在文件最上方**（紧跟 `# 工作记录汇总` + 引用块 + `---` 之后，插在**第一个 `## ` 标题之前**），不是追加到末尾。文件第 3 行已明写"按时间倒序追加，最新在最上方"。条目格式：`## YYYY-MM-DD：标题` / `## YYYY-MM-DD — 标题`，下面用 `### 一、…`、`### 二、…` 分节；日期间用 `---` 分隔。
+- **本仓库的 git 提交信息**：`fix:` / `feat:` / `refactor:` / `docs:` + 中文描述，允许一条大提交覆盖当天多块改动（参照 `d328bc4`）。
+- **push 需要显式使用 SSH 地址**（见提交 `cfb29a0` 的说明）。
 - **判断 tsc 报错是否自己引入**：`git stash push -m baseline -- <文件>` → 跑 tsc → `git stash pop`，用 HEAD 版本做基线。本项目 `AppContext.tsx` 长期存在 3 个预存类型错误（`big_expense_threshold` 赋值、`string|null`、Provider 缺 `deleteBill`），不是新引入的。
 
 ## 构建 / 验证（防误判）
