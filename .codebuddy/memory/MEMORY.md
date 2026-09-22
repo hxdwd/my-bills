@@ -92,6 +92,12 @@
 - **东财基金净值 `lsjz` 单页硬截断 20 条**（`pageSize=50/200` 无效，`TotalCount` 正确）→ 必须 `pageIndex` 翻页（`fetchFundNav`，4 路并发）。
 - **改任何上游取数逻辑后，必须同时递增 `HISTORY_CACHE_VERSION`（后端 KV）与 `SEG_CACHE_VERSION`（前端段缓存）**，否则旧缓存会让修复"看起来没生效"。
 - **增量同步依赖迁移 021**（已应用线上）：缺 `update_*_updated_at` 触发器会导致行更新时 `updated_at` 不变 → 指纹不变 → **其他设备永远拉不到该更新**，且不报错。新增可同步的表时必须同步补触发器。
+- **⚠️ 同一上游在不同网络环境行为不同，必须多源兜底**。实测：`push2his.eastmoney.com`（东财 K 线）**在 Cloudflare Workers 里返回空 data**、Yahoo `GC=F` 在 Workers 里也拿不到；而这两者**在本机都正常**，`api.fund.eastmoney.com` 与 Yahoo 美股接口则在两边都正常。→ **"本地跑通" ≠ "线上可用"**：凡涉及外部数据源，改完必须打**线上接口**复验。
+  - 港股/A股：**东财 K 线 + 腾讯日K 双源竞速**。腾讯 `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=<code>,day,<start>,<end>,640,qfq`，代码 `hk07709` / `sh600519` / `sz000001` / `bj8xxxxx`；返回 `data[code].qfqday|day|hfqday`，每行 `[日期,开,收,高,低,量]` → 取索引 2。**实测与东财逐日完全一致**（07709 各 22 条偏差 0.00%；600519 末值 1253.800 = 东财 1253.8），可互换。
+  - 黄金：**Yahoo GC=F + 新浪外盘 GC 双源**。`https://stock.finance.sina.com.cn/futures/api/jsonp.php/var%20_GC=/GlobalFuturesService.getGlobalFuturesDailyKLine?symbol=GC`（JSONP，取 `text.indexOf('=(')` 到 `lastIndexOf(')')`），日收盘与 Yahoo 偏差 ≤2%；黄金只取形状（末点等比缩放到 AU9999 现价），可接受。
+  - 实现：`raceNonEmpty(label, sources[])` —— **并发竞速，谁先返回非空用谁**；全部失败才返回 `[]`，但**必须 `console.error` 打日志**（原来 `catch → []` 静默吞掉，是这次排查最耗时的地方：线上只能看到"曲线少一块"，查不出原因）。
+- **诊断手法：同标的不同代码路径对比**。`period` 走 `fetchHistory`、区间走 `fetchHistoryRange`；A股 `period` 走新浪（Workers 可达 ✓）、区间走东财（✗）→ 一比对就把问题锁定到"某一个上游 + 某一个网络环境"，而不是漫无目的地猜。
+- **KV 历史缓存会掩盖上游故障**：黄金历史在线上其实一直是空的，但因为缓存里有旧值所以"看起来正常"。**递增 `HISTORY_CACHE_VERSION` 强制回源后才会暴露** —— 所以"改完缓存版本号后线上某块数据变空"要优先怀疑上游本来就拿不到，而不是新代码写错了。
 
 ### 审查清单（今天实际踩到的回归模式，改"批量化/记忆化/门控"时逐条对照）
 1. **批量写入后副作用仍无条件执行**：把逐条 `await X()` 改成"先构建 payloads → 一次 bulkPut"时，原先"写在成功之后"的副作用（如扣款）会**提前到写入之前**，失败时照跑 → 钱/状态凭空变化。副作用必须包在 `if (ok > 0)` 里。

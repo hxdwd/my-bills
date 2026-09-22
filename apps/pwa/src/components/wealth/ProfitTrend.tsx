@@ -24,7 +24,7 @@ import { filterChipCls } from '../../utils/ui'
 const CACHE_PREFIX = 'wealth-hist-seg:'
 // 段缓存结构版本：取数语义变更后递增，旧缓存自动视为未命中并重取，
 // 避免"代码改了、页面却还在用旧的残缺数据"（v2：修复基金历史被上游截断到 20 条）。
-const SEG_CACHE_VERSION = 2
+const SEG_CACHE_VERSION = 3
 const HOLDING_COLOR = '#c96442'
 const MONTH_DAYS = 30 // 「近一月」窗口（自然日）
 const WEEK_REQUEST_DAYS = 15 // 「近一周」请求窗口（自然日，保证覆盖 5 个交易日）

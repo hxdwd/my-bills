@@ -132,7 +132,9 @@ export function quoteCacheKey(market: Market, symbol: string): string {
 // 历史行情 KV key 版本号：**上游取数逻辑变更后必须递增**，否则旧的残缺缓存会被继续复用，
 // 导致"代码改了线上却没变化"。
 // v2：修复东财基金净值接口单页只返回 20 条、使区间开头缺数据的问题。
-export const HISTORY_CACHE_VERSION = 'v2'
+// v3：港股/A股历史改走「东财 K 线 + 腾讯」双源、黄金改走「Yahoo GC=F + 新浪 GC」双源
+//     （东财 K 线 与 Yahoo GC=F 在 Cloudflare Workers 里取不到数据，必须换源）。
+export const HISTORY_CACHE_VERSION = 'v3'
 
 // 历史走势 KV key
 export function historyCacheKey(market: Market, symbol: string, period: string): string {

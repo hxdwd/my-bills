@@ -465,37 +465,44 @@ export async function fetchHistory(
   if (market === 'GOLD') {
     const rangeMap: Record<string, string> = { '1m': '1mo', '3m': '3mo', '1y': '1y' }
     const range = rangeMap[period] ?? '1mo'
+    const daysMap: Record<string, number> = { '1m': 30, '3m': 90, '1y': 250 }
     // 1) 当前 AU9999 实时价（元/克）作为缩放基准
     const base = await fetchGold(symbol)
-    // 2) Yahoo 历史收盘价序列（美元/盎司）。数据量随周期增大，
-    // 沙箱出网较慢，放宽超时避免 3mo/1y 被中断。
-    const yUrl = `https://query1.finance.yahoo.com/v8/finance/chart/GC=F?range=${range}&interval=1d`
-    const yRes = await fetchWithTimeout(yUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AssetValuation/1.0)' },
-    }, 8000)
-    if (!yRes.ok) throw new Error(`goldHist yahoo http ${yRes.status}`)
-    const yJson = (await yRes.json()) as any
-    const yResult = yJson?.chart?.result?.[0]
-    if (!yResult) throw new Error('goldHist yahoo no result')
-    const timestamps: number[] = yResult.timestamp ?? []
-    const closes: number[] = yResult.indicators?.quote?.[0]?.close ?? []
-    // 收集有效 (date, close)
-    const series: Array<{ date: string; close: number }> = []
-    for (let i = 0; i < timestamps.length; i++) {
-      const c = closes[i]
-      if (typeof c === 'number' && isFinite(c)) {
-        series.push({ date: new Date(timestamps[i] * 1000).toISOString().slice(0, 10), close: c })
+    // 2) 历史收盘价序列（美元/盎司）：Yahoo GC=F 为主、新浪外盘 GC 兜底。
+    // 数据量随周期增大、沙箱出网较慢，Yahoo 放宽超时避免 3mo/1y 被中断。
+    const fetchYahooGold = async (): Promise<HistPoint[]> => {
+      const yUrl = `https://query1.finance.yahoo.com/v8/finance/chart/GC=F?range=${range}&interval=1d`
+      const yRes = await fetchWithTimeout(yUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AssetValuation/1.0)' },
+      }, 8000)
+      if (!yRes.ok) throw new Error(`goldHist yahoo http ${yRes.status}`)
+      const yJson = (await yRes.json()) as any
+      const yResult = yJson?.chart?.result?.[0]
+      if (!yResult) throw new Error('goldHist yahoo no result')
+      const timestamps: number[] = yResult.timestamp ?? []
+      const closes: number[] = yResult.indicators?.quote?.[0]?.close ?? []
+      const out: HistPoint[] = []
+      for (let i = 0; i < timestamps.length; i++) {
+        const c = closes[i]
+        if (typeof c === 'number' && isFinite(c)) {
+          out.push({ date: new Date(timestamps[i] * 1000).toISOString().slice(0, 10), price: c })
+        }
       }
+      return out
     }
-    if (series.length === 0) throw new Error('goldHist yahoo empty')
+    const days = daysMap[period] ?? 30
+    const series = await raceNonEmpty(`GOLD ${symbol} ${period}`, [
+      fetchYahooGold,
+      () => fetchSinaGoldDaily(ymdDaysAgo(calendarDaysFor(days)), ymdDaysAgo(0)),
+    ])
+    if (series.length === 0) throw new Error('goldHist empty')
     // 3) 等比缩放：以最近一日收盘价为基准映射到 base 价
-    const lastClose = series[series.length - 1].close
+    const lastClose = series[series.length - 1].price
     if (!isFinite(lastClose) || lastClose <= 0) throw new Error('goldHist base close invalid')
-    const out: Array<{ date: string; price: number }> = series.map((s) => ({
+    return series.map((s) => ({
       date: s.date,
-      price: Math.round((base.price * s.close / lastClose) * 100) / 100,
+      price: Math.round((base.price * s.price / lastClose) * 100) / 100,
     }))
-    return out
   }
 
   // A股历史：新浪 K 线接口（按 period 映射 datalen 天数）
@@ -520,11 +527,19 @@ export async function fetchHistory(
   // 原先走 Yahoo，但 Yahoo 对 5 位港股代码（如 07266 / 07709）恒 404 / 400，
   // 导致港股历史一直为空数组（曲线整块缺港股浮盈）。
   if (market === 'HK') {
-    const secid = eastmoneySecidHK(p.cacheKeySymbol)
-    if (!secid) throw new Error(`hkHist secid invalid: ${symbol}`)
     const datalenMap: Record<string, number> = { '1m': 30, '3m': 90, '1y': 250 }
     const datalen = datalenMap[period] ?? 30
-    const rows = await fetchEastmoneyKline(secid, ymdDaysAgo(calendarDaysFor(datalen)), ymdDaysAgo(0))
+    const beg = ymdDaysAgo(calendarDaysFor(datalen))
+    const end = ymdDaysAgo(0)
+    const tx = tencentCodeHK(p.cacheKeySymbol)
+    const rows = await raceNonEmpty(`HK ${symbol} ${period}`, [
+      () => {
+        const secid = eastmoneySecidHK(p.cacheKeySymbol)
+        if (!secid) throw new Error(`hkHist secid invalid: ${symbol}`)
+        return fetchEastmoneyKline(secid, beg, end)
+      },
+      () => (tx ? fetchTencentKline(tx, beg, end) : Promise.resolve([])),
+    ])
     // 只保留最近 datalen 个交易日（接口按自然日窗口取，可能多取）
     return rows.length > datalen ? rows.slice(rows.length - datalen) : rows
   }
@@ -594,6 +609,110 @@ async function fetchEastmoneyKline(
   return out
 }
 
+// ---------------------------------------------------------------------------
+// 多源兜底
+//
+// 为什么必须有兜底：**同一个上游在不同网络环境下表现不同**。
+// 实测同一份代码：本机访问东财 K 线（push2his）与 Yahoo GC=F 都正常，
+// 但从 Cloudflare Workers 里两者都取不到数据（东财返回空 data、Yahoo 无 timestamp），
+// 而东财基金净值接口与 Yahoo 美股接口在两边都正常 —— 于是"本地跑通"不等于"线上可用"。
+// 这里为同一份数据准备多个来源，**谁先返回非空就用谁**。
+// ---------------------------------------------------------------------------
+
+type HistPoint = { date: string; price: number }
+
+/** 并发竞速多个数据源，返回第一个非空结果；全部为空/失败则返回 [] 并打日志。 */
+function raceNonEmpty(label: string, sources: Array<() => Promise<HistPoint[]>>): Promise<HistPoint[]> {
+  return new Promise((resolve) => {
+    let settled = 0
+    const onFail = () => {
+      if (++settled === sources.length) {
+        // 这条日志非常关键：历史上这条链路是"静默返回空数组"，
+        // 线上取不到数据时只能看到曲线少一块，查不出原因。
+        console.error(`[history] 所有数据源均失败: ${label}`)
+        resolve([])
+      }
+    }
+    for (const fn of sources) {
+      fn().then(
+        (d) => {
+          if (d && d.length > 0) resolve(d)
+          else onFail()
+        },
+        () => onFail()
+      )
+    }
+  })
+}
+
+/** 港股代码 → 腾讯代码（hk + 补足 5 位，例 07709 → hk07709） */
+function tencentCodeHK(code: string): string | null {
+  const m = /(\d{4,5})/.exec(code.trim())
+  return m ? `hk${m[1].padStart(5, '0')}` : null
+}
+
+/** 6 位 A股代码 → 腾讯代码（沪 sh / 深 sz / 北 bj） */
+function tencentCodeCN(cacheKeySymbol: string, sina: string): string | null {
+  if (/^(sh|sz|bj)\d{6}$/.test(sina)) return sina
+  const m = /(\d{6})/.exec(cacheKeySymbol.trim())
+  if (!m) return null
+  const n = m[1]
+  return `${/^[69]/.test(n) ? 'sh' : /^[48]/.test(n) ? 'bj' : 'sz'}${n}`
+}
+
+/**
+ * 腾讯日 K。**实测与东财逐日完全一致**（港股 07709 各 22 条、偏差 0.00%；
+ * A股 600519 末值 1253.800 = 东财 1253.8），且 `qfq` 前复权与东财 `fqt=1` 同口径，
+ * 所以两者可以互为备份、不会出现"换了源曲线就变样"。
+ * 返回结构：`data[code].qfqday | day | hfqday`，每行 `[日期, 开, 收, 高, 低, 量]` → 取索引 2 收盘。
+ */
+async function fetchTencentKline(code: string, beg: string, end: string): Promise<HistPoint[]> {
+  const url =
+    `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${code},day,${beg},${end},640,qfq`
+  const res = await fetchWithTimeout(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0', Referer: 'https://gu.qq.com/' },
+  })
+  if (!res.ok) throw new Error(`txKline ${code} http ${res.status}`)
+  const json = (await res.json()) as any
+  const d = json?.data?.[code] ?? {}
+  const rows: any[] = d.qfqday ?? d.day ?? d.hfqday ?? []
+  const out: HistPoint[] = []
+  for (const r of rows) {
+    const price = parseFloat(r?.[2])
+    if (r?.[0] && isFinite(price)) out.push({ date: String(r[0]).slice(0, 10), price })
+  }
+  return out.sort((a, b) => a.date.localeCompare(b.date))
+}
+
+/**
+ * 新浪「外盘期货」日 K（symbol=GC = COMEX 黄金），作为 Yahoo GC=F 的兜底。
+ * 同一个标的；实测与本机 Yahoo 的日收盘偏差 ≤2%（两家合约/收盘时点口径略有差异），
+ * 而黄金历史本来就只取**形状**（末点会等比缩放到 AU9999 现价），因此偏差可接受，
+ * 总比整块黄金从曲线里消失要好。
+ * 响应是 JSONP 文本：`var _GC=([{date,close,...},...])`。
+ */
+async function fetchSinaGoldDaily(start: string, end: string): Promise<HistPoint[]> {
+  const url =
+    'https://stock.finance.sina.com.cn/futures/api/jsonp.php/var%20_GC=/' +
+    'GlobalFuturesService.getGlobalFuturesDailyKLine?symbol=GC'
+  const res = await fetchWithTimeout(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0', Referer: 'https://finance.sina.com.cn/' },
+  })
+  if (!res.ok) throw new Error(`sinaGold http ${res.status}`)
+  const text = await res.text()
+  const i = text.indexOf('=(')
+  const j = text.lastIndexOf(')')
+  if (i < 0 || j <= i) throw new Error('sinaGold parse fail')
+  const arr = JSON.parse(text.slice(i + 2, j)) as Array<{ date: string; close: string }>
+  const out: HistPoint[] = []
+  for (const r of arr) {
+    const price = parseFloat(r?.close)
+    const date = String(r?.date ?? '')
+    if (date >= start && date <= end && isFinite(price)) out.push({ date, price })
+  }
+  return out.sort((a, b) => a.date.localeCompare(b.date))
+}
+
 // 交易日数 → 需要回溯的自然日数（按每周 5 个交易日折算，再留 7 天缓冲覆盖节假日）
 function calendarDaysFor(tradingDays: number): number {
   return Math.ceil((tradingDays * 7) / 5) + 7
@@ -624,19 +743,32 @@ export async function fetchHistoryRange(
 ): Promise<Array<{ date: string; price: number }>> {
   const p = parseSymbol(symbol, market)
 
-  // A股：东财 K线（secid 前缀 1. / 0.）
+  // A股：东财 K线（secid 前缀 1. / 0.）为主，腾讯日K兜底（两者实测数值完全一致）
   if (market === 'CN') {
-    const secid = eastmoneySecid(p.sina)
-    if (!secid) throw new Error(`cnRange secid invalid: ${symbol}`)
-    return fetchEastmoneyKline(secid, start, end)
+    const tx = tencentCodeCN(p.cacheKeySymbol, p.sina)
+    return raceNonEmpty(`CN ${symbol} ${start}~${end}`, [
+      () => {
+        const secid = eastmoneySecid(p.sina)
+        if (!secid) throw new Error(`cnRange secid invalid: ${symbol}`)
+        return fetchEastmoneyKline(secid, start, end)
+      },
+      () => (tx ? fetchTencentKline(tx, start, end) : Promise.resolve([])),
+    ])
   }
 
-  // 港股：东财 K线（secid 前缀 116.）
+  // 港股：东财 K线（secid 前缀 116.）为主，腾讯日K兜底。
   // 原先走 Yahoo，但 Yahoo 对 5 位港股代码（如 07266 / 07709）恒 404 / 400 → 港股历史一直为空。
+  // 只留东财也不行：东财 K 线在 Cloudflare Workers 里返回空数据（本机却正常），必须双源。
   if (market === 'HK') {
-    const secid = eastmoneySecidHK(p.cacheKeySymbol)
-    if (!secid) throw new Error(`hkRange secid invalid: ${symbol}`)
-    return fetchEastmoneyKline(secid, start, end)
+    const tx = tencentCodeHK(p.cacheKeySymbol)
+    return raceNonEmpty(`HK ${symbol} ${start}~${end}`, [
+      () => {
+        const secid = eastmoneySecidHK(p.cacheKeySymbol)
+        if (!secid) throw new Error(`hkRange secid invalid: ${symbol}`)
+        return fetchEastmoneyKline(secid, start, end)
+      },
+      () => (tx ? fetchTencentKline(tx, start, end) : Promise.resolve([])),
+    ])
   }
 
   // 基金：东财历史净值（startDate/endDate；必须分页，见 fetchFundNav 注释）
@@ -650,27 +782,36 @@ export async function fetchHistoryRange(
   const t1 = Math.floor(new Date(`${start}T00:00:00Z`).getTime() / 1000)
   const t2 = Math.floor(new Date(`${end}T23:59:59Z`).getTime() / 1000)
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ySym}?period1=${t1}&period2=${t2}&interval=1d`
-  const yRes = await fetchWithTimeout(
-    url,
-    { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AssetValuation/1.0)' } },
-    isGold ? 8000 : undefined
-  )
-  if (!yRes.ok) throw new Error(`rangeHist yahoo http ${yRes.status}`)
-  const yJson = (await yRes.json()) as any
-  const yResult = yJson?.chart?.result?.[0]
-  if (!yResult) throw new Error('rangeHist yahoo no result')
-  const timestamps: number[] = yResult.timestamp ?? []
-  const closes: number[] = yResult.indicators?.quote?.[0]?.close ?? []
-  const series: Array<{ date: string; price: number }> = []
-  for (let i = 0; i < timestamps.length; i++) {
-    const c = closes[i]
-    if (typeof c === 'number' && isFinite(c)) {
-      series.push({ date: new Date(timestamps[i] * 1000).toISOString().slice(0, 10), price: c })
+
+  const fetchYahooRange = async (): Promise<HistPoint[]> => {
+    const yRes = await fetchWithTimeout(
+      url,
+      { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AssetValuation/1.0)' } },
+      isGold ? 8000 : undefined
+    )
+    if (!yRes.ok) throw new Error(`rangeHist yahoo http ${yRes.status}`)
+    const yJson = (await yRes.json()) as any
+    const yResult = yJson?.chart?.result?.[0]
+    if (!yResult) throw new Error('rangeHist yahoo no result')
+    const timestamps: number[] = yResult.timestamp ?? []
+    const closes: number[] = yResult.indicators?.quote?.[0]?.close ?? []
+    const out: HistPoint[] = []
+    for (let i = 0; i < timestamps.length; i++) {
+      const c = closes[i]
+      if (typeof c === 'number' && isFinite(c)) {
+        out.push({ date: new Date(timestamps[i] * 1000).toISOString().slice(0, 10), price: c })
+      }
     }
+    return out
   }
 
-  // 黄金：GC=F 是美元/盎司，按当前 AU9999（元/克）等比缩放，保证量纲与详情页一致
+  // 黄金：Yahoo GC=F 为主、新浪外盘 GC 兜底。两者都是美元/盎司，再按当前 AU9999（元/克）
+  // 等比缩放，保证量纲与详情页一致 —— 因此只要求形状正确，源之间的微小偏差可接受。
   if (isGold) {
+    const series = await raceNonEmpty(`GOLD ${symbol} ${start}~${end}`, [
+      fetchYahooRange,
+      () => fetchSinaGoldDaily(start, end),
+    ])
     if (series.length === 0) return []
     const base = await fetchGold(symbol)
     const lastClose = series[series.length - 1].price
@@ -681,5 +822,6 @@ export async function fetchHistoryRange(
     }))
   }
 
-  return series
+  // 美股：Yahoo 单源（实测 Cloudflare Workers 可达）
+  return fetchYahooRange()
 }
