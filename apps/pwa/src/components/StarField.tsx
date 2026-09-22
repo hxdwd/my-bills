@@ -72,9 +72,21 @@ export default function StarField({ count = 40, className }: Props) {
 
     resize()
     tick()
+    // 页面隐藏时暂停动画循环：requestAnimationFrame 在后台仍会被调度，
+    // 42 个径向渐变的持续绘制会白白占用 GPU / CPU。
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        cancelAnimationFrame(raf)
+        raf = 0
+      } else if (raf === 0) {
+        raf = requestAnimationFrame(tick)
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibility)
     window.addEventListener('resize', resize)
     return () => {
       cancelAnimationFrame(raf)
+      document.removeEventListener('visibilitychange', onVisibility)
       window.removeEventListener('resize', resize)
     }
   }, [count])

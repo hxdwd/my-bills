@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ParsedHolding } from '../utils/holdingImport'
 import { searchQuote, fetchQuoteDetail, QuoteSearchResult } from '../utils/quoteApi'
-import { addHoldingTransaction } from '../db/wealthStore'
+import { addHoldingTransactions } from '../db/wealthStore'
 import { fmtMoney as fmtMoneyUtil } from '../utils/currency'
 import { Trash2, Check, Loader2, Upload } from 'lucide-react'
 import { useApp } from '../context/AppContext'
@@ -338,36 +338,45 @@ export function WealthImport() {
     let fail = 0
     // 按账户汇总扣款金额，最后一次性扣（避免多次更新同一账户）
     const deductions: Record<string, number> = {}
-    for (const r of valid) {
-      try {
-        const accountId = marketAccountMap[r.market] || null
-        const acc = accountId ? accounts.find(a => a.id === accountId) : null
-        const assetCur = acc?.currency || (r.market === 'US' ? 'USD' : r.market === 'HK' ? 'HKD' : 'CNY')
-        await addHoldingTransaction({
-          symbol: r.symbol,
-          market: r.market,
-          name: r.name,
-          direction: 'buy',
-          quantity: parseFloat(r.quantity),
-          price: parseFloat(r.price),
-          date: r.date,
-          account_id: accountId,
-          asset_currency: assetCur,
-          is_active: true,
-        })
-        if (accountId) {
-          deductions[accountId] = (deductions[accountId] || 0) + parseFloat(r.quantity) * parseFloat(r.price)
-        }
-        ok++
-      } catch {
-        fail++
+    // 先把全部待写入行准备好，再一次性 bulkPut + 一次后台同步。
+    // 原来逐行 await addHoldingTransaction，每行都会触发一次同步，
+    // 每次同步又全表扫 dirty 并逐条 POST → N 行退化成 O(N²) 次请求。
+    const payloads = valid.map(r => {
+      const accountId = marketAccountMap[r.market] || null
+      const acc = accountId ? accounts.find(a => a.id === accountId) : null
+      const assetCur = acc?.currency || (r.market === 'US' ? 'USD' : r.market === 'HK' ? 'HKD' : 'CNY')
+      if (accountId) {
+        deductions[accountId] = (deductions[accountId] || 0) + parseFloat(r.quantity) * parseFloat(r.price)
       }
+      return {
+        symbol: r.symbol,
+        market: r.market,
+        name: r.name,
+        direction: 'buy' as const,
+        quantity: parseFloat(r.quantity),
+        price: parseFloat(r.price),
+        date: r.date,
+        account_id: accountId,
+        asset_currency: assetCur,
+        is_active: true,
+      }
+    })
+    try {
+      await addHoldingTransactions(payloads)
+      ok = payloads.length
+    } catch (e) {
+      fail = payloads.length
+      console.error('[Wealth] 导入持仓流水失败', e)
     }
-    // 资金联动：从各账户余额扣减
-    for (const [accountId, amount] of Object.entries(deductions)) {
-      const acc = accounts.find(a => a.id === accountId)
-      if (acc) {
-        await updateAccount(accountId, { balance: parseFloat((acc.balance - amount).toFixed(2)) })
+    // 资金联动：**只有流水真的写入成功才扣账户余额**。
+    // 批量写入是原子的，抛错即一行都没落库；若此时仍去扣款，钱会凭空消失，
+    // 而且失败后不跳转、用户重试会再扣一次（旧实现是逐条写成功后才累加扣款金额，无此问题）。
+    if (ok > 0) {
+      for (const [accountId, amount] of Object.entries(deductions)) {
+        const acc = accounts.find(a => a.id === accountId)
+        if (acc) {
+          await updateAccount(accountId, { balance: parseFloat((acc.balance - amount).toFixed(2)) })
+        }
       }
     }
     // 记录最���使用的账户

@@ -101,7 +101,9 @@ export default function AssetsPage() {
   }, [expandedSection])
 
   const totalLiabilities = getTotalLiabilities()
-  const assetTrend = getAssetTrend(6)
+  // getAssetTrend(6) 内部按 6 个月各扫一遍全量 transactions，必须 memo：
+  // 资产页会因估值轮询、Context 任意字段变化而重渲染。
+  const assetTrend = useMemo(() => getAssetTrend(6), [getAssetTrend])
 
   // 资产账户：非负债类型的账户（余额 >= 0）
   const assetAccountsRaw = accounts.filter(a => a.type !== 'credit' && a.type !== 'debt' && a.balance >= 0)

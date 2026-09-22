@@ -421,10 +421,34 @@ export default function LifeProgress() {
     return () => { active = false }
   }, [])
 
-  // 「今天」进度条每秒跳动
+  // 「今天」进度条每秒跳动。
+  // 页面隐藏时（切后台 / 息屏）必须停掉：一秒一次 setState 会让整页持续重渲染
+  // （含 StarField 画布），后台白耗 CPU 与电量。
   useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 1000)
-    return () => clearInterval(id)
+    let id: ReturnType<typeof setInterval> | null = null
+    const start = () => {
+      if (id === null) id = setInterval(() => setNow(new Date()), 1000)
+    }
+    const stop = () => {
+      if (id !== null) {
+        clearInterval(id)
+        id = null
+      }
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        setNow(new Date()) // 回前台先立刻补一次，避免最多 1 秒的视觉滞后
+        start()
+      } else {
+        stop()
+      }
+    }
+    start()
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      stop()
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
   }, [])
 
   async function persist(newLife: LifeData) {

@@ -9,7 +9,7 @@ import type {
   HistorySeries,
   HistoryBatchItem,
 } from '../../types/api'
-import { parseSymbol, quoteCacheKey, historyCacheKey } from './parser'
+import { parseSymbol, quoteCacheKey, historyCacheKey, HISTORY_CACHE_VERSION } from './parser'
 import {
   getQuoteCache,
   setQuoteCache,
@@ -371,7 +371,7 @@ export async function runHistoryRange(
   kv: KVNamespace
 ): Promise<Array<{ date: string; price: number }>> {
   const p = parseSymbol(symbol, market)
-  const key = `history:${p.market}:${p.cacheKeySymbol}:${start}_${end}`
+  const key = `history:${HISTORY_CACHE_VERSION}:${p.market}:${p.cacheKeySymbol}:${start}_${end}`
   const cached = await getHistoryCache(kv, key)
   if (cached) {
     try {

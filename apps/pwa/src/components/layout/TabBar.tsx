@@ -66,27 +66,4 @@ export function TabBar({ activeTab, onTabChange, onAddClick }: TabBarProps) {
   );
 }
 
-// 更紧凑的底部导航
-export function MiniTabBar({ activeTab, onTabChange }: { activeTab: TabType; onTabChange: (tab: TabType) => void }) {
-  return (
-    <nav className="flex items-center bg-surface border-b border-brand-tint">
-      {tabs.map(({ key, label, icon: Icon }) => {
-        const isActive = activeTab === key;
-        return (
-          <button
-            key={key}
-            onClick={() => onTabChange(key)}
-            className={`
-              flex-1 flex items-center justify-center gap-1.5
-              h-11 transition-all active:scale-95
-              ${isActive ? 'text-ink' : 'text-ink-2'}
-            `}
-          >
-            <Icon size={18} strokeWidth={isActive ? 2.5 : 2} color={isActive ? '#222' : '#888'} />
-            <span className="text-xs font-medium">{label}</span>
-          </button>
-        );
-      })}
-    </nav>
-  );
-}
+

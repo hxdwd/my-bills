@@ -3,7 +3,14 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { useHaptic } from '../hooks/useHaptic'
-import { getHabitMeta, getHabitLog, recordHabit, isHabitChecked } from '../db/habitStore'
+import {
+  getHabitMeta,
+  getHabitMetaMap,
+  getHabitCheckedMap,
+  getHabitLog,
+  recordHabit,
+  currentMonth,
+} from '../db/habitStore'
 import { HABITS, type HabitDef, type HabitMeta } from '../types/habit'
 
 // —— 常量 ——
@@ -204,13 +211,18 @@ export default function HabitCheckin() {
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
-    const m: Record<string, HabitMeta | null> = {}
-    const c: Record<string, boolean> = {}
+    let m: Record<string, HabitMeta | null> = {}
+    let c: Record<string, boolean> = {}
     try {
-      for (const h of HABITS) {
-        m[h.id] = await getHabitMeta(h.id)
-        c[h.id] = await isHabitChecked(h.id)
-      }
+      // 两个批量请求并发取全部习惯的数据。
+      // 原来是「每个习惯各查 meta + log」= 3 个习惯 6 次串行请求。
+      const ids = HABITS.map(h => h.id)
+      const [metaMap, checkedMap] = await Promise.all([
+        getHabitMetaMap(ids),
+        getHabitCheckedMap(ids, currentMonth()),
+      ])
+      m = metaMap
+      c = checkedMap
     } catch {
       // Supabase 调用失败时仍正常渲染，数据为空
     }

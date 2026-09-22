@@ -55,6 +55,22 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // 把 vendor 拆成独立 chunk。总体积不变，但：
+        // ① 浏览器可并行下载、且 vendor 很少变动，发新版时用户只需重下业务代码，
+        //    不必每次部署都重下整个 1.1MB；
+        // ② 单个 chunk 超过 500KB 的构建告警也会消失。
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-chart': ['chart.js', 'react-chartjs-2'],
+          'vendor-supabase': ['@supabase/supabase-js'],
+          'vendor-dexie': ['dexie'],
+        },
+      },
+    },
+  },
   server: {
     port: 5173,
     // 显式监听所有网卡（IPv4 + IPv6）。Vite 默认只绑 IPv6 [::1]，

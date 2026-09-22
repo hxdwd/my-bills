@@ -129,8 +129,13 @@ export function quoteCacheKey(market: Market, symbol: string): string {
   return `quote:${market}:${p.cacheKeySymbol}`
 }
 
+// 历史行情 KV key 版本号：**上游取数逻辑变更后必须递增**，否则旧的残缺缓存会被继续复用，
+// 导致"代码改了线上却没变化"。
+// v2：修复东财基金净值接口单页只返回 20 条、使区间开头缺数据的问题。
+export const HISTORY_CACHE_VERSION = 'v2'
+
 // 历史走势 KV key
 export function historyCacheKey(market: Market, symbol: string, period: string): string {
   const p = parseSymbol(symbol, market)
-  return `history:${market}:${p.cacheKeySymbol}:${period}`
+  return `history:${HISTORY_CACHE_VERSION}:${market}:${p.cacheKeySymbol}:${period}`
 }

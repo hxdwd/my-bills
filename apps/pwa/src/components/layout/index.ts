@@ -1,3 +1,3 @@
 export { Header } from './Header';
-export { TabBar, MiniTabBar } from './TabBar';
+export { TabBar } from './TabBar';
 export { PageContainer } from './PageContainer';

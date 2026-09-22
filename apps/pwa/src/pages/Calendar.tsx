@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useTheme } from '../context/ThemeContext'
 import { useApp } from '../context/AppContext'
 import Card from '../components/ui/Card'
@@ -39,51 +39,55 @@ export default function CalendarPage() {
     setSelectedDate(null)
   }
 
-  // Get transactions for selected date
-  const getTransactionsForDate = (day: number) => {
-    const dateStr = `${month + 1}月${day}日`
-    return transactions.filter(t => t.date.includes(`${month + 1}月`))
-  }
+  // 本月交易按「日」一次性分组，供日期格 / 选中日 / 月度统计共用。
+  // 原实现是每个日期格都做一次全表 some() + 正则匹配：
+  // 31 格 × 402x 条 ≈ 每次渲染 12.6 万次正则；月统计还额外全表扫 2 次。
+  const { monthTxByDay, monthStats } = useMemo(() => {
+    const byDay = new Map<number, typeof transactions>()
+    let income = 0
+    let expense = 0
+    const targetMonth = month + 1
+    const thisYear = year
+    for (const t of transactions) {
+      // 必须连**年份**一起匹配：展示用的 t.date 对非本年交易是「2025年9月1日」，
+      // 原来只比对「M月」会把往年同月的交易并进本月（日历圆点与月收支统计全错）。
+      let y: number
+      let m: number
+      let day: number
+      if (t.transactionDate) {
+        // 原始日期恒为 YYYY-MM-DD，最可靠
+        const [ys, ms, ds] = t.transactionDate.split('-')
+        y = Number(ys)
+        m = Number(ms)
+        day = Number(ds)
+      } else {
+        const match = t.date.match(/(?:(\d{4})年)?(\d+)月(\d+)日/)
+        if (!match) continue
+        y = match[1] ? Number(match[1]) : thisYear
+        m = Number(match[2])
+        day = Number(match[3])
+      }
+      if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(day)) continue
+      if (y !== thisYear || m !== targetMonth) continue
+      const list = byDay.get(day)
+      if (list) list.push(t)
+      else byDay.set(day, [t])
+      if (t.type === 'income') income += t.amount
+      else if (t.type === 'expense') expense += t.amount
+    }
+    return { monthTxByDay: byDay, monthStats: { income, expense } }
+    // year 必须进依赖：从 2025-09 切到 2026-09 时 month 不变，
+    // 少了它 memo 不会重算 → 日历格与月统计会停留在上一年。
+  }, [transactions, year, month])
 
   // Check if a day has transactions
-  const hasTransactions = (day: number) => {
-    return transactions.some(t => {
-      const match = t.date.match(/(\d+)月(\d+)日/)
-      if (match && parseInt(match[1]) === month + 1) {
-        return parseInt(match[2]) === day
-      }
-      return false
-    })
-  }
+  const hasTransactions = (day: number) => monthTxByDay.has(day)
 
   // Selected date transactions
-  const selectedDayTransactions = selectedDate 
-    ? transactions.filter(t => {
-        const match = t.date.match(/(\d+)月(\d+)日/)
-        if (match && parseInt(match[1]) === month + 1) {
-          return parseInt(match[2]) === selectedDate
-        }
-        return false
-      })
-    : []
+  const selectedDayTransactions = selectedDate ? (monthTxByDay.get(selectedDate) ?? []) : []
 
   // Monthly stats — 按当前选中月份过滤
-  const monthlyStats = {
-    income: transactions
-      .filter(t => {
-        if (t.type !== 'income') return false
-        const match = t.date.match(/(\d+)月(\d+)日/)
-        return match && parseInt(match[1]) === month + 1
-      })
-      .reduce((sum, t) => sum + t.amount, 0),
-    expense: transactions
-      .filter(t => {
-        if (t.type !== 'expense') return false
-        const match = t.date.match(/(\d+)月(\d+)日/)
-        return match && parseInt(match[1]) === month + 1
-      })
-      .reduce((sum, t) => sum + t.amount, 0),
-  }
+  const monthlyStats = monthStats
 
   const today = new Date()
   const isToday = (day: number) => 

@@ -157,7 +157,6 @@ export const localTransactions = {
       return (b.transaction_time || '').localeCompare(a.transaction_time || '')
     })
     return records
-    return records
   },
 
   /** 获取单个交易 */
@@ -191,14 +190,6 @@ export const localTransactions = {
     if (!existing) return
     const deleted = markDeleted(existing)
     await db.transactions.put(deleted)
-  },
-
-  /** 批量获取指定账户的交易（用于余额计算） */
-  async getByAccount(userId: string, accountId: string): Promise<TransactionRecord[]> {
-    return db.transactions
-      .where('account_id').equals(accountId)
-      .filter(r => r.user_id === userId && r._sync_status !== 'pending_delete')
-      .toArray()
   },
 }
 
@@ -460,11 +451,4 @@ export const localProfiles = {
   },
 }
 
-// ============================================================
-// 工具函数：检查本地是否有数据
-// ============================================================
 
-export async function hasLocalData(): Promise<boolean> {
-  const count = await db.accounts.count()
-  return count > 0
-}

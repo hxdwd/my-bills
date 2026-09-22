@@ -558,7 +558,9 @@ export default function SearchPage() {
   // 搜索建议（按类型分组，输入关键词时显示）
   // ============================================================
   const suggestions = useMemo(() => {
-    const q = query.trim().toLowerCase()
+    // 用防抖后的关键词：原实现依赖未防抖的 query，每敲一个字符都要重算一次，
+    // 而下面备注/交易两段都要扫全量 402x 条交易。
+    const q = debouncedQuery.trim().toLowerCase()
     if (!q) return [] as Suggestion[]
     const result: Suggestion[] = []
     const seenCategory = new Set<string>()
@@ -590,32 +592,35 @@ export default function SearchPage() {
     // 备注（取不重复、含关键词的备注，最多 30 条，超出由 UI 折叠）
     const noteSet = new Set<string>()
     let noteCount = 0
-    transactions.forEach(t => {
-      if (noteCount >= 30) return
+    // 用 for...of + break：原来 forEach 里的 `return` 只跳过当前项，
+    // 凑够 30 条后仍会把 402x 条交易全部扫完。
+    for (const t of transactions) {
+      if (noteCount >= 30) break
       if (t.note && t.note.toLowerCase().includes(q) && !noteSet.has(t.note)) {
         noteSet.add(t.note)
         noteCount++
         result.push({ kind: 'note', id: 'note_' + t.id, label: t.note })
       }
-    })
+    }
     // 交易建议：仅当关键词未匹配到任何分类/子分类/标签时才展示。
     // 若已匹配到分类类目，结果区会列出该分类下全部交易，交易建议栏属重复，故不展示。
     const hasCategoryMatch = seenCategory.size > 0 || seenSub.size > 0 || seenTag.size > 0
     if (!hasCategoryMatch) {
       let txCount = 0
-      transactions.forEach(t => {
-        if (txCount >= 3 || seenTx.has(t.id)) return
+      for (const t of transactions) {
+        if (txCount >= 3) break
+        if (seenTx.has(t.id)) continue
         const catName = categoryMap.get(t.categoryId)?.name || ''
         if (catName.toLowerCase().includes(q) || String(t.amount).includes(q)) {
           seenTx.add(t.id)
           result.push({ kind: 'transaction', id: t.id, label: catName, amount: t.amount, icon: categoryMap.get(t.categoryId)?.icon })
           txCount++
         }
-      })
+      }
     }
 
     return result
-  }, [query, categories, subCategories, tags, transactions, categoryMap])
+  }, [debouncedQuery, categories, subCategories, tags, transactions, categoryMap])
 
   // 按类型分组（仅显示有内容的分组）
   const groupedSuggestions = useMemo(() => {

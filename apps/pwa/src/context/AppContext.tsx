@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode, useCallback, useRef } from 'react'
+import { createContext, useContext, useState, useEffect, ReactNode, useCallback, useRef, useMemo } from 'react'
 import { setSupabaseUserId } from '../services/supabase'
 import { useAuthStore } from '../stores/useAuthStore'
 import type { AccountRecord, CategoryRecord, TransactionRecord, TransferRecord, BudgetRecord, SubCategoryRecord, TagRecord } from '../db/database'
@@ -115,7 +115,6 @@ interface AppContextType {
   addCategory: (c: Omit<Category, 'id'>) => Promise<Category | undefined>
   updateCategory: (id: string, data: Partial<Category>) => Promise<void>
   deleteCategory: (id: string) => Promise<void>
-  deleteBill: (id: string) => Promise<void>
   addSubCategory: (s: Omit<SubCategory, 'id'>) => Promise<void>
   updateSubCategory: (id: string, data: Partial<SubCategory>) => Promise<void>
   deleteSubCategory: (id: string) => Promise<void>
@@ -319,26 +318,31 @@ function compareTransactions(a: Transaction, b: Transaction): number {
   return (b.time || '').localeCompare(a.time || '')
 }
 
-// 仅加载消费/收入（transactions 表，排除历史转账 to_account_id 记录），按时间倒序
+// 仅加载消费/收入（transactions 表，排除历史转账 to_account_id 记录），按时间倒序。
+// `preloaded` 复用调用方已读到的整表数据：一次 loadData 里 transactions 会被
+// 「消费」和「转账」两条路径各用一次，不透传就会把 4000+ 条整表读两遍。
 async function loadTransactions(
   userId: string,
   categoryMap: Map<string, { name: string; icon: string }>,
-  subCategoryMap: Map<string, string>
+  subCategoryMap: Map<string, string>,
+  preloaded?: TransactionRecord[]
 ): Promise<Transaction[]> {
-  const records = await localTransactions.getAll(userId)
+  const records = preloaded ?? (await localTransactions.getAll(userId))
   return records
     .filter(r => !r.to_account_id)
     .map(r => mapTransaction(r, categoryMap, subCategoryMap))
     .sort(compareTransactions)
 }
 
-// 加载全部转账：新 transfers 表 + 历史 transactions 表中 to_account_id 记录，合并排序
+// 加载全部转账：新 transfers 表 + 历史 transactions 表中 to_account_id 记录，合并排序。
+// `preloadedTxn` 同上：复用已读到的 transactions，避免重复整表读。
 async function loadAllTransfers(
   userId: string,
-  accountInfoMap: Map<string, { name: string; currency: string }>
+  accountInfoMap: Map<string, { name: string; currency: string }>,
+  preloadedTxn?: TransactionRecord[]
 ): Promise<Transaction[]> {
   const [txnRecords, transferRecords] = await Promise.all([
-    localTransactions.getAll(userId),
+    preloadedTxn ?? localTransactions.getAll(userId),
     localTransfers.getAll(userId),
   ])
   const fromTxn = txnRecords
@@ -447,9 +451,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const subCategoryMap = new Map<string, string>()
       rawSubCategories.forEach(s => subCategoryMap.set(s.id, s.name))
 
-      // 3. 从 IndexedDB 加载交易（仅支出/收入）与独立转账流
-      const rawTransactions = await loadTransactions(userId, categoryMap, subCategoryMap)
-      const rawTransfers = await loadAllTransfers(userId, accountInfoMap)
+      // 3. 从 IndexedDB 加载交易（仅支出/收入）与独立转账流。
+      //    transactions 整表只读一次，两条路径共用（否则 4000+ 条要读两遍）。
+      const txnRecords = await localTransactions.getAll(userId)
+      const rawTransactions = await loadTransactions(userId, categoryMap, subCategoryMap, txnRecords)
+      const rawTransfers = await loadAllTransfers(userId, accountInfoMap, txnRecords)
 
       // 4. 从 IndexedDB 加载预算
       const bgtRecords = await localBudgets.getAll(userId)
@@ -482,7 +488,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // 保证 accounts/categories/subCategories 一变化即实时刷新，无需此处手动处理。
 
       // 8. 后台同步 (先推送本地变更，再拉取远程数据，完成后刷新 UI)
-      syncEngine.syncOnStartup(userId).then(async () => {
+      //    只有本地库真的变了才重读：远程无变更时一条都不拉、一行也不删，
+      //    此时把 9 张表（含 4000+ 条交易）整表重读一遍 + 全量 setState 纯属浪费。
+      //    注意必须同时看 deleted：远程「纯删除」时一行都拉不回（pulled===0），
+      //    但本地孤儿已被清掉，不重读就会让 UI 残留已删记录。
+      syncEngine.syncOnStartup(userId).then(async ({ pulled, deleted }) => {
+        if (pulled === 0 && deleted === 0) return
         const refreshedAcc = (await localAccounts.getAll(userId)).map(mapAccount)
         const refreshedCat = (await localCategories.getAll(userId)).map(mapCategory)
         const refreshedNameMap = new Map<string, { name: string; currency: string }>()
@@ -492,8 +503,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const refreshedSub = (await localSubCategories.getAll(userId)).map(mapSubCategory)
         const refreshedSubMap = new Map<string, string>()
         refreshedSub.forEach(s => refreshedSubMap.set(s.id, s.name))
-        const refreshedTxn = await loadTransactions(userId, refreshedCatMap, refreshedSubMap)
-        const refreshedTransfers = await loadAllTransfers(userId, refreshedNameMap)
+        const refreshedTxnRecords = await localTransactions.getAll(userId)
+        const refreshedTxn = await loadTransactions(userId, refreshedCatMap, refreshedSubMap, refreshedTxnRecords)
+        const refreshedTransfers = await loadAllTransfers(userId, refreshedNameMap, refreshedTxnRecords)
         const refreshedBgt = (await localBudgets.getAll(userId)).map(r => mapBudget(r, catNameMap))
         const refreshedTag = (await localTags.getAll(userId)).map(mapTag)
         const refreshedProfile = await localProfiles.get(userId)
@@ -1348,7 +1360,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const now = new Date()
     const currentYear = now.getFullYear()
     const currentMonth = now.getMonth() + 1
-    const currentMonthStr = now.toISOString().slice(0, 7)
+    // 本地时区的 YYYY-MM。**不能用 toISOString()**——那是 UTC，东八区每月 1 号
+    // 00:00–08:00 会被算成上一个月，与下面按**本地**月份统计的 totalSpentThisMonth
+    // 口径不一致（等于用「本地当月支出」去比对「UTC 上月预算」）。
+    const currentMonthStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}`
 
     let totalSpentThisMonth = 0
     transactions
@@ -1472,73 +1487,75 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const getMonthWeekExpense = useCallback((year: number, month: number): { labels: string[]; values: number[] } => {
     const daysInMonth = new Date(year, month, 0).getDate()
     const targetMonthStr = String(month).padStart(2, '0')
+    const dayPrefix = `${year}-${targetMonthStr}-`
 
-    const weeks: { label: string; days: number[] }[] = []
+    // 一次遍历把「日期 → 当日支出」汇总，再按周求和。
+    // 原来是「周 × 日 × 全量 transactions.filter()」≈ 31 次全表扫描。
+    const dailyExpense = new Map<string, number>()
+    for (const t of transactions) {
+      if (t.type !== 'expense' || !t.transactionDate) continue
+      if (!t.transactionDate.startsWith(dayPrefix)) continue
+      dailyExpense.set(t.transactionDate, (dailyExpense.get(t.transactionDate) || 0) + t.amount)
+    }
+
+    const labels: string[] = []
+    const values: number[] = []
     let weekStart = 1
     let weekNum = 1
     while (weekStart <= daysInMonth) {
       const weekEnd = Math.min(weekStart + 6, daysInMonth)
-      weeks.push({ label: `第${weekNum}周`, days: [] })
+      let total = 0
       for (let d = weekStart; d <= weekEnd; d++) {
-        weeks[weeks.length - 1].days.push(d)
+        total += dailyExpense.get(`${dayPrefix}${String(d).padStart(2, '0')}`) || 0
       }
+      labels.push(`第${weekNum}周`)
+      values.push(total)
       weekStart = weekEnd + 1
       weekNum++
     }
-
-    const labels = weeks.map(w => w.label)
-    const values = weeks.map(w => {
-      let total = 0
-      w.days.forEach(day => {
-        const dateStr = `${year}-${targetMonthStr}-${String(day).padStart(2, '0')}`
-        transactions
-          .filter(t => t.type === 'expense' && t.transactionDate === dateStr)
-          .forEach(t => { total += t.amount })
-      })
-      return total
-    })
 
     return { labels, values }
   }, [transactions])
 
   const getYearMonthExpense = useCallback((year: number): { labels: string[]; income: number[]; expense: number[] } => {
-    const labels: string[] = []
-    const income: number[] = []
-    const expense: number[] = []
-
-    for (let m = 1; m <= 12; m++) {
-      labels.push(`${m}月`)
-      let incTotal = 0
-      let expTotal = 0
-      transactions.forEach(t => {
-        if (!t.transactionDate) return
-        const d = new Date(t.transactionDate.replace(/-/g, '/'))
-        if (d.getFullYear() !== year || d.getMonth() + 1 !== m) return
-        if (t.type === 'income') incTotal += t.amount
-        else if (t.type === 'expense') expTotal += t.amount
-      })
-      income.push(incTotal)
-      expense.push(expTotal)
+    // 一次遍历按月汇总，替代原来的 12 次全表扫描。
+    // 仍用 Date 解析以保证与旧实现语义完全一致（含非法日期跳过），
+    // 只是先用字符串前缀粗筛，避免为每一行都构造 Date 对象。
+    const yearPrefix = `${year}-`
+    const income: number[] = new Array(12).fill(0)
+    const expense: number[] = new Array(12).fill(0)
+    for (const t of transactions) {
+      if (!t.transactionDate || !t.transactionDate.startsWith(yearPrefix)) continue
+      const d = new Date(t.transactionDate.replace(/-/g, '/'))
+      if (isNaN(d.getTime()) || d.getFullYear() !== year) continue
+      const idx = d.getMonth()
+      if (t.type === 'income') income[idx] += t.amount
+      else if (t.type === 'expense') expense[idx] += t.amount
     }
-
+    const labels: string[] = []
+    for (let m = 1; m <= 12; m++) labels.push(`${m}月`)
     return { labels, income, expense }
   }, [transactions])
 
   const getYearMonthDetail = useCallback((year: number) => {
+    // 同上：一次遍历按月汇总，替代原来的 12 次全表扫描
+    const yearPrefix = `${year}-`
+    const inc = new Array(12).fill(0)
+    const exp = new Array(12).fill(0)
+    for (const t of transactions) {
+      if (!t.transactionDate || !t.transactionDate.startsWith(yearPrefix)) continue
+      // 用 / 格式避免 new Date('YYYY-MM-DD') 被解析为 UTC 导致的时区偏移
+      const d = new Date(t.transactionDate.replace(/-/g, '/'))
+      if (isNaN(d.getTime()) || d.getFullYear() !== year) continue
+      const idx = d.getMonth()
+      if (t.type === 'income') inc[idx] += t.amount
+      else if (t.type === 'expense') exp[idx] += t.amount
+    }
     const result: { month: string; income: number; expense: number; balance: number }[] = []
     for (let m = 1; m <= 12; m++) {
-      let inc = 0
-      let exp = 0
-      transactions.forEach(t => {
-        if (!t.transactionDate) return
-        // 用 / 格式避免 new Date('YYYY-MM-DD') 被解析为 UTC 导致的时区偏移
-        const d = new Date(t.transactionDate.replace(/-/g, '/'))
-        if (isNaN(d.getTime())) return
-        if (d.getFullYear() !== year || d.getMonth() + 1 !== m) return
-        if (t.type === 'income') inc += t.amount
-        else if (t.type === 'expense') exp += t.amount
-      })
-      result.push({ month: `${m}月`, income: inc, expense: exp, balance: inc - exp })
+      const i = inc[m - 1]
+      const e = exp[m - 1]
+      result.push({ month: `${m}月`, income: i, expense: e, balance: i - e })
     }
     return result
   }, [transactions])
@@ -1575,56 +1592,75 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Context Value
   // ============================================================
 
+  // 必须 memo：否则每次 render 都生成新的 value 对象，
+  // 会让所有 useApp() 消费者（首页/交易列表/日历/报表/预算/资产）无条件整树重渲染。
+  const ctxValue: AppContextType = useMemo(() => ({
+    accounts,
+    categories,
+    transactions,
+    transfers,
+    budgets,
+    loading,
+    addTransaction,
+    updateTransaction,
+    deleteTransaction,
+    addAccount,
+    updateAccount,
+    setDefaultAccount,
+    deleteAccount,
+    addBudget,
+    updateBudget,
+    addCategory,
+    updateCategory,
+    deleteCategory,
+    subCategories,
+    addSubCategory,
+    updateSubCategory,
+    deleteSubCategory,
+    reorderSubCategories,
+    tags,
+    addTag,
+    updateTag,
+    deleteTag,
+    getTotalAssets,
+    getTotalLiabilities,
+    getNetAssets,
+    getMonthlyIncome,
+    getMonthlyExpense,
+    getBudgetProgress,
+    getCategoryBudgetSpent,
+    getAssetTrend,
+    getMonthlyTrend,
+    getWeekExpense,
+    getMonthSummary,
+    getMonthWeekExpense,
+    getYearMonthExpense,
+    getYearMonthDetail,
+    getMonthExpenseByCategory,
+    getMonthTopExpenses,
+    bigExpenseThreshold,
+    setBigExpenseThreshold,
+    refreshData,
+    resetAndReload,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [
+    accounts, categories, transactions, transfers, budgets, loading,
+    addTransaction, updateTransaction, deleteTransaction,
+    addAccount, updateAccount, setDefaultAccount, deleteAccount,
+    addBudget, updateBudget, addCategory, updateCategory, deleteCategory,
+    subCategories, addSubCategory, updateSubCategory, deleteSubCategory, reorderSubCategories,
+    tags, addTag, updateTag, deleteTag,
+    getTotalAssets, getTotalLiabilities, getNetAssets,
+    getMonthlyIncome, getMonthlyExpense, getBudgetProgress, getCategoryBudgetSpent,
+    getAssetTrend, getMonthlyTrend, getWeekExpense,
+    getMonthSummary, getMonthWeekExpense, getYearMonthExpense, getYearMonthDetail,
+    getMonthExpenseByCategory, getMonthTopExpenses,
+    bigExpenseThreshold, setBigExpenseThreshold,
+    refreshData, resetAndReload,
+  ])
+
   return (
-    <AppContext.Provider value={{
-      accounts: accounts,
-      categories,
-      transactions,
-      transfers,
-      budgets,
-      loading,
-      addTransaction,
-      updateTransaction,
-      deleteTransaction,
-      addAccount,
-      updateAccount,
-      setDefaultAccount,
-      deleteAccount,
-      addBudget,
-      updateBudget,
-      addCategory,
-      updateCategory,
-      deleteCategory,
-      subCategories,
-      addSubCategory,
-      updateSubCategory,
-      deleteSubCategory,
-      reorderSubCategories,
-      tags,
-      addTag,
-      updateTag,
-      deleteTag,
-      getTotalAssets,
-      getTotalLiabilities,
-      getNetAssets,
-      getMonthlyIncome,
-      getMonthlyExpense,
-      getBudgetProgress,
-      getCategoryBudgetSpent,
-      getAssetTrend,
-      getMonthlyTrend,
-      getWeekExpense,
-      getMonthSummary,
-      getMonthWeekExpense,
-      getYearMonthExpense,
-      getYearMonthDetail,
-      getMonthExpenseByCategory,
-      getMonthTopExpenses,
-      bigExpenseThreshold,
-      setBigExpenseThreshold,
-      refreshData,
-      resetAndReload,
-    }}>
+    <AppContext.Provider value={ctxValue}>
       {children}
     </AppContext.Provider>
   )

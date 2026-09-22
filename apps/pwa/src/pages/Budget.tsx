@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useTheme } from '../context/ThemeContext'
 import { useApp } from '../context/AppContext'
 import Card from '../components/ui/Card'
@@ -23,7 +23,23 @@ export default function BudgetPage() {
   const [adding, setAdding] = useState(false)
 
   const budgetProgress = getBudgetProgress()
-  const categoryBudgets = budgets.filter(b => b.categoryId)
+  // 必须用 useMemo 包住：若直接在 render 里 filter，每次渲染都会产生新数组引用，
+  // 下面 spentByCategory 的依赖比较（Object.is）永远不相等 → 缓存彻底失效，
+  // 每渲染一次就要把所有分类的全量交易再扫一遍。
+  const categoryBudgets = useMemo(() => budgets.filter(b => b.categoryId), [budgets])
+
+  // 本月各分类已花金额：每个分类只算一次，之后全部查表。
+  // 原来每个预算卡、每个超支项都各自调一次 getCategoryBudgetSpent，
+  // 而它每次都要扫一遍全量 transactions（同一分类还会被算两遍）。
+  const spentByCategory = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const b of categoryBudgets) {
+      if (b.categoryId && !m.has(b.categoryId)) {
+        m.set(b.categoryId, getCategoryBudgetSpent(b.categoryId))
+      }
+    }
+    return m
+  }, [categoryBudgets, getCategoryBudgetSpent])
 
   // 当前月份
   const now = new Date()
@@ -203,7 +219,7 @@ export default function BudgetPage() {
         {/* Over Budget Warning */}
         {(() => {
           const overBudgetCategories = categoryBudgets.filter(b => {
-            const spent = getCategoryBudgetSpent(b.categoryId!)
+            const spent = spentByCategory.get(b.categoryId!) ?? 0
             return spent > b.amount
           })
           if (overBudgetCategories.length === 0) return null
@@ -215,7 +231,7 @@ export default function BudgetPage() {
               </div>
               <div className="space-y-2">
                 {overBudgetCategories.map(b => {
-                  const spent = getCategoryBudgetSpent(b.categoryId!)
+                  const spent = spentByCategory.get(b.categoryId!) ?? 0
                   return (
                     <div key={b.id} className="flex items-center justify-between">
                       <span className={`text-sm ${theme === 'dark' ? 'text-ink' : 'text-ink'}`}>
@@ -249,7 +265,7 @@ export default function BudgetPage() {
           <div className="space-y-3">
             {categoryBudgets.map((budget) => {
               const category = categories.expense.find(c => c.id === budget.categoryId)
-              const realSpent = getCategoryBudgetSpent(budget.categoryId!)
+              const realSpent = spentByCategory.get(budget.categoryId!) ?? 0
               const percentage = budget.amount > 0 ? Math.round((realSpent / budget.amount) * 100) : 0
               const isOver = realSpent > budget.amount
               

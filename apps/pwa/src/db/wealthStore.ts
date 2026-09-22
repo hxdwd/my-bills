@@ -63,6 +63,24 @@ export async function addHoldingTransaction(
   return record.id
 }
 
+// 批量新增流水（批量导入用）：一次 bulkPut 落库，只触发一次后台同步。
+// 逐条 await addHoldingTransaction 会让每一条都触发一次同步，
+// 而每次同步都会全表扫描 local_dirty 并逐条 POST，N 条就退化成 O(N²) 次请求。
+export async function addHoldingTransactions(
+  txs: Array<Omit<HoldingTransactionRecord, 'id' | 'user_id' | 'created_at' | 'updated_at' | '_sync_status' | '_updated_at_local'>>,
+): Promise<string[]> {
+  if (txs.length === 0) return []
+  const userId = await getCurrentUserId()
+  const records = txs.map((tx) => ({
+    ...tx,
+    ...newRecordBase(userId),
+  })) as HoldingTransactionRecord[]
+  await db.holdings_transactions.bulkPut(records)
+  // 后台非阻塞同步（fire-and-forget，且同表多次调用会被合并成一次推送）
+  syncEngine.syncAfterWrite('holdings_transactions', userId).catch(e => console.error('[Wealth] 同步持仓流水失败', e))
+  return records.map((r) => r.id)
+}
+
 // 获取全部流水（排除已标记待删除的，避免软删记录参与聚合显示）
 export async function getAllTransactions(): Promise<HoldingTransactionRecord[]> {
   const userId = await getCurrentUserId()

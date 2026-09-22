@@ -1374,3 +1374,66 @@ VITE_APP_URL=http://localhost:5173
 **关于版本**：每次 push 部署后构建产物 hash 必变 → 新 `sw.js` 内容变化 → 自动触发 `needRefresh`，无需额外版本号机制（如需可读版本号可后续加 `version.ts` 注入）。
 
 **待确认项**：`interval` 当前 1 小时；如需"打开即尽快检测"可改短（如 5 分钟）。
+
+---
+
+## 2026-09-22：财富收益曲线口径修正 + 全应用性能治理 + 同步增量化的前置改造
+
+起因是"财富板块持仓收益曲线与顶部卡片数值明显对不上"。排查后确认**不是算错**，而是两条价格链路口径不同；顺带做了一轮性能/资源治理。均为最小侵入改动，未改任何交互流程。
+
+### 一、根因：曲线与卡片走的是两条价格链路
+
+- **卡片**用**实时行情**（基金为盘中估算净值）。
+- **曲线**用"各标的**最近一条历史**行情"（美股用最近收盘、基金用 **T+1 官方净值**）。
+- 曲线日期轴取各标的日期的**并集**，并对缺失日**前向填充**最近一个收盘价 —— 于是盘中末点成了"昨日收盘组合 + 今日已开市市场变动"的**混合值**。
+
+实测（2026-09-22 盘中）：`09-22` 这一点**只有黄金**有当日数据（Yahoo `GC=F` 的美东交易日跨到北京时间次日），4 只基金（T+1 当天必无净值）+ 3 只美股（美东还没到 22 日）全部沿用 09-21；同时**港股历史当时整块为空**。所以曲线既缺港股浮盈，末点又是混合口径。
+
+### 二、本次做了什么
+
+**1. 曲线只保留"已收盘交易日"**（`apps/pwa/src/utils/profitCurve.ts`）
+日期轴加 cutoff = 昨天，把"今天"整个剔除，末点不再是混合口径。日期用自写的 `localYMD()` 取**本地**日期 —— **不能用 `toISOString()`**，那是 UTC，东八区凌晨会差一天。
+
+**2. 修复基金历史被上游截断**（`src/core/valuation/adapter.ts`）
+东财 `lsjz` 接口**单页硬截断 20 条**（实测 `pageSize` 传 50/200 均无效，而响应里的 `TotalCount` 是对的），原实现只请求 `pageIndex=1` → 区间**最早**的几天被丢掉（"近一月"21 个净值日必丢首日）。新增 `fetchFundNav()` 按 `pageIndex` 循环翻页，页间 4 路并发（避免"1 年"档串行等 19 次往返），`TotalCount` 缺失时退回只取首页。
+
+**3. 港股历史改走东财 K 线**（此前**恒为空数组**）
+Yahoo 对 5 位港股代码（`07266`/`07709`）恒返回 404/400，`buildProfitCurve` 又对空序列直接 `continue` **静默跳过**整只标的 → 港股浮盈**整条曲线**都缺失且无任何提示。改为东财 K 线 `push2his.eastmoney.com/api/qt/stock/kline/get`（`klt=101&fqt=1`；secid 前缀 **港股 `116.`+5 位**、**沪市 `1.`**、**深市 `0.`**），A股也统一走该接口。**不要再回退 Yahoo。**
+
+**4. 缓存版本号**（否则"代码改了、线上却没变化"）
+后端 KV `HISTORY_CACHE_VERSION='v2'`、前端段缓存 `SEG_CACHE_VERSION=2`。**今后凡改动上游取数逻辑，必须同时递增这两处。**
+
+### 三、性能与资源治理
+
+- **同步引擎增量化的前置改造**（`sync-engine.ts` + 迁移 `021_sync_incremental`）：改为"先取远程指纹（`get_sync_meta`：每表行数 + `max(updated_at)`）→ 只增量拉真正变更的表"，启动时不再无条件全量拉 9 张表（`transactions` 4066 行 ≈ 2.4MB）；并关闭 5 分钟定时全量轮询（本地增改删仍由 `syncAfterWrite` 即时推送）。迁移补齐了 `transfers` / `holdings_transactions` 缺失的 `updated_at` 触发器、`transactions(user_id, updated_at)` 索引与 `get_sync_meta` RPC（老 `get_sync_counts` 保持不动，新老并行，零风险）。**缺触发器会导致"行更新但 updated_at 不变 → 指纹不变 → 其他设备永远拉不到该更新"，且完全不报错。**
+- **`useWealthValuation` 改为模块级单例 + `useSyncExternalStore`**：该 hook 被 Home / Assets / WealthHome / WealthDetail / WealthCategory **五处**使用，原来每处挂载都各发一次 `valuation/batch`、各起一个 60 秒定时器，页面互跳即重复请求同一份数据。现在全应用只保留一份状态、一个在途请求、一个定时器；页面隐藏不轮询，回到前台先补一次。
+- **碎片化请求合并**：新增 `getUserExpandValues`（PostgREST `key=in.(...)`）、`getHabitCheckedMap` / `getHabitMetaMap`；`addHoldingTransactions` 一次 `bulkPut` + 一次后台同步（原来逐条 `await`，每条都触发一次同步、每次同步又全表扫 dirty → N 条退化成 O(N²) 次请求）。
+- **删死代码**：`services/*.service.ts`（**第二套直连 Supabase 的数据层**，与 Dexie + 同步引擎语义相反，误引用会绕过本地库）、`services/index.ts`、`useLocalStorage`、`usePullToRefresh`、`SyncIndicator`、`data/mockData.ts`、`TabBar` 的 `MiniTabBar`、`local-operations` 的 `getByAccount`/`hasLocalData`/一处不可达 `return`、`AppContextType.deleteBill`、`habitStore.isHabitChecked`（删前均全仓 grep 确认 0 引用）。
+- **构建产物拆包**：`vite.config.ts` 加 `manualChunks` 拆出 `vendor-react|chart|supabase|dexie`。单块 **1126 kB（gzip 332 kB）→ 业务代码 460 kB（gzip 124 kB）**。总体积基本不变，收益是**缓存命中率**：发新版用户只需重下业务代码，而不是整个 1.1MB。`db-diff`（调试工具）改为仅开发环境动态引入，不再进生产包。
+- **彩蛋页耗电**：`LifeProgress` 的每秒定时器、`StarField` 的 `requestAnimationFrame` 循环，均在 `visibilitychange` 时暂停、回前台恢复。
+
+### 四、全量排查发现的 3 个**本次改动引入的回归**（已修）
+
+1. **导入持仓失败仍扣账户余额**（`WealthImport.tsx`）：改成"先构建 payloads 再一次 `bulkPut`"后，扣款金额的累加被提前到**写入之前**，而扣款循环无条件执行 → 写库失败时一行流水没落、钱却被扣掉；且失败后不跳转，用户重试会**再扣一次**。（旧实现是逐条 `await` **成功之后**才累加扣款，无此问题。）已加 `if (ok > 0)` 门控。
+2. **"无变化就跳过重读本地库"漏掉删除路径**（`AppContext.tsx` + `sync-engine.ts`）：`pulled` 只统计"拉回的行数"，而远程**纯删除**不产生拉回行，但本地孤儿已被 `cleanOrphans` 清掉 → UI 残留已删记录。已让 `deleteOrphans`/`cleanOrphans` 返回删除条数，`PullAllResult` 增加 `deleted`，门控改为 `pulled === 0 && deleted === 0`。
+3. **`Budget` 页的 `useMemo` 永久失效**：`budgets.filter()` 每次渲染产生新数组引用，依赖比较 `Object.is` 永不相等 → 注释里写的"每个分类只算一次"其实从未生效。已用 `useMemo` 包住 `categoryBudgets`。
+
+### 五、顺带修掉的既有缺陷
+
+- `getBudgetProgress` 用 `toISOString().slice(0,7)`（**UTC 月份**），与同函数内按**本地**月份统计的 `totalSpentThisMonth` 口径不一致 → 东八区每月 1 号 00:00–08:00 会"用本地当月支出去比对 UTC 上月预算"，总预算匹配错月。已改为本地 `YYYY-MM`。
+- `Calendar.tsx` 的分组只按「M月D日」匹配、**忽略年份**，跨年同月交易会被并进当月（日历圆点与月收支统计全错）→ 改为优先用原始 `transactionDate` 按「年-月」精确匹配；同时把 `year` 补进 `useMemo` 依赖（从 2025-09 切到 2026-09 时 `month` 不变，原先 memo 不会重算）。
+- `useHabitBadge` 的 `anyHabitEnabled` 恒为 `true`（由 `results.length > 0` 算出，而 `results` 恒等于 `HABITS` 长度）且全仓无消费方 → 直接移除该字段。
+
+### 六、验证
+
+- **实测（跑真实代码 + 真实数据源，非逻辑复述）**：港股 `07709`/`07266` 各取到 **22 条**（08-24~09-22，严格升序、无重复日期、价格全为有效正数）；A股 `600519`/`000001` 各 22 条；400 天长区间取到 **230 条**（**不传 `lmt` 也未被截断**）；基金 `025209` 首点回到区间首日 08-24（修复前丢首日）。
+- **关键一致性校验**：港股**实时行情价 = 历史末点价**（`07709` 42.5、`07266` 42.66，比值 **1.000**），并与数据库里的真实持仓成本核对量级无误（`07266` 成本 44.46、`07709` 成本 42.00）—— 用于排除"secid 映射到了别的标的"（错标的比没数据更糟）。
+- **基础设施**：直接查线上库确认迁移 `021` 已应用（`get_sync_meta`、两个 `updated_at` 触发器、`(user_id, updated_at)` 索引、迁移记录 `20260922081213` 均存在）。
+- **静态**：`npm run build` 通过；`tsc` 报错总数与改动前**完全一致（84 条既有噪音，零新增）**，并对本轮改动文件用 `git stash` 取 HEAD 版本做了报错基线对比（行号位移属正常）。
+
+### 七、遗留 / 权衡
+
+- 曲线跨币种折算仍统一使用**当前**汇率（项目没有历史汇率源），图注已标注"跨币种按当前汇率折算"。
+- 非交易日（如 09-07 美股劳动节）仍沿用最近收盘价，属"非交易日沿用最近收盘"的正常语义。
+- 已确认**不做**路由级懒加载：需放弃 `pages` barrel 并改造 22 处 import，收益约 60–90 kB gzip，但会给路由引入新的失败面，综合性价比不足。
+- 排查套路（可复用）：①删代码前全仓 grep 符号名（含被 re-export 的名字）→ 删完跑 build → 用 `git stash push -m base -- <文件>` 取 HEAD 做 `tsc` **报错基线对比**；②数据源改动用 esbuild 把**真实** adapter 打包进 Node 直接打真实接口，断言条数/升序/无重复/末点日期/价格量级，再用 DB 真实成本价核对量级。

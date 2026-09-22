@@ -22,6 +22,9 @@ import { CURRENCY_SYMBOL, Currency } from '../../utils/currency'
 import { filterChipCls } from '../../utils/ui'
 
 const CACHE_PREFIX = 'wealth-hist-seg:'
+// 段缓存结构版本：取数语义变更后递增，旧缓存自动视为未命中并重取，
+// 避免"代码改了、页面却还在用旧的残缺数据"（v2：修复基金历史被上游截断到 20 条）。
+const SEG_CACHE_VERSION = 2
 const HOLDING_COLOR = '#c96442'
 const MONTH_DAYS = 30 // 「近一月」窗口（自然日）
 const WEEK_REQUEST_DAYS = 15 // 「近一周」请求窗口（自然日，保证覆盖 5 个交易日）
@@ -76,8 +79,9 @@ function readSegCache(market: string, symbol: string, start: string, end: string
   try {
     const raw = localStorage.getItem(CACHE_PREFIX + k)
     if (!raw) return null
-    const parsed = JSON.parse(raw) as { savedAt?: string; points?: HistoryPoint[] }
+    const parsed = JSON.parse(raw) as { savedAt?: string; points?: HistoryPoint[]; v?: number }
     if (!Array.isArray(parsed.points)) return null
+    if (parsed.v !== SEG_CACHE_VERSION) return null // 旧版本结构 → 视为未命中，重新取数
     if (end >= todayStr() && parsed.savedAt !== todayStr()) return null
     memSeg.set(k, parsed.points)
     return parsed.points
@@ -91,7 +95,7 @@ function writeSegCache(market: string, symbol: string, start: string, end: strin
   try {
     localStorage.setItem(
       CACHE_PREFIX + segKey(market, symbol, start, end),
-      JSON.stringify({ savedAt: todayStr(), points }),
+      JSON.stringify({ v: SEG_CACHE_VERSION, savedAt: todayStr(), points }),
     )
   } catch {
     /* 配额溢出忽略 */
@@ -369,7 +373,7 @@ export function ProfitTrend({ holdings, base, rates }: ProfitTrendProps) {
               ? `部分行情加载失败（${error}），仅展示已获取部分`
               : loading
                 ? '正在加载…'
-                : '左右滑动查看更早/更晚 · 非交易日沿用最近收盘价'}
+                : '左右滑动查看更早/更晚 · 仅含已收盘交易日 · 跨币种按当前汇率折算'}
           </div>
         </>
       )}

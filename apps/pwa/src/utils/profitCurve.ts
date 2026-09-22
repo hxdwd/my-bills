@@ -32,6 +32,14 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100
 }
 
+/** 本地时区的 YYYY-MM-DD（不能用 toISOString：那是 UTC，东八区凌晨会差一天） */
+function localYMD(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 /**
  * 构建组合收益曲线。
  *
@@ -50,16 +58,23 @@ export function buildProfitCurve(params: {
 }): ProfitCurve {
   const { holdings, txs, series, realized, base, rates } = params
 
-  // 日期轴：所有标的日期的并集（升序）
+  // 日期轴：所有标的日期的并集（升序），并且**只保留已收盘的交易日**。
+  //
+  // 为什么必须排除今天：今天各标的的数据既不完整也不同步——
+  // 基金官方净值 T+1（当天必然没有）、美股与黄金在北京时间白天尚未收盘（美东日期还停在昨天）、
+  // 港股则可能已有盘中价。若把「今天」画进曲线，末点会变成
+  // 「昨日收盘组合 + 今日已开市市场」的混合值，与顶部实时卡片必然对不上。
+  // 统一截止到「昨天」，保证图上每个点都取自各标的同一个已收盘交易日。
   const dateSet = new Set<string>()
   series.forEach(s => s.points.forEach(p => dateSet.add(p.date)))
+  const cutoff = localYMD(new Date(Date.now() - 86400000)) // 昨天（本地时区）
   if (dateSet.size === 0) {
-    // 无任何历史价（如当前无持仓）：退化为「已实现事件日 + 今天」，
+    // 无任何历史价（如当前无持仓）：退化为「已实现事件日 + 昨天」，
     // 仍可展示清仓收益的阶梯变化，而不是整块空白。
     realized.forEach(e => { if (e.date) dateSet.add(e.date) })
-    dateSet.add(new Date().toISOString().slice(0, 10))
+    dateSet.add(cutoff)
   }
-  const dates = [...dateSet].sort()
+  const dates = [...dateSet].filter(d => d <= cutoff).sort()
   if (dates.length === 0) return { labels: [], holdingPL: [], realizedPL: [] }
 
   // 当前持仓标的的活跃流水（与 aggregateHoldings 口径一致：只算 is_active !== false）

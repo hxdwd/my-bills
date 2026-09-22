@@ -373,7 +373,78 @@ export async function fetchQuote(symbol: string, market: Market): Promise<Normal
   return trySources(adapters)
 }
 
-// 历史走势（美股/港股走 Yahoo；A股 Yahoo 近似；基金走东方财富净值序列）
+// 东财基金净值（lsjz）分页拉取。
+//
+// 关键坑：该接口**单页硬截断为 20 条**——实测 pageSize 传 50 / 200 均无效，
+// 永远只返回 20 条（而响应里的 TotalCount 是正确的总条数）。
+// 因此若只请求 pageIndex=1，区间内**最早**的那几天会被丢掉：
+// 「近一月」共 21 个净值日，恰好丢 1 天；区间越长丢得越多（选 3 个月会丢 40 天以上）。
+// 这里按 pageIndex 循环翻页直到取满。
+const FUND_PAGE_SIZE = 20
+const FUND_MAX_PAGES = 30 // 兜底：最多 30 页（600 条 ≈ 2.5 年），避免异常时无限翻页
+const FUND_PAGE_CONCURRENCY = 4 // 页与页之间限量并发，避免「1 年」档串行等 19 次往返
+
+async function fetchFundNavPage(
+  code: string,
+  page: number,
+  rangeQuery: string
+): Promise<{ list: any[]; total: number }> {
+  const url =
+    `https://api.fund.eastmoney.com/f10/lsjz?fundCode=${code}&pageIndex=${page}` +
+    `&pageSize=${FUND_PAGE_SIZE}${rangeQuery}`
+  const res = await fetchWithTimeout(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0', Referer: 'https://fundf10.eastmoney.com/' },
+  })
+  if (!res.ok) throw new Error(`fundHist http ${res.status}`)
+  const json = (await res.json()) as any
+  const list = json?.Data?.LSJZList
+  const total = Number(json?.TotalCount)
+  return {
+    list: Array.isArray(list) ? list : [],
+    total: Number.isFinite(total) ? total : 0,
+  }
+}
+
+async function fetchFundNav(
+  code: string,
+  opts: { range?: { start: string; end: string }; limit?: number } = {}
+): Promise<Array<{ date: string; price: number }>> {
+  const { range, limit } = opts
+  const rangeQuery = range ? `&startDate=${range.start}&endDate=${range.end}` : ''
+
+  const first = await fetchFundNavPage(code, 1, rangeQuery)
+  if (first.list.length === 0) return []
+
+  // 需要翻几页：以 TotalCount 为准，limit（档位天数）再收窄；
+  // 若上游没给 TotalCount 则退回「只取第一页」，保证不会失控翻页。
+  const known = first.total > 0 ? first.total : (limit ?? first.list.length)
+  const wanted = Math.min(limit ?? Infinity, known)
+  const needed = first.list.length < FUND_PAGE_SIZE
+    ? 1
+    : Math.min(Math.ceil(wanted / FUND_PAGE_SIZE), FUND_MAX_PAGES)
+
+  const pages: any[][] = [first.list]
+  for (let from = 2; from <= needed; from += FUND_PAGE_CONCURRENCY) {
+    const batch: Promise<any[]>[] = []
+    for (let p = from; p < from + FUND_PAGE_CONCURRENCY && p <= needed; p++) {
+      batch.push(fetchFundNavPage(code, p, rangeQuery).then(r => r.list))
+    }
+    pages.push(...(await Promise.all(batch)))
+  }
+
+  const rows: Array<{ date: string; price: number }> = [] // 接口按日期降序，翻页拼接后仍整体降序
+  for (const list of pages) {
+    for (const row of list) {
+      const price = parseFloat(row.FSZ || row.DWJZ) // 首选估算值，回退单位净值
+      if (isFinite(price)) rows.push({ date: String(row.FSRQ).slice(0, 10), price })
+    }
+  }
+  rows.reverse() // 降序 → 升序
+  // 指定 limit 时只保留最新的 N 条（分页可能多取，最多多 19 条）
+  return limit !== undefined && rows.length > limit ? rows.slice(rows.length - limit) : rows
+}
+
+// 历史走势（基金走东财净值序列；港股/A股走东财 K线；美股走 Yahoo；黄金走 Yahoo GC=F 等比缩放）
 export async function fetchHistory(
   symbol: string,
   market: Market,
@@ -381,30 +452,11 @@ export async function fetchHistory(
 ): Promise<Array<{ date: string; price: number }>> {
   const p = parseSymbol(symbol, market)
 
-  // 国内基金：东方财富历史净值接口
+  // 国内基金：东方财富历史净值接口（必须分页，见 fetchFundNav 注释）
   if (market === 'FUND') {
-    const code = p.cacheKeySymbol
     const periodDays: Record<string, number> = { '1m': 30, '3m': 90, '1y': 365 }
     const days = periodDays[period] ?? 30
-    const url = `https://api.fund.eastmoney.com/f10/lsjz?fundCode=${code}&pageIndex=1&pageSize=${days}`
-    const res = await fetchWithTimeout(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0',
-        Referer: 'https://fundf10.eastmoney.com/',
-      },
-    })
-    if (!res.ok) throw new Error(`fundHist http ${res.status}`)
-    const json = (await res.json()) as any
-    const list: any[] = json?.Data?.LSJZList ?? []
-    const out: Array<{ date: string; price: number }> = []
-    for (const row of list) {
-      const price = parseFloat(row.FSZ || row.DWJZ) // 首选估算值，回退单位净值
-      if (isFinite(price)) {
-        out.push({ date: String(row.FSRQ).slice(0, 10), price })
-      }
-    }
-    out.reverse() // 接口返回降序，转升序
-    return out
+    return fetchFundNav(p.cacheKeySymbol, { limit: days })
   }
 
   // 黄金（AU9999 现货，元/克）：东方财富 K 线对上金所标的只回日期无价格，
@@ -464,7 +516,20 @@ export async function fetchHistory(
     return out
   }
 
-  // 美股/港股：Yahoo（港股 Yahoo 通常无数据，将由调用方兜底返回空）
+  // 港股历史：东财 K 线。
+  // 原先走 Yahoo，但 Yahoo 对 5 位港股代码（如 07266 / 07709）恒 404 / 400，
+  // 导致港股历史一直为空数组（曲线整块缺港股浮盈）。
+  if (market === 'HK') {
+    const secid = eastmoneySecidHK(p.cacheKeySymbol)
+    if (!secid) throw new Error(`hkHist secid invalid: ${symbol}`)
+    const datalenMap: Record<string, number> = { '1m': 30, '3m': 90, '1y': 250 }
+    const datalen = datalenMap[period] ?? 30
+    const rows = await fetchEastmoneyKline(secid, ymdDaysAgo(calendarDaysFor(datalen)), ymdDaysAgo(0))
+    // 只保留最近 datalen 个交易日（接口按自然日窗口取，可能多取）
+    return rows.length > datalen ? rows.slice(rows.length - datalen) : rows
+  }
+
+  // 美股：Yahoo
   const rangeMap: Record<string, string> = { '1m': '1mo', '3m': '3mo', '1y': '1y' }
   const range = rangeMap[period] ?? '1mo'
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${p.yahoo}?range=${range}&interval=1d`
@@ -495,12 +560,60 @@ function eastmoneySecid(code: string): string | null {
   return `${/^[69]/.test(num) ? '1' : '0'}.${num}`
 }
 
+// 港股代码 → 东财 secid（港股统一用 116. 前缀，代码补足 5 位；例 07266 → 116.07266）
+function eastmoneySecidHK(code: string): string | null {
+  const m = /(\d{4,5})/.exec(code.trim())
+  if (!m) return null
+  return `116.${m[1].padStart(5, '0')}`
+}
+
+/**
+ * 东财日线 K 线（klt=101 日线、fqt=1 前复权）。A股与港股走同一接口，只有 secid 前缀不同。
+ * 用 fqt=1 的理由：前复权序列的**最新价与实时行情一致**（曲线末端因此能与顶部卡片对上），
+ * 同时避免除权/分红日出现"凭空大跌"的假台阶。
+ */
+async function fetchEastmoneyKline(
+  secid: string,
+  beg: string,
+  end: string
+): Promise<Array<{ date: string; price: number }>> {
+  const url =
+    `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${secid}` +
+    `&klt=101&fqt=1&beg=${beg.replace(/-/g, '')}&end=${end.replace(/-/g, '')}` +
+    `&fields1=f1,f2,f3&fields2=f51,f52,f53`
+  const res = await fetchWithTimeout(url, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+  if (!res.ok) throw new Error(`kline ${secid} http ${res.status}`)
+  const json = (await res.json()) as any
+  const klines: string[] = json?.data?.klines ?? []
+  const out: Array<{ date: string; price: number }> = []
+  for (const k of klines) {
+    const parts = String(k).split(',')
+    const price = parseFloat(parts[2]) // klines 每行：日期,开盘,收盘
+    if (parts[0] && isFinite(price)) out.push({ date: parts[0].slice(0, 10), price })
+  }
+  return out
+}
+
+// 交易日数 → 需要回溯的自然日数（按每周 5 个交易日折算，再留 7 天缓冲覆盖节假日）
+function calendarDaysFor(tradingDays: number): number {
+  return Math.ceil((tradingDays * 7) / 5) + 7
+}
+
+/** n 天前的本地日期（YYYY-MM-DD） */
+function ymdDaysAgo(n: number): string {
+  const d = new Date(Date.now() - n * 86400000)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 /**
  * 按日期区间取历史（start/end 均为 YYYY-MM-DD，含端点）。
  * 各数据源能力不同，这里统一成"给定区间"的入口：
- * - A股：东方财富 K线（支持 beg/end；**新浪 K线只能取"最近 N 条"**，无法定位历史区间）
+ * - A股 / 港股：东方财富 K线（支持 beg/end；**新浪 K线只能取"最近 N 条"**，无法定位历史区间）
  * - 基金：东方财富历史净值（支持 startDate/endDate）
- * - 美股/港股：Yahoo period1/period2
+ * - 美股：Yahoo period1/period2
  * - 黄金：Yahoo GC=F 区间，再按 AU9999 当前价等比缩放（与 fetchHistory 口径一致）
  */
 export async function fetchHistoryRange(
@@ -511,49 +624,27 @@ export async function fetchHistoryRange(
 ): Promise<Array<{ date: string; price: number }>> {
   const p = parseSymbol(symbol, market)
 
-  // A股：东财 K线（日线 klt=101、前复权 fqt=1）
+  // A股：东财 K线（secid 前缀 1. / 0.）
   if (market === 'CN') {
     const secid = eastmoneySecid(p.sina)
     if (!secid) throw new Error(`cnRange secid invalid: ${symbol}`)
-    const url =
-      `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${secid}` +
-      `&klt=101&fqt=1&beg=${start.replace(/-/g, '')}&end=${end.replace(/-/g, '')}` +
-      `&fields1=f1,f2,f3&fields2=f51,f52,f53`
-    const res = await fetchWithTimeout(url, { headers: { 'User-Agent': 'Mozilla/5.0' } })
-    if (!res.ok) throw new Error(`cnRange http ${res.status}`)
-    const json = (await res.json()) as any
-    const klines: string[] = json?.data?.klines ?? []
-    const out: Array<{ date: string; price: number }> = []
-    for (const k of klines) {
-      const parts = String(k).split(',')
-      const price = parseFloat(parts[2]) // 日期,开,收,高,低,量
-      if (parts[0] && isFinite(price)) out.push({ date: parts[0].slice(0, 10), price })
-    }
-    return out
+    return fetchEastmoneyKline(secid, start, end)
   }
 
-  // 基金：东财历史净值（startDate/endDate）
+  // 港股：东财 K线（secid 前缀 116.）
+  // 原先走 Yahoo，但 Yahoo 对 5 位港股代码（如 07266 / 07709）恒 404 / 400 → 港股历史一直为空。
+  if (market === 'HK') {
+    const secid = eastmoneySecidHK(p.cacheKeySymbol)
+    if (!secid) throw new Error(`hkRange secid invalid: ${symbol}`)
+    return fetchEastmoneyKline(secid, start, end)
+  }
+
+  // 基金：东财历史净值（startDate/endDate；必须分页，见 fetchFundNav 注释）
   if (market === 'FUND') {
-    const code = p.cacheKeySymbol
-    const url =
-      `https://api.fund.eastmoney.com/f10/lsjz?fundCode=${code}&pageIndex=1&pageSize=200` +
-      `&startDate=${start}&endDate=${end}`
-    const res = await fetchWithTimeout(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0', Referer: 'https://fundf10.eastmoney.com/' },
-    })
-    if (!res.ok) throw new Error(`fundRange http ${res.status}`)
-    const json = (await res.json()) as any
-    const list: any[] = json?.Data?.LSJZList ?? []
-    const out: Array<{ date: string; price: number }> = []
-    for (const row of list) {
-      const price = parseFloat(row.FSZ || row.DWJZ)
-      if (isFinite(price)) out.push({ date: String(row.FSRQ).slice(0, 10), price })
-    }
-    out.reverse() // 接口返回降序，转升序
-    return out
+    return fetchFundNav(p.cacheKeySymbol, { range: { start, end } })
   }
 
-  // 美股 / 港股 / 黄金：Yahoo period1/period2
+  // 美股 / 黄金：Yahoo period1/period2
   const isGold = market === 'GOLD'
   const ySym = isGold ? 'GC=F' : p.yahoo
   const t1 = Math.floor(new Date(`${start}T00:00:00Z`).getTime() / 1000)

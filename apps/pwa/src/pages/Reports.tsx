@@ -252,22 +252,28 @@ export default function ReportsPage() {
     }
   }
 
-  // 获取当前选择时间范围的数据
-  const monthSummary = timeRange === 'month' 
-    ? getMonthSummary(selectedYear, selectedMonth) 
-    : null
+  // 获取当前选择时间范围的数据。
+  // 这些聚合内部都要扫全量 transactions（402x 条），必须 memo：
+  // 否则 syncState 每次进出（checking→success→idle 至少 3 次）都会从头重算一遍。
+  const monthSummary = useMemo(
+    () => (timeRange === 'month' ? getMonthSummary(selectedYear, selectedMonth) : null),
+    [timeRange, selectedYear, selectedMonth, getMonthSummary],
+  )
 
-  const monthWeekExpense = timeRange === 'month'
-    ? getMonthWeekExpense(selectedYear, selectedMonth)
-    : null
+  const monthWeekExpense = useMemo(
+    () => (timeRange === 'month' ? getMonthWeekExpense(selectedYear, selectedMonth) : null),
+    [timeRange, selectedYear, selectedMonth, getMonthWeekExpense],
+  )
 
-  const yearMonthExpense = timeRange === 'year'
-    ? getYearMonthExpense(selectedYear)
-    : null
+  const yearMonthExpense = useMemo(
+    () => (timeRange === 'year' ? getYearMonthExpense(selectedYear) : null),
+    [timeRange, selectedYear, getYearMonthExpense],
+  )
 
-  const yearMonthDetail = timeRange === 'year'
-    ? getYearMonthDetail(selectedYear)
-    : null
+  const yearMonthDetail = useMemo(
+    () => (timeRange === 'year' ? getYearMonthDetail(selectedYear) : null),
+    [timeRange, selectedYear, getYearMonthDetail],
+  )
 
   // 支出按分类分布
   const expenseByCategory = useMemo(() => {
