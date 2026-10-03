@@ -4,6 +4,110 @@
 
 ---
 
+## 2026-10-03 — 「记一笔」标签入口失效修复 + 标签管理重做
+
+### 一、Bug：点「管理标签」看起来毫无反应
+
+**现象**：在「记一笔」里点「+ 添加标签」→「管理标签」，界面没有任何变化。
+
+**根因**（不是样式层级问题，而是**跳了路由**）：
+
+- 两个弹窗里的「管理标签」实现都是 `onClose()` + `navigate('/categories')`。
+- 而「记一笔」（`AddTransaction`）是 **App 级常驻的全屏覆盖层**（`App.tsx` 里由 `showAddTransaction` 控制、始终挂载），**不是路由页面**。路由切到 `/categories` 后，这层覆盖层依然在最上层，把目标页面整个挡住 —— 用户看到的就是"点了没反应"。
+- 更糟的是：`/categories`（`Categories.tsx`）里**根本没有标签管理功能**（全文件 0 处标签代码），而 `AppContext` 的 `updateTag` / `deleteTag` **全仓库 0 调用方** —— 这个 App 此前只能"搜索时顺带新建标签"，无法改名、改色、删除。
+- `TagSelectModal` / `SubCategoryManagerModal` **只在「记一笔」里被引用**（全仓库唯一入口），所以这个 bug 是**必现**的。
+
+### 二、修复：改为就地弹窗，不再跳路由
+
+- 新增 `components/TagManagerModal.tsx`：标签管理做成弹窗（与其它 `Modal` 一样 `createPortal` 到 `document.body`、`z-[100]`），**在「记一笔」之上就地打开** —— 结构上不可能再被遮挡，也不会把用户从正在编辑的交易里带走。
+- `TagSelectModal` / `SubCategoryManagerModal` 去掉 `useNavigate`，改为必填回调 prop `onManageTags`（TS 的必填 prop 校验顺带保证了所有调用方都接上）。
+- `AddTransaction` 记录"从哪个弹窗进来的"，关掉管理器后**回到原处**；并在关闭时剔除管理期间被删掉的标签，避免表单里留下死 id。
+
+### 三、标签管理逻辑优化
+
+- **补上此前完全缺失的能力**：新建 / 重命名 / 改色 / 删除（`updateTag`、`deleteTag` 首次被真正使用）。
+- **重名校验**：忽略大小写与首尾空格，重复则提示并阻止（原实现可以建出多个同名标签）。
+- **配色轮换**：新建时自动挑一个还没被用过的颜色（原实现恒为 `#818cf8`，建几个标签颜色全一样）；抽成共用 `utils/colorPalette.ts`，子分类那边也复用同一份，避免两处各抄一份漂移。
+- **显示使用次数**：列表按"被多少笔交易引用"倒序（常用在前），一次遍历建 Map，不做 N×全表扫描。
+- **删除二次确认**：行内确认，并提示"已有 N 笔交易使用它，删除后这些交易上的该标签会消失"，避免误删。
+- **选择弹窗补「全部标签」**：原实现非搜索态只显示最近 6 个，没被最近用过的标签只能靠搜索才选得到。
+- **创建去重**：在搜索框里创建时若已有同名标签，直接选中它而不是新建重名标签。
+- **不再静默失败**：保存失败会在表单里提示（原实现 `catch {}` 什么都不说）。
+
+### 四、验证
+
+- `tsc` 报错总数 **84 → 84**（零新增；`AddTransaction` 里那些 unused 变量是既有噪音）。
+- `npm run build` 通过（10.55s）。
+- 全仓 grep 确认：两个弹窗已无 `navigate`，`/categories` 只剩 Settings 里那个正常的「分类管理」入口。
+- **待做**：真机/线上点一遍「记一笔 → 添加标签 → 管理标签」（本地无法复现登录态，需要部署后在线上验证）。
+
+### 五、删除标签会留下悬空引用（用户报告，已核实并修复）
+
+**是否属实：属实。** 交易上的 `tags` 存的是**标签 id 数组**（不是名字），而 `AppContext.deleteTag` 只做了 `localTags.remove(id)` + `setTags(filter)`，**完全没有清理交易上的引用** → 引用表里已无该 id、界面上也不显示，以后重建同名标签拿到的是新 id，这些引用永远接不回来：表现上"数据没问题"，实际已悄悄丢了归属。（这正是历史数据导入时暴露出来的那个 bug。）
+
+**顺手核实到的同类缺陷**（同一模式，四处都有）：
+
+| 函数 | 引用字段 | 是否级联 | 处理 |
+|---|---|---|---|
+| `deleteTag` | `transactions.tags[]` | ❌ | **已修** |
+| `deleteSubCategory` | `transactions.subcategory_id` | ❌ | **已修** |
+| `deleteCategory` | `transactions.category_id` | ❌ | 未修（必填字段，需先定策略：阻止删除 or 改挂到默认分类） |
+| `deleteAccount` | `transactions.account_id` | ❌ | 未修（同上） |
+
+**修法**：
+
+- `local-operations.ts` 新增 `localTransactions.removeTagFromAll(userId, tagId)` 与 `clearSubCategoryFromAll(userId, subCategoryId)`：扫一遍该用户的交易，命中就摘掉引用并 `markDirty`（复用 `update`，保证置 `local_dirty` 从而会被同步引擎推送），返回被改动的交易 id。
+- `AppContext.deleteTag` / `deleteSubCategory` 调用它们，并**同步更新内存 state**（界面立即生效，不必等下一次全量重读），再补一次 `syncAfterWrite('transactions')` 把清理结果推上去。
+- `SubCategoryManagerModal` 顺带补上**使用次数 + 删除二次确认**（此前点一下就直接删、无任何提示；而现在删除会级联清掉引用，破坏性变强，必须防误触）。
+- 完整性核查：`tags` 在库里**只被 `transactions.tags` 引用**（transfers 无标签字段），所以级联这一处就够。
+
+**数据体检（线上实测）**：`transactions` 共 **4121** 笔、其中 **598** 笔带标签；四类悬空引用 —— `tag` / `subcategory_id` / `category_id` / `account_id` —— **全部为 0**。也就是说 A2 那 3 笔修完之后目前没有残留，**不需要额外修数据**。体检 SQL：
+
+```sql
+select 'dangling tag refs' as kind, count(*) from transactions t, unnest(t.tags) tg
+  where t.user_id = :uid and tg not in (select id::text from tags where user_id = :uid)
+union all select 'dangling subcategory_id', count(*) from transactions t
+  where t.user_id = :uid and t.subcategory_id is not null
+    and not exists (select 1 from sub_categories s where s.id = t.subcategory_id)
+union all select 'dangling category_id', count(*) from transactions t
+  where t.user_id = :uid and t.category_id is not null
+    and not exists (select 1 from categories c where c.id = t.category_id)
+union all select 'dangling account_id', count(*) from transactions t
+  where t.user_id = :uid and t.account_id is not null
+    and not exists (select 1 from accounts a where a.id = t.account_id);
+```
+
+**验证**：`tsc` 84 → 84（零新增），`npm run build` 通过（8.16s）。**待做**：部署后在线上真删一个标签，确认 `dangling tag refs` 仍为 0。
+
+### 六、浏览器实测（本地 dev，Chrome CDP 直连）
+
+用 CDP 直连用户已登录的 Chrome，在 `http://localhost:5173`（dev 跑的是本地代码）上真点了一遍：
+
+| 用例 | 结果 |
+|---|---|
+| 「记一笔 → + 添加标签 → **管理标签**」（原 bug） | ✅ 管理弹窗正常打开，**命中测试 `elementFromPoint` 落在弹窗自身、`covered=false`** —— 不再被「记一笔」覆盖层遮挡 |
+| 打开管理器时来源弹窗 | ✅ 已关闭（`selectorStillOpen=false`），两者不会叠在一起 |
+| 关闭管理器 | ✅ 回到「选择标签」弹窗（`selectorReopened=true`） |
+| 使用次数与排序 | ✅ 31 个标签全部算出次数并**按引用数倒序**（拼多多 124 笔、外卖 122、沃尔玛 98…真功夫 1 笔） |
+| 「全部标签」区 | ✅ 最近使用 5 个 + 全部标签 26 个 = 31 个，无重复无遗漏 |
+| 新建标签 | ✅ 保存后进入列表、显示「未使用」，且**自动选了未被占用的 `#4ecdc4`**（原来恒为 `#818cf8`，而它已被华莱士占用） |
+| 重名校验 | ✅ 用已有的「瑞幸」新建被拦下：提示「已存在同名标签「瑞幸」」且未新增 |
+| 删除二次确认 | ✅ 行内确认行出现，文案「删除「CDP测试」？该标签尚未被使用。」 |
+| **级联清理** | ✅ 把测试标签注入一笔真实交易的本地记录（只改 IndexedDB、保持 `_sync_status=synced` 以免污染线上），经 UI 删除该标签后，**该交易 tags 由 2 回到 1、不再包含被删 id**，UI 同步消失 |
+| 子分类管理入口 | ✅ 「子分类管理 → 管理标签」同样就地打开；子分类侧显示真实使用次数（正餐 1296 笔 / 居家饮食 424 / 零食饮料 339 / 大餐 323） |
+| 线上数据未被污染 | ✅ 复查 SQL：测试标签已消失、目标交易 tags 仍为 1、悬空引用仍为 0、标签总数回到 31 |
+
+### 七、分类删除加守卫（同类的必填引用）
+
+标签那样"把引用置空"的做法不能用在**分类**上 —— `category_id` 是交易的必填属性，置空会让交易没有分类、报表把它分组到一个空分类里。因此 `deleteCategory` 改为：
+
+- 先 `localTransactions.countByRef(userId, 'category_id', id)`；**仍被引用就拒绝删除**，抛出「还有 N 笔交易在使用这个分类，请先把它们改到其它分类」；
+- 并把该原因接到 UI：`Categories.tsx` 的 toast 改为显示 `e.message`，`AddTransaction.handleDeleteCustomCategory` 补 try/catch + `displayToast(e.message)`（原来没有 catch，会变成"点了没反应"）。
+
+**未处理**：`deleteAccount`（账户被 `transactions.account_id` 与 `transfers` 的 from/to 引用，需要一并考虑，留待下一步）。
+
+---
+
 ## 2026-09-22：财富收益曲线口径修正 + 全应用性能治理 + 同步增量化的前置改造
 
 起因是"财富板块持仓收益曲线与顶部卡片数值明显对不上"。排查后确认**不是算错**，而是两条价格链路口径不同；顺带做了一轮性能/资源治理。均为最小侵入改动，未改任何交互流程。

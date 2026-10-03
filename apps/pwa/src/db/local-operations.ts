@@ -191,6 +191,59 @@ export const localTransactions = {
     const deleted = markDeleted(existing)
     await db.transactions.put(deleted)
   },
+
+  /**
+   * 从所有交易上摘掉某个标签的引用，返回被改动过的交易 id。
+   *
+   * **删标签时必须调用**：交易上的 `tags` 存的是**标签 id 数组**（不是名字）。
+   * 不清理就会留下悬空引用 —— tags 表里已无这个 id、界面上也不显示，以后重建一个
+   * 同名标签拿到的是**新 id**，这些引用永远接不回来：表现上"数据没问题"，
+   * 实际已经悄悄丢了归属（历史数据导入时就是靠这种残留才发现了这个 bug）。
+   */
+  async removeTagFromAll(userId: string, tagId: string): Promise<string[]> {
+    const hit = await db.transactions
+      .where('user_id').equals(userId)
+      .filter(r => r._sync_status !== 'pending_delete' && Array.isArray(r.tags) && r.tags.includes(tagId))
+      .toArray()
+    for (const r of hit) {
+      // 复用 update：内部已做 markDirty（置 local_dirty + 更新时间戳），会被同步引擎推送
+      await localTransactions.update(r.id, { tags: (r.tags ?? []).filter(t => t !== tagId) })
+    }
+    if (hit.length > 0) {
+      console.log(`[tags] 已从 ${hit.length} 笔交易上摘掉标签 ${tagId}`)
+    }
+    return hit.map(r => r.id)
+  },
+
+  /**
+   * 统计有多少笔有效交易引用了某个 id。
+   * 用于「分类」这类**必填**引用：删分类不能像标签那样把引用置空（否则交易没有分类、
+   * 报表会分组到一个空分类里），所以先数一下，仍被引用就拒绝删除并告知数量。
+   */
+  async countByRef(userId: string, field: 'category_id' | 'subcategory_id' | 'account_id', value: string): Promise<number> {
+    return db.transactions
+      .where('user_id').equals(userId)
+      .filter(r => r._sync_status !== 'pending_delete' && (r as any)[field] === value)
+      .count()
+  },
+
+  /**
+   * 清空所有交易对某个子分类的引用，返回被改动过的交易 id。
+   * 同理：`subcategory_id` 也是 id，删子分类必须级联清理。
+   */
+  async clearSubCategoryFromAll(userId: string, subCategoryId: string): Promise<string[]> {
+    const hit = await db.transactions
+      .where('user_id').equals(userId)
+      .filter(r => r._sync_status !== 'pending_delete' && r.subcategory_id === subCategoryId)
+      .toArray()
+    for (const r of hit) {
+      await localTransactions.update(r.id, { subcategory_id: null })
+    }
+    if (hit.length > 0) {
+      console.log(`[subCategories] 已从 ${hit.length} 笔交易上清掉子分类 ${subCategoryId}`)
+    }
+    return hit.map(r => r.id)
+  },
 }
 
 // ============================================================

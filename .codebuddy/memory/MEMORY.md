@@ -3,6 +3,7 @@
 ## 记忆纪律
 - **日常改动不自动写 memory**，只有用户明确说「记一下 / 写到 memory」才动 memory 文件。
 - 只记**可复用的原则**，不记具体事件/某天踩的坑。
+- **规则不要只写在文档/记忆里**：README 要人去读、记忆库按相关性召回，两者都**不保证进上下文**。2026-10-03 就发生过：本文件「历史账单导入」里明明写着标签白名单规则，我仍给一堆本地小摊建了标签且写下时没被任何东西拦住。→ **关键约束必须落成可执行的代码护栏**（常量白名单 + 生成前 `assert`），违反时脚本直接失败；文档只留指针，不当作执行依据。
 
 ## 与用户协作
 - **先确认真实需求再动手**：用户骂「听不懂人话」时，几乎都是我自作主张拍脑袋、没照明确指令做。他给的指令（如「放一行」）是唯一标准，不要套 AI 默认范式「优化」。
@@ -59,7 +60,9 @@
 - 分类以 **MCP 查线上 categories 表**为准（不凭 seed.sql 猜：用户自建分类「人情世故」只在真实 uid 下有）；uid 固定 `38c16ed7-7aa2-4287-afd3-412fecdd913f`。
 - 用户确认过的映射：餐饮→饮食/大餐；酒水饮料/零食→饮食/零食饮料；菜肉→饮食/居家饮食；旅游系按名选子标签；淘宝/购物按备注细分；收入要计算；「余额变更」属资产转移跳过。
 - **红包/人情分收支**：发出的是**支出**→「人情世故」；收到的是**收入**→「礼金」。
-- 生成 SQL 规则：金额必须**非负**（`CHECK amount>=0`，方向靠 `type`，取 `abs`）；`time` 缺失填 `09:00:00`；`merchant` 并入 `note`（表无 merchant 列）；tags 只写白名单（平台/品牌/商超/连锁餐饮），不写视频订阅/交通/会员/宽泛场景词；生成前先查远程库现有 tags 并用 `ON CONFLICT (user_id,name) DO NOTHING`；脚本名 `gen_import_sql_<批次>.py`，可复跑。
+- 生成 SQL 规则：金额必须**非负**（`CHECK amount>=0`，方向靠 `type`，取 `abs`）；`time` 缺失填 `09:00:00`；`merchant` 并入 `note`（表无 merchant 列）；生成前先查远程库现有 tags 并用 `ON CONFLICT (user_id,name) DO NOTHING`；脚本名 `gen_import_sql_<批次>.py`，可复跑。
+- **标签口径的唯一真相源是 `history-bills/tag_policy.py`**（不是本文档、不是 README）：白名单 = 平台/品牌/商超/连锁餐饮。**本地一次性小摊/单店/品类名一律不建标签**——反例 `17肠粉`、`真渝味面馆`、`权发麻辣烫`、`隆江猪脚饭`、`中盛`、`供销社`、`话费充值`、`App Store`；「这是一顿饭」由子分类（正餐/零食饮料/居家饮食）表达，标签只用于跨分类筛同一个品牌/平台。批次脚本必须 `from tag_policy import pick_tag, assert_allowed`，越界即 `SystemExit`、不产出 SQL。**2026-09 批次违反此规则被用户纠正，随后清理了 12 个过度标签。**
+- **`transactions.tags` 混用问题已修复**：历史各批写的是标签名，2026-10-03 已按 `tags.name` 全部映射回 UUID（91 处 / 89 笔），并修掉 3 处悬空 UUID。**写 tags 一律写 UUID**。
 - 交付前校验：category 合法、amount>=0、无兜底未匹配项。
 
 ## Supabase / 离线同步（硬约束）
@@ -114,7 +117,14 @@
 ### 项目约定
 - **`docs/summary.md` 是「时间倒序」：最新一天的记录放在文件最上方**（紧跟 `# 工作记录汇总` + 引用块 + `---` 之后，插在**第一个 `## ` 标题之前**），不是追加到末尾。文件第 3 行已明写"按时间倒序追加，最新在最上方"。条目格式：`## YYYY-MM-DD：标题` / `## YYYY-MM-DD — 标题`，下面用 `### 一、…`、`### 二、…` 分节；日期间用 `---` 分隔。
 - **本仓库的 git 提交信息**：`fix:` / `feat:` / `refactor:` / `docs:` + 中文描述，允许一条大提交覆盖当天多块改动（参照 `d328bc4`）。
-- **push 需要显式使用 SSH 地址**（见提交 `cfb29a0` 的说明）。
+- **push 需要显式使用 SSH 地址**（见提交 `cfb29a0` 的说明）。**用 URL 推送不会更新本地 `origin/main` 引用**，推完 `git fetch origin` 再比对 `git rev-parse origin/main HEAD`。
+- **PowerShell 里 `git commit -m` 的消息不要带转义引号 `\"`**：会被解析成 pathspec 导致提交失败，而紧接着的 `git push` 显示 `Everything up-to-date`，很容易误判成"推送成功"。消息里用「」全角括号代替，或改用 `-F <文件>`。
+- **「记一笔」(`AddTransaction`) 是 App 级常驻的全屏覆盖层，不是路由页面**（`App.tsx` 由 `showAddTransaction` 控制、始终挂载）。**从它内部 `navigate()` 出去，目标页面会被这层覆盖层整个挡住**，用户看到的就是"点了没反应"。→ 凡是从它内部触发的"管理/编辑"类操作，一律用**弹窗就地完成**（`Modal` 已 `createPortal` 到 body、`z-[100]`），不要跳路由。
+- **标签（tags）**：全局自由标签，表 `tags(id, user_id, name, color)`；交易上的 `tags` 字段存**标签 id 数组**。CRUD 在 `AppContext` 的 `addTag` / `updateTag` / `deleteTag`（都会更新本地 state 并触发 `syncAfterWrite('tags')`）。管理界面是 `components/TagManagerModal.tsx`（2026-10-03 新增，含新建/改名/改色/删除/使用次数/重名校验），入口在「记一笔」的 `TagSelectModal` 与 `SubCategoryManagerModal` 里。
+- **配色统一走 `utils/colorPalette.ts`**：`PRESET_COLORS` + `pickUnusedColor()`（新建时自动挑一个没用过的颜色，避免新建的东西颜色全一样）。
+- **删除被引用的实体必须级联清理引用**（2026-10-03 修复）：交易的 `tags` 存**标签 id 数组**、`subcategory_id` / `category_id` / `account_id` 也都是 id。原实现 `deleteTag` / `deleteSubCategory` / `deleteCategory` / `deleteAccount` **都不级联** → 会留下"引用表里已无该 id、界面也不显示、重建同名也接不回来"的悬空引用（历史数据导入时正是靠这种残留才发现该 bug）。已修：`deleteTag` → `localTransactions.removeTagFromAll`、`deleteSubCategory` → `clearSubCategoryFromAll`（都同步更新内存 state + 补 `syncAfterWrite('transactions')`）。**`deleteCategory` 已加守卫**：`category_id` 是**必填**，不能像标签那样把引用置空（否则交易没分类、报表分组到空分类）→ 用 `localTransactions.countByRef` 数一下，**仍被引用就拒绝删除**并抛「还有 N 笔交易在使用这个分类…」；UI 侧（`Categories.tsx` toast、`AddTransaction.handleDeleteCustomCategory`）**必须把 `e.message` 显示出来**，否则又是"点了没反应"。**`deleteAccount` 仍未处理**（被 `transactions.account_id` 与 `transfers` 的 from/to 引用，需一并考虑）。新增任何删除逻辑时先问一句"还有谁引用它"。
+- **悬空引用体检 SQL**（改完删除逻辑或怀疑数据脏时跑）：见 `docs/summary.md` 2026-10-03 条目第五节，覆盖 tag / subcategory_id / category_id / account_id 四类。**2026-10-03 实测线上四类均为 0**（4121 笔交易、598 笔带标签）。
+- **UI 改动的实测手段**：用 `chrome-cdp` 技能直连用户已登录的 Chrome（`node "${CLAUDE_SKILL_DIR}/scripts/ensure-cdp.mjs"` 就绪 → `cdp.mjs eval "<js>" "<url子串>"`），dev server 跑本地代码时直接点真流程验证。要点：①**必须做覆盖命中测试** —— 取目标元素中心 `document.elementFromPoint` 看最上层是不是它自己，这才能证明"没被遮住"；②React 受控输入要用 `Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set` + 派发 `input` 事件，且**填值后要等一下**再点保存（React 状态是异步刷新）；③`cdp.mjs eval` 会等待 Promise，`indexedDB.databases()` 可探库名（本项目 `MyBillsDB`）。
 - **判断 tsc 报错是否自己引入**：`git stash push -m baseline -- <文件>` → 跑 tsc → `git stash pop`，用 HEAD 版本做基线。本项目 `AppContext.tsx` 长期存在 3 个预存类型错误（`big_expense_threshold` 赋值、`string|null`、Provider 缺 `deleteBill`），不是新引入的。
 
 ## 构建 / 验证（防误判）

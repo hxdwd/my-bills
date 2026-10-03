@@ -19,6 +19,7 @@ import { useApp } from '../context/AppContext';
 import { useAuthStore } from '../stores/useAuthStore';
 import SubCategoryManagerModal from '../components/SubCategoryManagerModal';
 import TagSelectModal from '../components/TagSelectModal';
+import TagManagerModal from '../components/TagManagerModal';
 import { recordTagUsage } from '../utils/tagUsage';
 import { currencySymbol } from '../utils/format';
 
@@ -88,6 +89,9 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
   const [showSubManager, setShowSubManager] = useState(false);
   // 标签选择弹窗
   const [showTagSelect, setShowTagSelect] = useState(false);
+  // 标签管理弹窗 + 它是由哪个弹窗打开的（关掉后要回到原处）
+  const [showTagManager, setShowTagManager] = useState(false);
+  const [tagManagerFrom, setTagManagerFrom] = useState<'select' | 'sub' | null>(null);
 
   // 日期时间
   const [date, setDate] = useState(new Date());
@@ -192,9 +196,14 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
 
   // 删除自定义分类
   const handleDeleteCustomCategory = async (id: string) => {
-    await deleteCategory(id);
-    if (selectedCategoryId === id) {
-      setSelectedCategoryId('');
+    try {
+      await deleteCategory(id);
+      if (selectedCategoryId === id) {
+        setSelectedCategoryId('');
+      }
+    } catch (e: any) {
+      // 仍被交易引用时会被拒绝删除：必须把原因说出来，否则用户会以为"点了没反应"
+      displayToast(e?.message || '删除失败');
     }
   };
 
@@ -408,6 +417,30 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
     const uid = useAuthStore.getState().user?.id
     if (uid) recordTagUsage(uid, tagId)
     setShowTagSelect(false);
+  };
+
+  // 打开标签管理：**就地弹窗，不跳路由**。
+  // 原先「管理标签」是 onClose() + navigate('/categories')，但「记一笔」是 App 级常驻的
+  // 全屏覆盖层，路由换掉后它仍在最上层把目标页面挡住 —— 用户看到的就是"点了没反应"。
+  const openTagManagerFrom = (from: 'select' | 'sub') => {
+    if (from === 'select') setShowTagSelect(false);
+    else setShowSubManager(false);
+    setTagManagerFrom(from);
+    setShowTagManager(true);
+  };
+
+  // 关闭标签管理：回到打开它的那个弹窗（用户只是顺手改一下标签，不该丢掉原来的上下文），
+  // 并剔除管理期间被删掉的标签，避免表单里留下既选不中也显示不出的死 id。
+  const closeTagManager = () => {
+    setShowTagManager(false);
+    if (tagManagerFrom === 'select') setShowTagSelect(true);
+    else if (tagManagerFrom === 'sub') setShowSubManager(true);
+    setTagManagerFrom(null);
+    const alive = new Set(tags.map((t: any) => t.id));
+    setSelectedTagIds(prev => {
+      const next = prev.filter(id => alive.has(id));
+      return next.length === prev.length ? prev : next;
+    });
   };
 
   // 切换交易类型
@@ -1174,6 +1207,7 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
         categoryId={selectedCategoryId}
         categoryName={selectedCategory?.name || ''}
         onClose={() => setShowSubManager(false)}
+        onManageTags={() => openTagManagerFrom('sub')}
       />
 
       {/* 标签选择弹窗（居中 Modal） */}
@@ -1181,6 +1215,13 @@ const AddTransaction: React.FC<AddTransactionProps> = ({
         visible={showTagSelect}
         onClose={() => setShowTagSelect(false)}
         onSelect={handleSelectTagFromModal}
+        onManageTags={() => openTagManagerFrom('select')}
+      />
+
+      {/* 标签管理弹窗（就地增删改；与其它 Modal 一样 portal 到 body，不会被页面层遮挡） */}
+      <TagManagerModal
+        visible={showTagManager}
+        onClose={closeTagManager}
       />
 
       {/* Toast */}

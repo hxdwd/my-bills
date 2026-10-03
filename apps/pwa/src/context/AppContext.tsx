@@ -1128,6 +1128,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const deleteCategory = useCallback(async (id: string) => {
     if (!userId) throw new Error('未登录')
 
+    // 分类是交易的**必填**属性：直接删会把交易的 category_id 变成悬空引用
+    //（列表里显示不出分类、报表会把它分组到一个空分类），所以仍被引用时**拒绝删除**，
+    // 并把数量抛给调用方去提示用户 —— 不能像标签那样把引用置空。
+    const usedCount = await localTransactions.countByRef(userId, 'category_id', id)
+    if (usedCount > 0) {
+      throw new Error(`还有 ${usedCount} 笔交易在使用这个分类，请先把它们改到其它分类`)
+    }
+
     await localCategories.remove(id)
 
     setCategories(prev => ({
@@ -1250,7 +1258,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const deleteSubCategory = useCallback(async (id: string) => {
     if (!userId) throw new Error('未登录')
 
+    // 级联清理：`subcategory_id` 同样是 id，删子分类必须把交易上的引用清掉（同 deleteTag）
+    const affectedTxnIds = await localTransactions.clearSubCategoryFromAll(userId, id)
+
     await localSubCategories.remove(id)
+
+    if (affectedTxnIds.length > 0) {
+      const affected = new Set(affectedTxnIds)
+      setTransactions(prev => prev.map(t =>
+        affected.has(t.id) ? { ...t, subcategoryId: undefined, subcategoryName: undefined } : t
+      ))
+      syncEngine.syncAfterWrite('transactions', userId).catch(err => {
+        console.error('后台同步交易子分类清理失败:', err)
+      })
+    }
 
     setSubCategories(prev => prev.filter(s => s.id !== id))
 
@@ -1300,7 +1321,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const deleteTag = useCallback(async (id: string) => {
     if (!userId) throw new Error('未登录')
 
+    // 级联清理：交易上的 `tags` 存的是**标签 id 数组**，删标签必须同时摘掉这些引用，
+    // 否则会留下悬空引用（tags 表里已无该 id、界面上也不显示，以后重建同名标签拿到的是
+    // 新 id，这些引用永远接不回来 —— 历史数据导入时就是靠这种残留才发现这个 bug）。
+    const affectedTxnIds = await localTransactions.removeTagFromAll(userId, id)
+
     await localTags.remove(id)
+
+    // 内存里的交易同步摘掉该标签，界面立即生效（不必等下一次全量重读）
+    if (affectedTxnIds.length > 0) {
+      const affected = new Set(affectedTxnIds)
+      setTransactions(prev => prev.map(t =>
+        affected.has(t.id) ? { ...t, tags: (t.tags ?? []).filter(x => x !== id) } : t
+      ))
+      syncEngine.syncAfterWrite('transactions', userId).catch(err => {
+        console.error('后台同步交易标签清理失败:', err)
+      })
+    }
 
     setTags(prev => prev.filter(t => t.id !== id))
 

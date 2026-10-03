@@ -123,8 +123,9 @@ export default function CategoriesPage() {
     try {
       await deleteCategory(id)
       displayToast('分类已删除')
-    } catch {
-      displayToast('删除失败')
+    } catch (e: any) {
+      // 仍被交易引用时会被拒绝删除并带上原因，这里要把原因显示出来
+      displayToast(e?.message || '删除失败')
     }
   }
 

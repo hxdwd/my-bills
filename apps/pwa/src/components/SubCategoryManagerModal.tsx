@@ -1,20 +1,20 @@
 import { useState, useMemo, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { Modal } from './ui/Modal'
 import { Plus, Pencil, Trash2, ChevronUp, ChevronDown, X, Check } from 'lucide-react'
-
-const PRESET_COLORS = [
-  '#ff6b6b', '#4ecdc4', '#a855f7', '#f472b6', '#fb923c',
-  '#38bdf8', '#84cc16', '#818cf8', '#ec4899', '#14b8a6',
-  '#E5C45E', '#22c55e', '#ef4444', '#6366f1', '#10b981', '#1677ff'
-]
+import { PRESET_COLORS } from '../utils/colorPalette'
 
 interface SubCategoryManagerModalProps {
   visible: boolean
   categoryId: string
   categoryName: string
   onClose: () => void
+  /**
+   * 打开「管理标签」。
+   * 注意：**不要跳路由** —— 该弹窗目前只在「记一笔」里使用，而「记一笔」是 App 级常驻的
+   * 全屏覆盖层，路由切走后它仍在最上层，会把目标页面整个挡住（用户以为"点了没反应"）。
+   */
+  onManageTags: () => void
 }
 
 export default function SubCategoryManagerModal({
@@ -22,15 +22,29 @@ export default function SubCategoryManagerModal({
   categoryId,
   categoryName,
   onClose,
+  onManageTags,
 }: SubCategoryManagerModalProps) {
   const {
     subCategories,
+    transactions,
     addSubCategory,
     updateSubCategory,
     deleteSubCategory,
     reorderSubCategories,
   } = useApp()
-  const navigate = useNavigate()
+
+  // 每个子分类被多少笔交易引用：一次遍历建 Map。
+  // 删子分类会级联清掉这些引用，属于有影响面的操作，必须让用户先看到数量再确认。
+  const usage = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const t of transactions) {
+      if (t.subcategoryId) m.set(t.subcategoryId, (m.get(t.subcategoryId) ?? 0) + 1)
+    }
+    return m
+  }, [transactions])
+
+  // 待确认删除的子分类 id（行内二次确认，避免误删）
+  const [confirmId, setConfirmId] = useState<string | null>(null)
 
   // 当前分类下的子分类（按 order 排序）
   const list = useMemo(
@@ -120,11 +134,6 @@ export default function SubCategoryManagerModal({
     )
   }
 
-  const openTagManager = () => {
-    onClose()
-    navigate('/categories')
-  }
-
   if (!visible) return null
 
   return (
@@ -193,56 +202,90 @@ export default function SubCategoryManagerModal({
               该分类暂无子分类，点击上方新建
             </p>
           ) : (
-            list.map((sub, i) => (
-              <div
-                key={sub.id}
-                className="flex items-center gap-3 p-3 rounded-xl bg-[var(--bg-elevated)]"
-              >
-                <span
-                  className="w-3 h-3 rounded-full shrink-0"
-                  style={{ backgroundColor: sub.color }}
-                />
-                <span className="flex-1 text-[var(--text-primary)] truncate">{sub.name}</span>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => move(i, -1)}
-                    disabled={i === 0}
-                    className="p-1 rounded-full text-[var(--text-tertiary)] hover:text-ink hover:bg-black/5 disabled:opacity-30"
-                    aria-label="上移"
-                  >
-                    <ChevronUp size={16} />
-                  </button>
-                  <button
-                    onClick={() => move(i, 1)}
-                    disabled={i === list.length - 1}
-                    className="p-1 rounded-full text-[var(--text-tertiary)] hover:text-ink hover:bg-black/5 disabled:opacity-30"
-                    aria-label="下移"
-                  >
-                    <ChevronDown size={16} />
-                  </button>
-                  <button
-                    onClick={() => openEdit(sub.id, sub.name, sub.color)}
-                    className="p-1.5 rounded-full text-[var(--text-tertiary)] hover:text-ink hover:bg-black/5"
-                    aria-label="编辑"
-                  >
-                    <Pencil size={14} />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(sub.id)}
-                    className="p-1.5 rounded-full text-[var(--text-tertiary)] hover:text-red-500 hover:bg-black/5"
-                    aria-label="删除"
-                  >
-                    <Trash2 size={14} />
-                  </button>
+            list.map((sub, i) => {
+              const used = usage.get(sub.id) ?? 0
+              const confirming = confirmId === sub.id
+              return (
+                <div key={sub.id} className="p-3 rounded-xl bg-[var(--bg-elevated)]">
+                  <div className="flex items-center gap-3">
+                    <span
+                      className="w-3 h-3 rounded-full shrink-0"
+                      style={{ backgroundColor: sub.color }}
+                    />
+                    <span className="flex-1 text-[var(--text-primary)] truncate">{sub.name}</span>
+                    <span className="text-xs text-[var(--text-tertiary)] shrink-0">
+                      {used > 0 ? `${used} 笔` : '未使用'}
+                    </span>
+                    {!confirming && (
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          onClick={() => move(i, -1)}
+                          disabled={i === 0}
+                          className="p-1 rounded-full text-[var(--text-tertiary)] hover:text-ink hover:bg-black/5 disabled:opacity-30"
+                          aria-label="上移"
+                        >
+                          <ChevronUp size={16} />
+                        </button>
+                        <button
+                          onClick={() => move(i, 1)}
+                          disabled={i === list.length - 1}
+                          className="p-1 rounded-full text-[var(--text-tertiary)] hover:text-ink hover:bg-black/5 disabled:opacity-30"
+                          aria-label="下移"
+                        >
+                          <ChevronDown size={16} />
+                        </button>
+                        <button
+                          onClick={() => openEdit(sub.id, sub.name, sub.color)}
+                          className="p-1.5 rounded-full text-[var(--text-tertiary)] hover:text-ink hover:bg-black/5"
+                          aria-label="编辑"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          onClick={() => setConfirmId(sub.id)}
+                          className="p-1.5 rounded-full text-[var(--text-tertiary)] hover:text-red-500 hover:bg-black/5"
+                          aria-label="删除"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 行内二次确认：删除会级联清掉引用它的交易上的子分类 */}
+                  {confirming && (
+                    <div className="mt-2.5 pt-2.5 border-t border-black/5">
+                      <p className="text-xs text-[var(--text-secondary)] mb-2">
+                        删除「{sub.name}」？
+                        {used > 0
+                          ? `已有 ${used} 笔交易使用它，删除后这些交易上的该子分类会被清掉。`
+                          : '该子分类尚未被使用。'}
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleDelete(sub.id)}
+                          className="flex-1 py-2 rounded-lg text-sm font-medium text-white bg-red-500 hover:bg-red-600 transition-colors"
+                        >
+                          确认删除
+                        </button>
+                        <button
+                          onClick={() => setConfirmId(null)}
+                          className="flex-1 py-2 rounded-lg text-sm font-medium text-[var(--text-secondary)] bg-[var(--bg-secondary)] hover:bg-[var(--surface-warm)] transition-colors"
+                        >
+                          取消
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))
+              )
+            })
           )}
         </div>
 
         {/* 标签管理入口 */}
         <button
-          onClick={openTagManager}
+          onClick={onManageTags}
           className="w-full mt-3 py-2.5 rounded-xl text-sm text-[var(--text-secondary)] bg-[var(--bg-secondary)] hover:bg-[var(--surface-warm)] transition-colors"
         >
           管理标签
