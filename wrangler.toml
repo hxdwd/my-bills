@@ -1,18 +1,12 @@
-# Cloudflare Pages + Functions config
-# Local dev: wrangler pages dev apps/pwa/dist
+# Cloudflare Pages config（纯静态前端，后端接口已迁至独立共享 Worker）
 # Deploy: wrangler pages deploy apps/pwa/dist
 #
-# KV bindings must also be configured in Cloudflare Dashboard:
-# Settings > Functions > KV namespace bindings > add QUOTE_CACHE
+# 前端通过构建时环境变量 VITE_FUNCTIONS_URL 指向共享 Worker 地址；
+# Pages 侧不再包含任何 Functions 代码，也不再需要 KV 绑定。
 
 name = "my-bills"
 pages_build_output_dir = "apps/pwa/dist"
 compatibility_date = "2024-01-01"
-compatibility_flags = ["nodejs_compat"]
-
-[[kv_namespaces]]
-binding = "QUOTE_CACHE"
-id = "a025d8ed33bf444c9ec7df45993aae92"
 
 [vars]
 LOG_LEVEL = "1"
