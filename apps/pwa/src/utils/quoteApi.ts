@@ -1,6 +1,6 @@
-// 行情 / 估值 Functions 接口封装
-// 生产环境用同源相对路径（'' → fetch('/api/...') 自动打到 Pages Functions）。
-// 本地开发(wrangler dev)时，在 apps/pwa/.env 设 VITE_FUNCTIONS_URL=http://localhost:8799 指向本地函数。
+// 行情 / 估值接口封装（后端由独立共享 Worker 提供，本仓库不再含 Functions）
+// 生产环境由构建时 VITE_FUNCTIONS_URL 指向共享 Worker；未设置则走同源相对路径 fetch('/api/...')。
+// 本地开发时，在 apps/pwa/.env 设 VITE_FUNCTIONS_URL=http://localhost:8799 指向本地 Worker。
 // 注意：VITE_ 变量是构建时注入，改完需重新构建再部署，仅 push 源码不会生效。
 
 const FUNCTIONS_URL = (import.meta.env.VITE_FUNCTIONS_URL || '').replace(/\/$/, '')

@@ -7,7 +7,6 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "typecheck:functions": "tsc -p tsconfig.functions.json",
     "preview": "vite preview",
     "db:migrate": "supabase migration up",
     "db:seed": "supabase db seed",
