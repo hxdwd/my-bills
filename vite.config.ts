@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'path'
@@ -10,9 +10,52 @@ const pkg = JSON.parse(
   fs.readFileSync(path.resolve(process.cwd(), 'package.json'), 'utf-8')
 )
 
+/**
+ * 生产构建护栏（fail-closed）
+ *
+ * 本仓库的 Pages Functions 已移除，前端 /api/* 不再有「同源兜底」，
+ * 只能靠 VITE_FUNCTIONS_URL 指向独立的共享 Worker。
+ * 若生产构建拿不到这个地址（或拿到 localhost），打出来的包必然全站接口 404。
+ * 此时宁可构建失败 —— 线上会停留在上一个可用版本，好过把坏包发上去。
+ *
+ * 本地 `npm run build` 不会被 localhost 拦下（只拦 CI/Pages 环境），
+ * 真有特殊情况可用 ALLOW_EMPTY_API_BASE=1 强制跳过。
+ */
+function guardApiBase(): Plugin {
+  return {
+    name: 'guard-api-base',
+    configResolved(config) {
+      if (config.command !== 'build') return
+      if (process.env.ALLOW_EMPTY_API_BASE) return
+
+      const base = (
+        process.env.VITE_FUNCTIONS_URL ||
+        loadEnv(config.mode, config.envDir, 'VITE_').VITE_FUNCTIONS_URL ||
+        ''
+      ).trim().replace(/\/$/, '')
+      const isCICloudflare = process.env.CF_PAGES === '1' || !!process.env.CI
+
+      if (!base) {
+        throw new Error(
+          '\n[build guard] 缺少 VITE_FUNCTIONS_URL：Pages Functions 已移除，前端接口只能走共享 Worker。\n' +
+            '  请在该环境设置 VITE_FUNCTIONS_URL=https://<worker 域名>（不要带尾斜杠）后重新构建。\n' +
+            '  若确需临时放行：ALLOW_EMPTY_API_BASE=1\n'
+        )
+      }
+      if (isCICloudflare && /^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/i.test(base)) {
+        throw new Error(
+          `\n[build guard] VITE_FUNCTIONS_URL 指向本机（${base}），构建线上包会把所有接口打到本机。\n` +
+            '  请在 Cloudflare Pages 环境变量里改成共享 Worker 的生产域名，且改完必须重新部署。\n'
+        )
+      }
+    },
+  }
+}
+
 export default defineConfig({
   root: 'apps/pwa',
   plugins: [
+    guardApiBase(),
     react(),
     VitePWA({
       registerType: 'autoUpdate',
