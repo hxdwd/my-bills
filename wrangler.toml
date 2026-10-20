@@ -1,15 +1,21 @@
-# Cloudflare Pages config（纯静态前端，后端接口已迁至独立共享 Worker）
-# Deploy: wrangler pages deploy apps/pwa/dist
+# Cloudflare Pages config
+# 前端为纯静态产物；所有业务后端在独立 Worker `my-bills-api` 中，
+# 通过 Service binding（下面的 [[services]]）调用 —— Worker 不暴露公网。
 #
-# 前端通过构建时环境变量 VITE_FUNCTIONS_URL 指向共享 Worker 地址；
-# Pages 侧不再包含任何 Functions 代码，也不再需要 KV 绑定。
+# Deploy: wrangler pages deploy apps/pwa/dist   （或 Git 集成自动构建）
 
 name = "my-bills"
 pages_build_output_dir = "apps/pwa/dist"
 compatibility_date = "2024-01-01"
 
+# /api/* 由 functions/api/[[path]].ts 原样转交给该 Worker。
+# binding 名必须与转发层里的 env.API 一致。
+[[services]]
+binding = "API"
+service = "my-bills-api"
+
 [vars]
 LOG_LEVEL = "1"
 
 # DO NOT declare API keys here. [vars] deploys as Plaintext and overwrites Secrets.
-# Use .dev.vars for local dev. Use wrangler pages secret put or Dashboard for production.
+# 后端密钥（DEEPSEEK_API_KEY 等）配在 Worker 侧，不在这个 Pages 项目里。
