@@ -1,5 +1,11 @@
-// e2e 环境编排：自动起 wrangler(8799 行情) + vite(5173 前端)，
+// e2e 环境编排：自动起共享 Worker(8799 行情) + vite(5173 前端)，
 // 轮询等端口就绪后运行 e2e-smoke.mjs，结束自动关停子进程，临时产物落 .tmp/。
+//
+// 后端已从本仓库迁出：行情/估值/财富接口都在独立 Worker `my-bills-api`
+// （当前源码在 jijibao/worker）。本仓库只剩 functions/api/[[path]].ts 转发层，
+// 而 Service binding 在本地 pages dev 下是 [not connected]，所以不能再
+// `wrangler pages dev` 起后端 —— 必须单独跑 Worker 的 `wrangler dev`。
+// Worker 目录默认 ../jijibao/worker，可用 MY_BILLS_API_DIR 覆盖。
 //
 // 用法：node scripts/e2e-env.mjs
 // 跳过环境启动（已在跑）：node scripts/e2e-env.mjs --skip-env
@@ -95,9 +101,15 @@ async function main() {
   }, TOTAL_TIMEOUT_MS);
 
   if (!SKIP_ENV) {
-    // wrangler pages dev 需要 dist 存在，否则静默失败
-    if (!existsSync(resolve(ROOT, 'apps/pwa/dist'))) {
-      console.error('[env] 缺少 apps/pwa/dist，请先 `npm run build` 再跑 e2e');
+    // 后端在独立 Worker 里，必须能找到它的源码目录才能起本地行情服务
+    const WORKER_DIR = process.env.MY_BILLS_API_DIR
+      ? resolve(process.env.MY_BILLS_API_DIR)
+      : resolve(ROOT, '../jijibao/worker');
+    if (!existsSync(resolve(WORKER_DIR, 'wrangler.toml'))) {
+      console.error(
+        `[env] 找不到共享 Worker 目录：${WORKER_DIR}\n` +
+          '  后端已迁出本仓库，请用 MY_BILLS_API_DIR 指向 my-bills-api 源码目录后重试。'
+      );
       clearTimeout(timer);
       process.exit(1);
     }
@@ -106,8 +118,8 @@ async function main() {
     // 等端口释放
     await new Promise((r) => setTimeout(r, 1500));
 
-    console.log('[env] 启动 wrangler (行情 8799)...');
-    spawnProc('npx', ['wrangler', 'pages', 'dev', 'apps/pwa/dist', '--port', String(WRANGLER_PORT)], ROOT, 'wrangler');
+    console.log(`[env] 启动共享 Worker (行情 8799)，目录 ${WORKER_DIR}...`);
+    spawnProc('npx', ['wrangler', 'dev', '--port', String(WRANGLER_PORT)], WORKER_DIR, 'wrangler');
     console.log('[env] 启动 vite (前端 5173)...');
     spawnProc('npx', ['vite', '--port', String(VITE_PORT), '--strictPort'], ROOT, 'vite');
     console.log('[env] 等待端口就绪...');

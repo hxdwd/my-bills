@@ -11,6 +11,48 @@
 - **图表**: Chart.js + react-chartjs-2
 - **PWA**: vite-plugin-pwa
 
+## 系统架构
+
+```
+浏览器 / PWA（React SPA + IndexedDB 本地主数据源）
+        │
+        │ ① 同源 /api/*（浏览器视角无跨域）
+        ▼
+Cloudflare Pages（本仓库）
+ · 静态产物 apps/pwa/dist
+ · functions/api/[[path]].ts —— 纯转发层，不含业务逻辑
+        │
+        │ ② Service binding（不经公网；Worker 公网入口已关闭）
+        ▼
+共享后端 Worker（独立仓库）
+ · /api/health       探活
+ · /api/quote/*      行情搜索 / 详情 / 历史
+ · /api/valuation/*  批量估值 + 汇率折算
+ · /api/wealth/*     财富 AI 分析 / 截图导入
+ · /api/expend/*     目标对话
+        │
+        ├──▶ 行情数据源（A股 / 基金 / 美股 / 黄金）
+        └──▶ AI 服务（分析 / 对话 / OCR）
+
+旁路：账户、交易、预算等业务数据由前端直接访问数据库 REST 接口，不经 Worker
+     （按行级权限隔离）；离线读写 IndexedDB，联网后增量同步。
+```
+
+**三条硬约束**
+
+1. 本仓库**不含业务后端**。`functions/api/[[path]].ts` 只做原样转发，新增接口请改 Worker，不要往转发层写逻辑。
+2. 共享 Worker 的**公网入口是关闭的**（配置里 `workers_dev = false`），只能被 Pages 经 Service binding 调用 —— 防止有人直接刷 AI 接口产生真实费用。转发层也刻意没有"公网兜底"：绑定缺失时直接报错，而不是偷偷改走公网。
+3. Worker 与其它前端产品**共用同一个 Worker、同一套数据库 schema**，接口契约（路径、返回字段）变更前必须核对所有消费方。
+
+**部署形态**
+
+| 组成部分 | 部署方式 | push 到仓库会自动发布吗 |
+|---|---|---|
+| 前端（本仓库） | Cloudflare Pages，Git 集成，构建 `npm run build` → `apps/pwa/dist` | **会**（`main` 分支自动构建；构建失败不会顶掉线上现有版本） |
+| 后端 Worker | 独立仓库源码，命令行手动 `wrangler deploy` | **不会**，必须手动部署 |
+
+Worker 发版后 **Pages 不需要重新部署**：binding 按 service 名解析，立即指向新版本。
+
 ## 项目结构
 
 ```
@@ -38,14 +80,20 @@ my-bills/
 │       ├── tsconfig.json
 │       └── tailwind.config.js
 │
+├── functions/
+│   └── api/[[path]].ts         # /api/* 同源转发层（业务后端在独立 Worker）
+│
 ├── supabase/
-│   ├── migrations/             # 数据库迁移文件
+│   ├── migrations/             # 数据库迁移文件（schema 真相源）
 │   │   └── 001_initial_schema.sql
-│   ├── edge-functions/         # Supabase Edge Functions
 │   └── seed.sql                # 种子数据
 │
 ├── docs/                       # 文档
-│   └── database.md             # 数据库设计文档
+│   ├── database.md             # 数据库设计文档
+│   └── summary.md              # 工作记录（时间倒序）
+│
+├── scripts/                    # 本地 e2e / 冒烟脚本
+│   └── e2e-env.mjs             # 起 Worker + vite 并跑冒烟
 │
 ├── .env                        # 环境变量
 ├── .env.example                # 环境变量示例
@@ -87,11 +135,29 @@ npx supabase db push
 
 ### 4. 启动开发服务器
 
+后端（行情 / 估值 / 财富 AI）已迁到独立共享 Worker `my-bills-api`，本仓库只剩
+`functions/api/[[path]].ts` 这一层同源转发（线上经 Service binding 调 Worker）。
+因此本地要跑**两个**进程 —— 前端 vite + Worker 的 `wrangler dev`：
+
 ```bash
-npm run dev
+# 终端 1：共享 Worker（源码在独立仓库，当前为 ../jijibao/worker）
+cd ../jijibao/worker
+npx wrangler dev --port 8799
+
+# 终端 2：前端
+npm run dev            # 依赖 apps/pwa/.env 里的 VITE_FUNCTIONS_URL=http://localhost:8799
 ```
 
 访问 http://localhost:5173
+
+> `wrangler pages dev` 在本地无法代替 Worker：Service binding 在本地是
+> `[not connected]`，/api/* 会直接 503。
+
+端到端冒烟（自动起 Worker + vite，跑财富首页用例）：
+
+```bash
+npm run e2e            # Worker 目录可用 MY_BILLS_API_DIR 覆盖
+```
 
 ### 5. 构建
 

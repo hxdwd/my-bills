@@ -4,6 +4,188 @@
 
 ---
 
+## 2026-10-29（续）— 设置页新增「开发者工具」+「关于」与「版本更新」职责拆分
+
+### 一、最终形态
+
+- **「关于」**：原来点了直接弹更新日志（和「版本更新」完全重复）。现在点击只**跟手提示当前版本**；2s 内连点 **5 次**解锁开发者工具。更新日志只留在「版本更新」的底部弹窗（保持原样不动）。
+- **「开发者工具」**：解锁后出现在「设置 → 其他」，普通用户可见（不做口令保护）；未解锁不渲染。
+
+### 二、实现
+
+**`utils/devtools.ts`（解锁状态 + fetch 录制）**
+
+- 状态存 `localStorage['mybills.devtools.enabled']`，并带订阅机制让设置页/工具页实时响应。
+- 只拦**同源**请求：`/api/*` 记为「接口」、`/api/supabase/*` 记为「数据库」、其它同源记为「其它」；第三方（字体 / CDN）不记录，避免把缓冲冲掉。
+- 响应体用 `Response.clone().text()` 读取，**不消耗原 body**（supabase-js 等照常工作）；单条截断 128KB、环形缓冲 200 条。
+- 额外解析 `/api/*` 外层的 `code / message` 单独展示 —— 这正是平时被剥掉、用户看不到的部分。
+- **header 一律不记录**（apikey / Authorization 不落内存）。
+- 每条同时 `console.log('[devtools] METHOD path → status (ms)', { request, response })`，手机连调试时可直接看。
+
+**`pages/DevTools.tsx`（`/devtools`）**
+
+筛选（全部 / 接口 / 数据库 / 其它 / 异常）、列表（方法、路径、状态、耗时、耗时中的转圈）、展开看请求体与**原始响应**（格式化 + 一键复制）、清空、导出 JSON、关闭工具；未启用时访问自动跳回设置。
+
+**其它接线**
+
+- `main.tsx`：启动时若已解锁则**同步**安装录制器（放在 render 之前，保证首个请求也能记录）。
+- `Settings.tsx`：连点计数（2s 无点击归零）+ 跟手提示（不用弹窗）；解锁后「其他」分组多出一行。
+- `App.tsx` / `pages/index.ts`：注册 `/devtools` 路由。
+
+### 三、验证（浏览器实测，本地 vite + 共享 Worker）
+
+| 用例 | 结果 |
+|---|---|
+| 未解锁时 | 设置页无「开发者工具」 |
+| 点 1 次「关于」 | 提示「当前版本 v1.1.8 · 再点 4 次开启开发者工具」，**不再弹更新日志** |
+| 连点满 5 次 | 提示已开启，入口立即出现 |
+| 进入工具 | 记录到 `/api/valuation/batch`；展开可见**未剥壳**的 `{ code: 0, message: "ok", data: { results: [...] } }` |
+| 控制台 | 有 `[devtools] … → 200` 日志输出 |
+| 刷新页面后 | 解锁状态保留、入口仍在 |
+| 构建 / 类型 | `vite build` 通过；`tsc` 84 条既有噪音、**零新增** |
+
+### 四、已知限制
+
+- 录制数据只存在内存：**刷新页面会清空**（刻意不写 storage，避免把 200 条响应塞进 localStorage/sessionStorage）。
+- 顺带确认一个**既有问题**（与本次改动无关，对照实验已验证）：全量同步进行中刷新页面会中断拉取，控制台打印 `[Sync] 拉取 transactions 异常: TypeError: Failed to fetch`。未开启开发者工具时同样出现。
+
+---
+
+## 2026-10-29 — 登录失败定位：数据库被自动暂停（主因）+ 前端直连域名改为同源反代
+
+### 一、现象
+
+国内网络下登不上去（应用能打开，登录转圈/失败，没有任何错误提示）。
+
+### 二、先排除「部署出问题」
+
+| 检查项 | 结果 |
+|---|---|
+| Pages 生产部署记录 | 最近一次部署仍在 **2026-10-20**，一周内**没有任何新版本**（源码提交号未变） |
+| 线上首页 / `/api/health` | 200，网站在线，Worker 与 KV 正常 |
+| 经反代调数据库 `/auth/v1/health` | 200 |
+| 经反代调 `login_user` RPC（真实账号） | 200，返回用户行 |
+
+→ 结论：**代码和部署都没变**，不是发版引起的。
+（注意：排查时数据库**已被手动重启**，所以这些健康检查全是 200，暂停态根本没被捕捉到 —— 见第三节。）
+
+### 三、真正的原因（两个，主次分明）
+
+**主因：免费版项目被自动暂停。** Supabase 免费版「7 天无活动即自动暂停」，暂停期间整个项目（Auth + REST + 数据库）全部不可用，浏览器请求直接失败、前端只看到"转圈后失败"。恢复后核对：Auth 健康 200、`login_user` 返回用户行、`transactions` **4144 行**（比 2026-10-20 的 4121 行更多）→ 数据无损。这条解释了「最近突然登录不上」的时间点。
+
+**长期隐患：前端直连数据库域名。** 线上产物里内嵌的是 `https://<project-ref>.supabase.co`，登录走 `supabase.rpc('login_user')`，即浏览器**直接**请求该域名。国内网络对 `*.supabase.co` 的解析/链路经常不可用，表现为"登录转圈后失败、服务端零日志"。
+
+⚠️ 容易搞混的点：**数据库区域 ≠ 访问可达性**。`ap-northeast-1`（东京）只决定数据库实例的机房；浏览器访问的是 Supabase 的 API 域名（走它自己的边缘 / DNS）。域名在国内被污染或链路不通时，数据库放在东京、香港还是新加坡，结果完全一样。所以「部署在东京所以应该能访问」这个判断不成立。
+
+两个问题的表象完全一样（都是登录失败），排查顺序应为：① 先确认项目是否被暂停（Dashboard 状态 / `/auth/v1/health`）；② 再确认链路（产物内嵌的是直连地址还是 `/api/supabase`）。
+
+### 四、改法（与另一前端产品同一套方案，Worker 无需改动）
+
+Worker 侧本来就有 `/api/supabase/*` 反代（另一产品在用），这次只是让本仓库前端也走它：
+
+- `apps/pwa/.env.production`：`VITE_SUPABASE_URL=/api/supabase`（相对路径）
+- `services/supabase.ts`：检测到相对路径时拼 `window.location.origin` 再交给 supabase-js
+- `services/userExpand.ts`：同样的归一化（该文件自己也直接 fetch REST 接口）
+- `.env.example` 补充说明；**本地开发仍可写直连地址**（本机走代理，不受影响）
+
+效果：浏览器只连本站域名，请求走 `同域 /api/supabase/* → 共享 Worker → 数据库`，跨域与连通性问题一起消失。
+
+### 五、验证
+
+| 项目 | 结果 |
+|---|---|
+| 构建产物扫描 | 内嵌 `*.supabase.co` **0 处**，`/api/supabase` 2 处 |
+| 反代 auth 健康检查 | 200 |
+| 反代 `login_user`（真实账号） | 200，返回用户行 |
+| **生产形态模拟**（本地静态站 + `/api/*` 转发到 Worker + 生产产物） | 登录成功写入本地登录态；4 个 POST + 14 个 GET 全部 200；财富页渲染 **10 条持仓**、总市值 52,614；无 console error、无 failed request |
+| 线上对照冒烟（当前线上包，仍是直连） | 9/9 通过 |
+
+对照结论：线上现有版本在"能直连"的网络下完全正常；改动后可不再依赖直连。
+
+### 六、待办与观察
+
+- **需要 push 到 `main`** 触发 Pages 重新构建才生效（Worker 不用重发）。
+- 生效后老用户可能被 PWA 缓存住旧包，需要刷新或重开一次。
+- **防再次暂停**：免费版仍是 7 天无活动即暂停。要么保持日常使用 / 升级 Pro，要么加一个定时任务做**真实数据库查询**（注意：只打 health 接口未必被计为"活动"）。
+- 反代并不能解决暂停 —— 上游整个项目停掉时，走反代一样失败，两者是不同层面的问题。
+- 观察到的既有问题（改前改后一致，未修）：直接打开 `/wealth` 时首次同步未必立刻渲染持仓，点一次"下拉刷新"才出来。
+
+---
+
+## 2026-10-20 — 后端迁出为独立共享 Worker + 财富板块改跟手提示 + 本地 e2e 恢复
+
+### 一、架构变更：业务后端全部迁出本仓库
+
+原来 `functions/api/**` 里的行情、估值、财富 AI、目标对话逻辑，全部搬到**独立部署的共享后端 Worker**（源码在另一个仓库，与本项目不共库）；本仓库只保留 `functions/api/[[path]].ts` 这一层**同源转发**：
+
+```
+浏览器 → Pages（同源 /api/*）→ Service binding → 共享 Worker
+```
+
+配套的四个决定：
+
+- **生产构建必须留空 `VITE_FUNCTIONS_URL`**。一旦带上地址，前端就会绕过转发层直连别处，跨域和"公网可达"问题同时回来。`apps/pwa/.env.production` 已固定为空。
+- **构建 fail-closed**。`vite.config.ts` 的 `guardApiBase` 在「既没有转发层、也没有 FUNCTIONS_URL」时直接让构建失败 —— 线上继续停在上一版可用包，好过发一个全站接口 404 的坏包；CI 里指向 localhost 也会被拦下。
+- **Worker 关闭公网入口**（配置 `workers_dev = false`，且已通过 API 关掉通配域名），只能被 Pages 经 binding 调用。动机是防刷 AI 接口产生真实费用（`workers_dev = true` 时任何人都能直接打）。
+- **转发层删掉公网兜底**。binding 缺失时返回可读的 502，而不是偷偷改走公网地址。
+
+**部署形态差异（最容易踩的一条）**：
+
+| 组成部分 | 部署方式 | push 会自动发布吗 |
+|---|---|---|
+| 前端 Pages | Git 集成，`npm run build` → `apps/pwa/dist` | 会（`main` 自动构建） |
+| 后端 Worker | 独立仓库源码 + 手动 `wrangler deploy` | **不会** |
+
+Worker 发版后 **Pages 不用重发**：binding 按 service 名解析，立即生效。
+
+### 二、财富板块：阻塞式原生弹窗改为跟手提示
+
+**问题（用户报告）**：财富页 FAB 菜单的「AI 诊断」点击是 `alert('功能开发中，敬请期待')`。原生 alert 会全屏遮挡并**阻塞整页交互**；自动化（Playwright/CDP）遇到它必须显式 dismiss 才能继续，排查线上问题时会被误判成"页面挂了"。这种设计被明确否决 —— 占位信息不该弹大窗，应该跟手就地提示。
+
+**改法**（不再出现任何原生窗口）：
+
+| 位置 | 原来 | 现在 |
+|---|---|---|
+| `WealthHome` FAB「AI 诊断」 | `alert` 全屏弹窗 | 菜单**保持展开**，按钮左侧贴 `absolute` 气泡「功能开发中，敬请期待」，1.8s 自动消失 |
+| `WealthAdd` 数量/成本非法、未选账户、保存失败 | 3 处 `alert` | 底部胶囊 toast，2s 自动消失 |
+| `WealthDetail` 数量/价格/日期校验 | `alert` | 复用页面已有的 `showToast(msg, 'error')` |
+
+细节：FAB 菜单不再在点击后立刻关闭（否则气泡随菜单一起被卸载，用户看不到）；顺手修掉「 AI   诊断」的多余空格；入口与气泡加了 `data-testid`（`wealth-ai-diagnose` / `ai-tip`）便于回归。
+
+### 三、本地 e2e 被架构变更打断，已修
+
+`scripts/e2e-env.mjs` 仍在用 `wrangler pages dev apps/pwa/dist --port 8799` 起后端。后端迁出后，本地 Pages 的 Service binding 状态是 `[not connected]`，实测 `/api/health` 直接 **503**，等于冒烟必挂。
+
+改为从共享 Worker 源码目录起 `wrangler dev --port 8799`：
+
+- 目录默认 `../jijibao/worker`（可被 `MY_BILLS_API_DIR` 覆盖）；
+- 目录或 `wrangler.toml` 不存在时**明确报错退出**，不再静默跑一个没有后端的空环境；
+- 同时删掉"必须有 `apps/pwa/dist`"的旧前置（那是 `pages dev` 的要求，vite dev 不需要）。
+
+README 的本地开发章节同步改成"双进程"说明，并写明 `wrangler pages dev` 在本地替代不了 Worker 的原因。
+
+### 四、验证（当日实测）
+
+| 项目 | 结果 |
+|---|---|
+| `npm run build` | 通过（9.5s，产物拆分 vendor 正常） |
+| `tsc --noEmit` | 84 条既有噪音（TS6133/TS2345/TS2339 等），**零新增**；无 `Cannot find name` 这类真实运行期崩溃 |
+| 线上探活 `/api/health` | 200，`service: my-bills-api`，行情 KV 已绑定 |
+| 线上行情搜索 / 批量估值 / 批量历史 | 均 200；实时价、涨跌幅、30 日序列均正常 |
+| 线上财富首页冒烟（真实登录） | **9/9 通过**，无控制台错误 |
+| 本地 vite + `wrangler dev` 冒烟 | **9/9 通过** |
+| 新交互浏览器验证 | 原生弹窗 **0** 个；气泡出现、文案正确、1.8s 自动消失；无 pageerror |
+
+**坑**：e2e 的登录态缓存是**按 origin** 存的。换了访问地址（线上 ↔ localhost）必须 `FORCE_LOGIN=1` 重新登录，否则会误报「财富首页持仓列表为空」——这不是代码问题。
+
+### 五、已知遗留
+
+- 共享 Worker 仍缺 3 个 AI/OCR 相关 secret，`/api/wealth/ai-analyze`、`/api/expend/goal-chat` 返回 500（用户确认暂不处理）。
+- 前端仍**直连数据库域名**，没有走 Worker 的同源反代；国内移动网络下登录可能不稳（另一个前端产品已切反代，本仓库待评估）。
+- `Wishlist.tsx` 还有 2 处 `alert`（不属于财富板块），按同一口径待改。
+- `docs/arch/ARCHITECTURE.md` 仍是拆分前版本，尚未纳入财富板块与独立 Worker，需要重写。
+- 其它历史文档中"Functions 随 Pages 部署"、"`wrangler pages dev` 调后端"等描述已过期，遇到按本文与 README 为准。
+
 ## 2026-10-03 — 「记一笔」标签入口失效修复 + 标签管理重做
 
 ### 一、Bug：点「管理标签」看起来毫无反应
@@ -1070,7 +1252,7 @@ Could not find the 'sort_order' column of 'sub_categories' in the schema cache
 | `pages_build_output_dir` | `"apps/pwa/dist"` | **静态产物输出目录**（即 Vite 构建出口） |
 | `compatibility_date` | `"2024-01-01"` | 启用现代兼容日期 |
 | `compatibility_flags` | `["nodejs_compat"]` | 启用 Node 风格 `fetch` / `TextDecoder` 等（Pages Functions 默认支持，显式声明保险） |
-| `[[kv_namespaces]]` | `binding="QUOTE_CACHE"`, `id="a025d8ed33bf444c9ec7df45993aae92"` | 本地开发 KV 绑定，binding 名必须与代码中 `env.QUOTE_CACHE` 一致 |
+| `[[kv_namespaces]]` | `binding="QUOTE_CACHE"`, `id="<KV 命名空间 ID，见本地配置>"` | KV 绑定，binding 名必须与代码中 `env.QUOTE_CACHE` 一致 |
 | `[vars]` | 注释态 `ALLOWED_ORIGINS` | 生产 CORS 白名单预留位（默认中间件放行 `*`） |
 
 **注意**：`wrangler.toml` 里的 KV `id` 仅用于**本地 `wrangler dev`**；**生产环境**的 KV 绑定需到 Pages 控制台 `站设 → 函数 → KV 命名空间绑定` 手动添加同名变量 `QUOTE_CACHE`（见注释与 `cloudflare-deploy-troubleshooting.md` 第 1 节）。
@@ -1128,7 +1310,7 @@ functions/
 
 **本地（`/workspace 根 .env`）**，仅 `VITE_` 前缀 + 应用常量：
 ```
-VITE_SUPABASE_URL=https://ibgasxhnxclfumdfsqar.supabase.co
+VITE_SUPABASE_URL=https://<project-ref>.supabase.co
 VITE_SUPABASE_ANON_KEY=<anon key>
 VITE_APP_NAME=钱盒子
 VITE_APP_URL=http://localhost:5173
@@ -1276,7 +1458,7 @@ VITE_APP_URL=http://localhost:5173
 
 - 用户最初在 Dashboard 看到：`QUOTE_CACHE` → `my-bills`，且提示 *"Bindings for this project are being managed through wrangler.toml"*（绑定由 wrangler.toml 管理，Dashboard 不可改）。
 - **AI 一度误判**：以为生产用的 KV 命名空间 ≠ 用户看到的 `my-bills`（猜测是两个命名空间、生产用的那个是空的），并让用户去查命名空间 ID。
-- **用户纠正并提供 ID**：`a025d8ed33bf444c9ec7df45993aae92`。
+- **用户纠正并提供 ID**：`<KV 命名空间 ID>`（已脱敏）。
 - **核实结果**：该 ID 与 `wrangler.toml` 中 `[[kv_namespaces]]` 的 `id` **完全一致**，也正是 Dashboard 里存有 `fx:latest`/`quote:*` 数据的那个命名空间。→ **绑定没问题，AI 上一条"两个命名空间"猜测错误，已更正并道歉。**
 - **正确归因**：偶发全 miss 是 Cloudflare KV 最终一致性边缘复制 + stateless Worker 调度导致的冷读波动，非绑定问题；而"汇率每 5 分钟必回源"是 `setFxCache` 用了 `QUOTE_TTL` 的真实 TTL 错配 bug（已修，见第一节第 4 点）。
 - **经验留存**：① 下次看到 KV 有数据但日志 miss，应先比对 wrangler.toml 的 id 与实际命名空间 id，而非臆测"绑定未生效"；② 用户已把项目 KV 信息发过，AI 本应早把 wrangler.toml 的 id 与用户数据关联，未察觉属疏忽。
