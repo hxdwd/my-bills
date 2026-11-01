@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../context/ThemeContext'
 import { useApp } from '../context/AppContext'
@@ -7,6 +7,7 @@ import Card from '../components/ui/Card'
 import BottomSheet from '../components/ui/BottomSheet'
 import Toast from '../components/ui/Toast'
 import { VERSION_LOGS } from '../data/versionLogs'
+import { isDevToolsEnabled, setDevToolsEnabled, subscribeDevTools } from '../utils/devtools'
 import {
   ChevronRight,
   Moon,
@@ -23,6 +24,7 @@ import {
   Crown,
   ScrollText,
   Sparkles,
+  Bug,
 } from 'lucide-react'
 
 // 版本更新说明（CHANGELOG）统一维护在 ../data/versionLogs.ts，设置页与首页共用。
@@ -91,6 +93,36 @@ export default function SettingsPage() {
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
     setToast({ visible: true, message, type })
     setTimeout(() => setToast(t => ({ ...t, visible: false })), 3000)
+  }
+
+  // ---------------- 开发者工具解锁 ----------------
+  // 「关于」连点 5 次解锁。计数在 2s 无点击后归零，避免用户隔天再点一次就凑满。
+  const [devtoolsOn, setDevtoolsOn] = useState(() => isDevToolsEnabled())
+  const aboutTaps = useRef(0)
+  const aboutTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => subscribeDevTools(() => setDevtoolsOn(isDevToolsEnabled())), [])
+  useEffect(() => () => { if (aboutTapTimer.current) clearTimeout(aboutTapTimer.current) }, [])
+
+  const handleAboutTap = () => {
+    if (aboutTapTimer.current) clearTimeout(aboutTapTimer.current)
+
+    if (devtoolsOn) {
+      showToast(`当前版本 v${APP_VERSION}`, 'info')
+      return
+    }
+
+    const next = aboutTaps.current + 1
+    if (next >= 5) {
+      aboutTaps.current = 0
+      setDevToolsEnabled(true)
+      showToast('开发者工具已开启，可在下方进入', 'success')
+      return
+    }
+
+    aboutTaps.current = next
+    aboutTapTimer.current = setTimeout(() => { aboutTaps.current = 0 }, 2000)
+    showToast(`当前版本 v${APP_VERSION} · 再点 ${5 - next} 次开启开发者工具`, 'info')
   }
 
   const handleClearCache = async () => {
@@ -273,8 +305,9 @@ export default function SettingsPage() {
         {
           icon: <Info size={20} className="text-ink-2" />,
           title: '关于',
+          // 只提示当前版本，不再打开更新日志（更新日志统一放在「版本更新」）
           subtitle: `版本 ${APP_VERSION}`,
-          onClick: () => setShowChangelog(true),
+          onClick: handleAboutTap,
         },
         {
           icon: <ScrollText size={20} className="text-[#5b8dee]" />,
@@ -282,6 +315,15 @@ export default function SettingsPage() {
           subtitle: '查看历史更新内容',
           onClick: () => setShowChangelog(true),
         },
+        // 解锁后才出现，普通用户看不到这一行
+        ...(devtoolsOn
+          ? [{
+              icon: <Bug size={20} className="text-ink-2" />,
+              title: '开发者工具',
+              subtitle: '查看接口原始响应',
+              onClick: () => navigate('/devtools'),
+            }]
+          : []),
         {
           icon: <Sparkles size={20} className="text-amber-400" />,
           title: '彩蛋',

@@ -28,6 +28,7 @@ import {
   DietControl,
   Wishlist,
   HabitCheckin,
+  DevTools,
 } from './pages';
 import { getDietItems, getDietMonthRecords, appendDietRecord } from './db/dietStore';
 import DietLinkPrompt from './components/DietLinkPrompt';
@@ -71,6 +72,8 @@ function ensureSubPageRoutes() {
   subPageRoutes.push({ path: '/easterEgg/wishlist', element: () => <Wishlist /> });
   subPageRoutes.push({ path: '/easterEgg/habit', element: () => <HabitCheckin /> });
   subPageRoutes.push({ path: '/easterEgg', element: () => <EasterEgg /> });
+  // 开发者工具：入口在设置页解锁后出现，未启用时页面自身会跳回设置
+  subPageRoutes.push({ path: '/devtools', element: () => <DevTools /> });
   subPageRoutesInited = true;
 }
 
