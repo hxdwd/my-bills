@@ -96,33 +96,38 @@ export default function SettingsPage() {
   }
 
   // ---------------- 开发者工具解锁 ----------------
-  // 「关于」连点 5 次解锁。计数在 2s 无点击后归零，避免用户隔天再点一次就凑满。
+  // 「关于」2s 内连点 5 次解锁。点击过程**完全静默**：
+  // 中途不提示进度、不出现任何「开发者工具」字样（否则等于把隐藏功能宣告给所有用户），
+  // 只在真正生效之后给一次就地轻提示。
   const [devtoolsOn, setDevtoolsOn] = useState(() => isDevToolsEnabled())
+  const [unlockedHint, setUnlockedHint] = useState(false)
   const aboutTaps = useRef(0)
   const aboutTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => subscribeDevTools(() => setDevtoolsOn(isDevToolsEnabled())), [])
-  useEffect(() => () => { if (aboutTapTimer.current) clearTimeout(aboutTapTimer.current) }, [])
+  useEffect(() => () => {
+    if (aboutTapTimer.current) clearTimeout(aboutTapTimer.current)
+    if (hintTimer.current) clearTimeout(hintTimer.current)
+  }, [])
 
   const handleAboutTap = () => {
+    // 已解锁：点击行为与普通行一致，不额外提示
+    if (devtoolsOn) return
     if (aboutTapTimer.current) clearTimeout(aboutTapTimer.current)
-
-    if (devtoolsOn) {
-      showToast(`当前版本 v${APP_VERSION}`, 'info')
-      return
-    }
 
     const next = aboutTaps.current + 1
     if (next >= 5) {
       aboutTaps.current = 0
-      setDevToolsEnabled(true)
-      showToast('开发者工具已开启，可在下方进入', 'success')
+      setDevToolsEnabled(true) // 先让它真正生效
+      setUnlockedHint(true) // 生效之后再通知
+      if (hintTimer.current) clearTimeout(hintTimer.current)
+      hintTimer.current = setTimeout(() => setUnlockedHint(false), 2200)
       return
     }
 
     aboutTaps.current = next
     aboutTapTimer.current = setTimeout(() => { aboutTaps.current = 0 }, 2000)
-    showToast(`当前版本 v${APP_VERSION} · 再点 ${5 - next} 次开启开发者工具`, 'info')
   }
 
   const handleClearCache = async () => {
@@ -531,6 +536,14 @@ export default function SettingsPage() {
           ))}
         </div>
       </BottomSheet>
+
+      {/* 解锁提示：只在真正生效后出现一次。刻意做成半透明小胶囊，
+          不遮挡内容、不拦截点击，也不带关闭按钮（不是弹窗） */}
+      {unlockedHint && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[60] pointer-events-none rounded-full bg-ink/90 px-3 py-1.5 text-[11px] font-medium text-bg shadow-lg animate-fade-in">
+          已解锁
+        </div>
+      )}
 
       <Toast
         message={toast.message}
