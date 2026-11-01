@@ -32,6 +32,17 @@ export function WealthAdd() {
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
   const [saving, setSaving] = useState(false)
 
+  // 轻提示：校验/保存失败就地飘出，2s 自动消失。
+  // 不用 alert —— 原生弹窗会遮挡整页并阻塞交互（自动化也会被卡住）。
+  const [toastMsg, setToastMsg] = useState('')
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const displayToast = (msg: string) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current)
+    setToastMsg(msg)
+    toastTimer.current = setTimeout(() => setToastMsg(''), 2000)
+  }
+  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current) }, [])
+
   // 根据市场过滤可用投资账户（与 WealthDetail 一致）
   const investmentAccounts = useMemo(() => {
     if (!selected) return []
@@ -171,11 +182,11 @@ export function WealthAdd() {
     const q = parseFloat(quantity)
     const p = parseFloat(price)
     if (isNaN(q) || q <= 0 || isNaN(p) || p <= 0) {
-      alert('请填写有效的数量和成本')
+      displayToast('请填写有效的数量和成本')
       return
     }
     if (!tradeAccountId) {
-      alert('请选择投资账户')
+      displayToast('请选择投资账户')
       return
     }
     setSaving(true)
@@ -206,7 +217,7 @@ export function WealthAdd() {
       localStorage.setItem(LAST_ACCOUNT_KEY, tradeAccountId)
       navigate('/wealth')
     } catch (e: any) {
-      alert('保存失败：' + (e?.message || e))
+      displayToast('保存失败：' + (e?.message || e))
     } finally {
       setSaving(false)
     }
@@ -380,6 +391,16 @@ export function WealthAdd() {
           >
             {saving ? '保存中…' : '保存'}
           </button>
+        </div>
+      )}
+
+      {/* 轻提示：不遮挡内容，2s 自动消失 */}
+      {toastMsg && (
+        <div
+          data-testid="wealth-add-toast"
+          className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[60] max-w-[86vw] whitespace-nowrap rounded-full bg-ink px-4 py-2 text-sm font-medium text-surface shadow-lg animate-fade-in"
+        >
+          {toastMsg}
         </div>
       )}
     </div>

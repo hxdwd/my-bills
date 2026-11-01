@@ -158,6 +158,17 @@ export function WealthHome() {
     viewToastTimer.current = setTimeout(() => setViewToast(''), 1500)
   }
 
+  // 未上线功能的跟手提示：贴在所点的菜单项旁边，1.8s 自动消失。
+  // 刻意不用 alert —— 原生弹窗会全屏遮挡并阻塞页面（自动化测试也会被它卡死）。
+  const [aiTip, setAiTip] = useState(false)
+  const aiTipTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const showAiTip = () => {
+    if (aiTipTimer.current) clearTimeout(aiTipTimer.current)
+    setAiTip(true)
+    aiTipTimer.current = setTimeout(() => setAiTip(false), 1800)
+  }
+  useEffect(() => () => { if (aiTipTimer.current) clearTimeout(aiTipTimer.current) }, [])
+
   // 点击排序项后，在按钮下方短暂提示"已按 X 排序"，避免纯图标看不出当前排序维度
   const showSortToast = (label: string) => {
     setSortToastLabel('')
@@ -639,14 +650,25 @@ export function WealthHome() {
               <span className="text-sm text-ink">清仓复盘</span>
             </button>
 
-            {/* AI 诊断 */}
-            <button
-              onClick={() => { setFabOpen(false); alert('功能开发中，敬请期待') }}
-              className="flex items-center gap-3 w-full h-11 px-3 rounded-xl hover:bg-brand-tint transition-colors text-left"
-            >
-              <Sparkles size={18} className="text-purple-500 shrink-0" />
-              <span className="text-sm text-ink"> AI   诊断</span>
-            </button>
+            {/* AI 诊断：尚未上线，点击就地提示（保持菜单展开，不弹阻塞式弹窗） */}
+            <div className="relative">
+              <button
+                onClick={showAiTip}
+                data-testid="wealth-ai-diagnose"
+                className="flex items-center gap-3 w-full h-11 px-3 rounded-xl hover:bg-brand-tint transition-colors text-left"
+              >
+                <Sparkles size={18} className="text-purple-500 shrink-0" />
+                <span className="text-sm text-ink">AI 诊断</span>
+              </button>
+              {aiTip && (
+                <div
+                  data-testid="ai-tip"
+                  className="absolute right-full top-1/2 -translate-y-1/2 mr-2 z-50 whitespace-nowrap rounded-lg bg-ink px-2.5 py-1 text-[11px] font-medium text-bg shadow-lg animate-fade-in"
+                >
+                  功能开发中，敬请期待
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

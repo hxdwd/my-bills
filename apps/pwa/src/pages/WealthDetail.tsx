@@ -360,7 +360,7 @@ export function WealthDetail() {
     const q = Number(editDraft.quantity)
     const p = Number(editDraft.price)
     if (!editDraft.date || !(q > 0) || !(p > 0)) {
-      alert('请填写有效的数量、价格与日期')
+      showToast('请填写有效的数量、价格与日期', 'error')
       return
     }
     await updateHoldingTransaction(id, {
