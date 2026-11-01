@@ -4,6 +4,31 @@
 
 ---
 
+## 2026-11-01 — 补构建期护栏：CI 环境变量会盖掉 .env.production
+
+### 一、发现
+
+10-29 的改动推上去、Pages 自动部署成功后，**线上包仍然内嵌直连地址**（`supabase.co` 命中 2 处），只有本地构建才是 `/api/supabase`。
+
+原因：Cloudflare Pages 的**控制台环境变量优先级高于仓库里的 `.env.production`**。控制台里还留着旧的直连地址，构建时它覆盖了仓库里的相对路径 —— 也就是说，光改 `.env.production` 不足以保证线上正确。
+
+### 二、修法
+
+在 `vite.config.ts` 加 `normalizeSupabaseBase` 插件（构建期，不是运行期）：
+
+- 构建时若 `VITE_SUPABASE_URL` 是 `https://<ref>.supabase.co` 这种直连地址，**自动改写为 `/api/supabase`** 并打印警告；
+- 应急放行开关：`ALLOW_DIRECT_SUPABASE=1`。
+
+这样无论环境变量从哪来（控制台 / CI / 本地），打出来的包都不会退回到直连。
+
+### 三、验证
+
+用直连地址作为环境变量构建：警告正常打印，产物 `supabase.co` 命中 **0** 处、`/api/supabase` 3 处。
+
+> 待办：控制台那条过期的 `VITE_SUPABASE_URL` 建议改成 `/api/supabase`（不改也不会出错，构建期会纠正），避免以后有人照着它判断线上行为。
+
+---
+
 ## 2026-10-29（续）— 设置页新增「开发者工具」+「关于」与「版本更新」职责拆分
 
 ### 一、最终形态

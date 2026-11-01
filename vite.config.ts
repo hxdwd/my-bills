@@ -55,10 +55,43 @@ function guardApiBase(): Plugin {
   }
 }
 
+/**
+ * 生产构建强制数据库走同源反代
+ *
+ * 背景：CI（Cloudflare Pages）里的 VITE_SUPABASE_URL 来自控制台环境变量，
+ * 优先级高于仓库里的 .env.production —— 控制台若还留着直连地址
+ * `https://<ref>.supabase.co`，打出来的包就会绕过 Worker 反代。
+ * 而浏览器直连 *.supabase.co 在国内经常不可达，表现是"登录转圈后失败、
+ * 服务端零日志"，从代码里完全看不出来。
+ *
+ * 所以构建期做一次归一化：直连地址一律改成 /api/supabase。
+ * 真的需要直连（例如临时调试）可设 ALLOW_DIRECT_SUPABASE=1 放行。
+ */
+function normalizeSupabaseBase(): Plugin {
+  const DIRECT = /^https?:\/\/[^/]*\.supabase\.co\/?$/i
+  return {
+    name: 'normalize-supabase-base',
+    config(_config, env) {
+      if (env.command !== 'build') return
+      if (process.env.ALLOW_DIRECT_SUPABASE) return
+      const raw = (process.env.VITE_SUPABASE_URL || '').trim().replace(/\/$/, '')
+      if (raw && DIRECT.test(raw)) {
+        console.warn(
+          `\n[build] VITE_SUPABASE_URL 指向直连地址（${raw}），国内网络不可达。\n` +
+            '  已自动改为同源反代 /api/supabase（经共享 Worker 转发）。\n' +
+            '  如确需直连：ALLOW_DIRECT_SUPABASE=1\n'
+        )
+        process.env.VITE_SUPABASE_URL = '/api/supabase'
+      }
+    },
+  }
+}
+
 export default defineConfig({
   root: 'apps/pwa',
   plugins: [
     guardApiBase(),
+    normalizeSupabaseBase(),
     react(),
     VitePWA({
       registerType: 'autoUpdate',
