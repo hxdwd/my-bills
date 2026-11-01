@@ -1,6 +1,11 @@
 import { getSupabaseUserId } from './supabase'
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string
+const RAW_SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string
+// 与 services/supabase.ts 保持一致：支持相对路径（/api/supabase），
+// 由同域 Worker 反代到 Supabase，避免国内直连 *.supabase.co 不可达。
+const SUPABASE_URL = RAW_SUPABASE_URL?.startsWith('/')
+  ? `${window.location.origin}${RAW_SUPABASE_URL}`
+  : RAW_SUPABASE_URL
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string
 
 function headers(): Record<string, string> {
