@@ -1,26 +1,20 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Info } from 'lucide-react'
 import { useWealthValuation } from '../hooks/useWealthValuation'
 import { useApp } from '../context/AppContext'
-import { marketToCategory, marketLabel, AssetCategory } from '../db/wealthStore'
 import {
   buildAccountBreakdown,
   bucketValueIn,
   positionPctInBucket,
   UNSET_ACCOUNT_NAME,
 } from '../utils/accountBreakdown'
-import { fmtMoney, fmtWithSymbol, toBase, CURRENCY_SYMBOL, type Currency } from '../utils/currency'
+import { toBase, CURRENCY_SYMBOL, CURRENCY_LABEL, type Currency } from '../utils/currency'
 
-const CAT_COLOR: Record<AssetCategory, string> = {
-  stock: '#c96442',
-  fund: '#3b82f6',
-  gold: '#e0a82e',
-}
-
+// 红涨绿跌
 function colorOf(n: number | null | undefined): string {
-  if (n == null) return '#9ca3af'
-  return n > 0 ? '#dc2626' : n < 0 ? '#16a34a' : '#9ca3af'
+  if (n == null || n === 0) return '#9ca3af'
+  return n > 0 ? '#dc2626' : '#16a34a'
 }
 
 function sign(n: number | null | undefined): string {
@@ -28,22 +22,36 @@ function sign(n: number | null | undefined): string {
   return n > 0 ? '+' : '-'
 }
 
-function pctText(pct: number): string {
-  return `${pct >= 10 ? pct.toFixed(0) : pct.toFixed(1)}%`
+function money2(v: number): string {
+  return Math.abs(v).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function pctAbs(v: number | null | undefined): string {
+  if (v == null || !isFinite(v)) return '—'
+  return `${Math.abs(v).toFixed(1)}%`
+}
+
+function clockLabel(d: Date | null): string {
+  if (!d) return ''
+  return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
 }
 
 /**
- * 单个投资账户的持仓明细与占比。
+ * 单个投资账户（账户视角）。
  *
- * 路由：/wealth/account/:accountId（accountId = 'unspecified' 表示历史流水没有账户）
- * 口径：市值按数量比例从标的市值分摊，成本来自该账户自己的流水；
- *      账户总额 = 可用现金（账户余额）+ 持仓市值，与资产页的账户信息保持一致。
+ * 展示规则（按用户要求）：
+ *   1. 主数字统一为本位币（人民币），原币只在账户总额下面用括号带一笔，页面不出现 ≈；
+ *   2. 「占全部持仓」只在标题副行出现一次，中部不再重复占比卡片；
+ *   3. 持仓名称单行截断，名称与盈亏之间留出间距，右侧金额下方给当日涨跌幅；
+ *   4. 盈亏金额加粗放大，持仓左侧色条随当日涨跌变红/绿；
+ *   5. 底部口径说明默认收起，点 ⓘ 才展开。
  */
 export default function WealthAccount() {
   const { accountId } = useParams<{ accountId: string }>()
   const navigate = useNavigate()
-  const { results, slices, baseCurrency, rates, summary } = useWealthValuation()
+  const { results, slices, baseCurrency, rates, summary, lastUpdated } = useWealthValuation()
   const { accounts } = useApp()
+  const [showNote, setShowNote] = useState(false)
 
   const targetId = !accountId || accountId === 'unspecified' ? null : accountId
 
@@ -61,22 +69,25 @@ export default function WealthAccount() {
   const title = bucket?.name ?? account?.name ?? (targetId ? '账户' : UNSET_ACCOUNT_NAME)
   const accountCurrency = (bucket?.currency ?? (account?.currency as Currency) ?? 'CNY') as Currency
   const isForeign = accountCurrency !== baseCurrency
-  const accSym = CURRENCY_SYMBOL[accountCurrency] || '¥'
   const baseSym = CURRENCY_SYMBOL[baseCurrency] || '¥'
+  const accSym = CURRENCY_SYMBOL[accountCurrency] || '¥'
   const { baseMV } = summary()
   const shareOfTotal = baseMV > 0 && bucket ? (bucket.valueBase / baseMV) * 100 : 0
 
-  // ===== 资金构成（原币口径，境外账户额外给本位币折算）=====
+  // 全部折成本位币（原币只用于账户总额下面那行小字）
   const cashAcc = account?.balance ?? 0
   const holdingsValueAcc = bucket ? bucketValueIn(bucket, accountCurrency, rates) : 0
-  const holdingsCostAcc = bucket
-    ? bucket.positions.reduce((s, p) => s + toBase(p.costNative, p.currency, accountCurrency, rates), 0)
-    : 0
   const totalAcc = cashAcc + holdingsValueAcc
-  const toBaseFromAcc = (v: number) => toBase(v, accountCurrency, baseCurrency, rates)
 
-  const accMoney = (v: number) => `${accSym}${fmtMoney(v, 2)}`
-  const baseMoney = (v: number) => `${baseSym}${fmtMoney(v, 2)}`
+  const cashBase = toBase(cashAcc, accountCurrency, baseCurrency, rates)
+  const holdingsBase = bucket ? bucket.valueBase : 0
+  const costBase = bucket
+    ? bucket.positions.reduce((s, p) => s + toBase(p.costNative, p.currency, baseCurrency, rates), 0)
+    : 0
+  const totalBase = cashBase + holdingsBase
+  const profitBase = holdingsBase - costBase
+  const profitRate = costBase > 0 ? (profitBase / costBase) * 100 : null
+  const todayBase = bucket ? bucket.todayBase : 0
 
   return (
     <div className="min-h-screen bg-bg px-4 pt-6 pb-24">
@@ -87,141 +98,176 @@ export default function WealthAccount() {
         <div className="min-w-0">
           <h1 className="text-xl font-bold text-ink truncate">{title}</h1>
           <div className="text-[11px] text-ink-3">
-            {account ? `投资账户 · ${accountCurrency}` : '未关联账户的历史流水'}
-            {bucket ? ` · 占全部持仓 ${pctText(shareOfTotal)}` : ''}
+            {account
+              ? `投资账户 · ${CURRENCY_LABEL[accountCurrency] || accountCurrency}`
+              : '未关联账户的历史流水'}
+            {bucket && ` · 占全部持仓 ${pctAbs(shareOfTotal)}`}
           </div>
         </div>
       </div>
 
-      {!bucket || bucket.positions.length === 0 ? (
-        <div className="bg-surface rounded-3xl p-8 border border-brand-tint text-center">
-          <div className="text-ink-2 mb-1">该账户暂无持仓</div>
-          <button
-            onClick={() => navigate('/wealth')}
-            className="mt-3 bg-brand text-ink px-4 py-2 rounded-xl text-sm font-medium"
-          >
-            返回财富首页
-          </button>
+      {/* ===== 账户总额：主显人民币，原币只在小字带一笔 ===== */}
+      <div className="bg-surface rounded-3xl p-4 border border-brand-tint mb-3" data-testid="account-overview">
+        <div className="flex items-baseline justify-between">
+          <span className="text-[12px] font-medium text-ink-2">账户总额</span>
+          <span className="text-[10px] text-ink-3">{lastUpdated ? `更新于 ${clockLabel(lastUpdated)}` : ''}</span>
         </div>
-      ) : (
-        <>
-          {/* 资金构成：账户总额（可用 + 持仓）+ 拆分 */}
-          <div className="bg-surface rounded-3xl p-4 border border-brand-tint mb-3">
-            <div className="text-xs text-ink-3 mb-1">账户总额</div>
-            <div className="font-bold text-2xl text-ink font-amount amount-fluid">
-              {accMoney(totalAcc)}
-            </div>
-            {isForeign && (
-              <div className="text-[11px] text-ink-3 font-amount mt-0.5">
-                ≈ {baseMoney(toBaseFromAcc(totalAcc))}（按当前汇率）
-              </div>
+        <div className="flex items-baseline gap-1.5 mt-1 min-w-0">
+          <span className="text-2xl font-amount text-ink whitespace-nowrap">
+            {baseSym}{money2(totalBase)}
+          </span>
+          {isForeign && (
+            <span className="text-[12px] text-ink-3 font-amount whitespace-nowrap">
+              ({accSym}{money2(totalAcc)})
+            </span>
+          )}
+        </div>
+
+        <div className="grid grid-cols-3 gap-3 mt-3 pt-3 border-t border-brand-tint">
+          <div>
+            <div className="text-[10px] text-ink-3">可用现金</div>
+            <div className="text-[13px] font-amount text-ink mt-0.5">{baseSym}{money2(cashBase)}</div>
+          </div>
+          <div>
+            <div className="text-[10px] text-ink-3">持仓市值</div>
+            <div className="text-[13px] font-amount text-ink mt-0.5">{baseSym}{money2(holdingsBase)}</div>
+          </div>
+          <div>
+            <div className="text-[10px] text-ink-3">持仓本金</div>
+            <div className="text-[13px] font-amount text-ink mt-0.5">{baseSym}{money2(costBase)}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* ===== 收益：今日 + 持仓（含收益率），不再单独占一栏 ===== */}
+      <div className="flex gap-2 mb-3" data-testid="account-pnl">
+        {/* 今日收益内容短，给固定比例；持仓收益金额+百分比更长，占剩余宽度，
+            窄屏下允许百分比换到第二行（宁可换行也不能顶出卡片） */}
+        <div className="basis-[37%] shrink-0 bg-surface rounded-2xl p-3 border border-brand-tint">
+          <div className="text-[10px] text-ink-3 mb-1">今日收益</div>
+          <div className="whitespace-nowrap">
+            <span
+              className="inline-block text-[12px] font-amount px-1.5 py-0.5 rounded-md"
+              style={{
+                color: colorOf(todayBase),
+                backgroundColor: todayBase === 0 ? 'transparent' : `${colorOf(todayBase)}14`,
+              }}
+            >
+              {sign(todayBase)}{baseSym}{money2(todayBase)}
+            </span>
+          </div>
+        </div>
+        <div className="flex-1 min-w-0 bg-surface rounded-2xl p-3 border border-brand-tint">
+          <div className="text-[10px] text-ink-3 mb-1">持仓收益</div>
+          <div
+            className="flex flex-wrap items-baseline text-[12px] font-amount"
+            style={{ color: colorOf(profitBase) }}
+          >
+            <span className="whitespace-nowrap">{sign(profitBase)}{baseSym}{money2(profitBase)}</span>
+            {profitRate != null && (
+              <span className="whitespace-nowrap">({sign(profitRate)}{pctAbs(profitRate)})</span>
             )}
-
-            <div className="grid grid-cols-3 gap-3 mt-3 pt-3 border-t border-brand-tint">
-              <div>
-                <div className="text-[10px] text-ink-3">可用现金</div>
-                <div className="text-sm font-medium text-ink mt-0.5 tabular-nums">{accMoney(cashAcc)}</div>
-                {isForeign && (
-                  <div className="text-[10px] text-ink-3 mt-0.5">≈ {baseMoney(toBaseFromAcc(cashAcc))}</div>
-                )}
-              </div>
-              <div>
-                <div className="text-[10px] text-ink-3">持仓市值</div>
-                <div className="text-sm font-medium text-ink mt-0.5 tabular-nums">{accMoney(holdingsValueAcc)}</div>
-                {isForeign && (
-                  <div className="text-[10px] text-ink-3 mt-0.5">≈ {baseMoney(toBaseFromAcc(holdingsValueAcc))}</div>
-                )}
-              </div>
-              <div>
-                <div className="text-[10px] text-ink-3">持仓本金</div>
-                <div className="text-sm font-medium text-ink mt-0.5 tabular-nums">{accMoney(holdingsCostAcc)}</div>
-                {isForeign && (
-                  <div className="text-[10px] text-ink-3 mt-0.5">≈ {baseMoney(toBaseFromAcc(holdingsCostAcc))}</div>
-                )}
-              </div>
-            </div>
           </div>
+        </div>
+      </div>
 
-          {/* 收益：统一折本位币 */}
-          <div className="flex gap-2 mb-4">
-            <div className="flex-1 bg-surface rounded-2xl p-3 border border-brand-tint">
-              <div className="text-[11px] text-ink-2 mb-1">今日收益{isForeign ? `（折${baseCurrency}）` : ''}</div>
-              <div className="text-base font-bold amount-fluid-sm" style={{ color: colorOf(bucket.todayBase) }}>
-                {sign(bucket.todayBase)}{baseSym}{fmtMoney(Math.abs(bucket.todayBase), 0)}
-              </div>
-            </div>
-            <div className="flex-1 bg-surface rounded-2xl p-3 border border-brand-tint">
-              <div className="text-[11px] text-ink-2 mb-1">持仓收益{isForeign ? `（折${baseCurrency}）` : ''}</div>
-              <div className="text-base font-bold amount-fluid-sm" style={{ color: colorOf(bucket.profitBase) }}>
-                {sign(bucket.profitBase)}{baseSym}{fmtMoney(Math.abs(bucket.profitBase), 0)}
-              </div>
-            </div>
-            <div className="flex-1 bg-surface rounded-2xl p-3 border border-brand-tint">
-              <div className="text-[11px] text-ink-2 mb-1">持仓占比</div>
-              <div className="text-base font-bold amount-fluid-sm text-ink">{pctText(shareOfTotal)}</div>
-            </div>
-          </div>
+      {/* ===== 持仓构成 ===== */}
+      <div className="bg-surface rounded-3xl p-4 border border-brand-tint">
+        <div className="flex items-baseline justify-between mb-2">
+          <div className="text-[12px] font-medium text-ink-2">持仓构成</div>
+          <span className="text-[10px] text-ink-3">
+            {bucket?.positions.length ? `${bucket.positions.length} 只` : ''}
+          </span>
+        </div>
 
-          {/* 持仓构成：每行带占比条 */}
-          <div className="bg-surface rounded-3xl p-4 border border-brand-tint">
-            <div className="flex items-center justify-between mb-3">
-              <div className="text-sm font-semibold text-ink">持仓构成</div>
-              <span className="text-[11px] text-ink-3">{bucket.positions.length} 只</span>
-            </div>
+        {!bucket || bucket.positions.length === 0 ? (
+          <div className="py-6 text-center text-xs text-ink-3">暂无持仓</div>
+        ) : (
+          <div className="divide-y divide-brand-tint">
+            {bucket.positions.map(p => {
+              const pct = positionPctInBucket(p, bucket, baseCurrency, rates)
+              const valueBase = toBase(p.valueNative, p.valueCurrency, baseCurrency, rates)
+              const posProfitBase = toBase(p.profitNative, p.currency, baseCurrency, rates)
+              const dayColor = colorOf(p.changePct)
+              return (
+                <button
+                  key={`${p.market}:${p.symbol}`}
+                  onClick={() => navigate(`/wealth/detail/${p.market}/${p.symbol}`)}
+                  data-testid="account-position-row"
+                  className="w-full text-left block py-2.5 first:pt-1"
+                >
+                  <div className="flex items-center gap-2.5">
+                    {/* 色条随当日涨跌变红/绿 */}
+                    <span className="w-1 h-9 rounded-full shrink-0" style={{ background: dayColor }} />
 
-            <div className="space-y-3">
-              {bucket.positions.map(p => {
-                const pct = positionPctInBucket(p, bucket, baseCurrency, rates)
-                const color = CAT_COLOR[marketToCategory(p.market)]
-                const valueBase = toBase(p.valueNative, p.valueCurrency, baseCurrency, rates)
-                const profitBase = toBase(p.profitNative, p.currency, baseCurrency, rates)
-                return (
-                  <button
-                    key={`${p.market}:${p.symbol}`}
-                    onClick={() => navigate(`/wealth/detail/${p.market}/${p.symbol}`)}
-                    data-testid="account-position-row"
-                    className="w-full text-left block"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="w-1.5 h-8 rounded-full shrink-0" style={{ background: color }} />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-sm font-medium text-ink truncate">{p.name}</span>
-                          <span className="text-sm text-ink tabular-nums shrink-0">
-                            {fmtWithSymbol(p.valueNative, p.valueCurrency, 0)}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between gap-2 mt-0.5">
-                          <span className="text-[10px] text-ink-3 truncate">
-                            {p.symbol} · {marketLabel(p.market)}
-                            {p.valueCurrency !== baseCurrency && ` · ≈ ${baseMoney(valueBase)}`}
-                          </span>
-                          <span className="text-[11px] text-ink-2 tabular-nums shrink-0">{pctText(pct)}</span>
-                        </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="text-[13px] font-medium text-ink truncate">{p.name}</span>
+                        <span className="text-[13px] font-amount text-ink shrink-0">
+                          {baseSym}{money2(valueBase)}
+                        </span>
                       </div>
-                      <ChevronRight size={16} className="text-ink-3 shrink-0" />
+
+                      <div className="flex items-baseline justify-between gap-3 mt-1.5">
+                        <span className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-[10px] text-ink-3 truncate">{p.symbol}</span>
+                          {p.changePct != null && (
+                            <span
+                              className="text-[10px] font-amount px-1 py-[1px] rounded shrink-0"
+                              style={{
+                                color: dayColor,
+                                backgroundColor: p.changePct === 0 ? 'transparent' : `${dayColor}14`,
+                              }}
+                            >
+                              {sign(p.changePct)}{pctAbs(p.changePct * 100)}
+                            </span>
+                          )}
+                        </span>
+                        <span
+                          className="text-[13px] font-amount shrink-0"
+                          style={{ color: colorOf(posProfitBase) }}
+                        >
+                          {sign(posProfitBase)}{baseSym}{money2(posProfitBase)}
+                        </span>
+                      </div>
                     </div>
-                    <div className="mt-1.5 ml-3.5 h-1.5 w-full rounded-full bg-black/[0.06] overflow-hidden">
+
+                    <ChevronRight size={15} className="text-ink-3 shrink-0" />
+                  </div>
+
+                  <div className="mt-2 ml-[14px] flex items-center gap-2">
+                    <div className="flex-1 h-1 rounded-full bg-black/[0.06] overflow-hidden">
                       <div
                         className="h-full rounded-full"
-                        style={{ width: `${Math.min(100, Math.max(0, pct))}%`, background: color }}
+                        style={{ width: `${Math.min(100, Math.max(0, pct))}%`, backgroundColor: dayColor }}
                       />
                     </div>
-                    <div className="mt-1 ml-3.5 text-[10px]" style={{ color: colorOf(profitBase) }}>
-                      {sign(profitBase)}{fmtMoney(Math.abs(profitBase), 2)} 持仓收益（折{baseCurrency}）
-                    </div>
-                  </button>
-                )
-              })}
-            </div>
-
-            <div className="text-[10px] text-ink-3 mt-3 leading-relaxed">
-              占比 = 该持仓市值 ÷ 本账户持仓市值；同一标的分散在多个账户时市值按数量比例分摊。
-              {isForeign && ' 金额按账户币种展示，括号内为折算后的本位币。'}
-            </div>
+                    <span className="text-[10px] text-ink-3 tabular-nums w-8 text-right">{pctAbs(pct)}</span>
+                  </div>
+                </button>
+              )
+            })}
           </div>
-        </>
-      )}
+        )}
+
+        {/* 口径说明：默认收起 */}
+        <div className="mt-2">
+          <button
+            onClick={() => setShowNote(v => !v)}
+            className="flex items-center gap-1 text-[10px] text-ink-3"
+            aria-expanded={showNote}
+          >
+            <Info size={11} />
+            口径说明
+          </button>
+          {showNote && (
+            <p className="text-[10px] text-ink-3 mt-1 leading-relaxed">
+              金额均已折算为 {baseCurrency}；占比 = 该持仓市值 ÷ 本账户持仓市值；
+              同一标的分散在多个账户时，市值按数量比例分摊。
+            </p>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

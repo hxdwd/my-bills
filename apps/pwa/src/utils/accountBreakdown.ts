@@ -48,6 +48,8 @@ export interface AccountPosition {
   profitNative: number
   /** 今日收益（标的自身币种） */
   todayNative: number
+  /** 当日涨跌幅（小数，0.012 = +1.2%），无行情时为 null */
+  changePct: number | null
 }
 
 export interface AccountBucket {
@@ -152,6 +154,7 @@ export function buildAccountBreakdown(params: {
         valueCurrency: valueCur,
         profitNative: v.profit_loss ?? 0,
         todayNative: mvAsset - mvAsset / (1 + cp),
+        changePct: v.change_percent ?? null,
       })
       continue
     }
@@ -176,6 +179,7 @@ export function buildAccountBreakdown(params: {
         valueCurrency: valueCur,
         profitNative: (v.profit_loss ?? 0) * share,
         todayNative: mvAsset - mvAsset / (1 + cp),
+        changePct: v.change_percent ?? null,
       })
     }
   }
