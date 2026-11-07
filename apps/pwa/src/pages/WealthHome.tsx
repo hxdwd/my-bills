@@ -3,6 +3,8 @@ import type { CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useWealthValuation, todayProfit, toBaseCurrency } from '../hooks/useWealthValuation'
 import { marketToCategory, marketLabel, AssetCategory, getRealizedProfitEvents, RealizedEvent } from '../db/wealthStore'
+import { buildAccountBreakdown } from '../utils/accountBreakdown'
+import { useApp } from '../context/AppContext'
 import type { Market } from '../utils/quoteApi'
 import { fmtMoney as fmtMoneyUtil, CURRENCY_SYMBOL, CURRENCY_LABEL, BASE_CURRENCIES, Currency, toBase } from '../utils/currency'
 import CashIcon from '../components/ui/CashIcon'
@@ -78,7 +80,8 @@ type SortKey = 'market_value' | 'profit_loss' | 'profit_rate'
 type ViewMode = 'today' | 'total'
 
 export function WealthHome() {
-  const { results, holdings, lastUpdated, error, refresh, rates, baseCurrency, setBaseCurrency, summary } = useWealthValuation()
+  const { results, holdings, slices, lastUpdated, error, refresh, rates, baseCurrency, setBaseCurrency, summary } = useWealthValuation()
+  const { accounts } = useApp()
   const navigate = useNavigate()
   const [refreshing, setRefreshing] = useState(false)
   // 收益详情弹窗：'holding'（持仓收益走势）/ 'realized'（清仓收益记录）/ null（关闭）
@@ -100,6 +103,8 @@ export function WealthHome() {
   const [viewMode, setViewMode] = useState<ViewMode>('today')
   const [showSortMenu, setShowSortMenu] = useState(false)
   const [showDist, setShowDist] = useState(true)
+  // 资产分布维度：大类 / 市场（A股·港股·美股·基金·黄金） / 投资账户
+  const [distDim, setDistDim] = useState<'cat' | 'market' | 'account'>('cat')
   const [showCurrencyPop, setShowCurrencyPop] = useState(false)
   // 入场动画状态：点击后先挂载再下一帧加 open 类，触发 transition
   const [popOpen, setPopOpen] = useState(false)
@@ -214,6 +219,62 @@ export function WealthHome() {
     })
     return acc
   }, [results, baseCurrency, rates])
+
+  // 按市场聚合（A股/港股/美股/基金/黄金）—— 解决「港股、美股看不到占比」
+  const byMarket = useMemo(() => {
+    const acc = new Map<Market, number>()
+    results.forEach(r => {
+      const cur = (r.converted_currency ?? r.currency ?? 'CNY') as Currency
+      const mv = r.converted_value ?? r.market_value ?? 0
+      acc.set(r.market, (acc.get(r.market) ?? 0) + toBaseCurrency(mv, cur, baseCurrency, rates))
+    })
+    return [...acc.entries()].sort((a, b) => b[1] - a[1])
+  }, [results, baseCurrency, rates])
+
+  // 按投资账户拆分（按流水分账，见 splitHoldingsByAccount）
+  const accountBreakdown = useMemo(
+    () => buildAccountBreakdown({ valuations: results, slices, accounts, baseCurrency, rates }),
+    [results, slices, accounts, baseCurrency, rates],
+  )
+
+  // 分布卡片当前维度要渲染的行
+  const distRows = useMemo(() => {
+    const pctOf = (v: number) => (baseMV > 0 ? (v / baseMV) * 100 : 0)
+    if (distDim === 'market') {
+      return byMarket.map(([m, v]) => ({
+        key: m as string,
+        label: marketLabel(m),
+        color: CAT_META[marketToCategory(m)].color,
+        value: v,
+        pct: pctOf(v),
+        testid: `dist-market-${m}`,
+        onClick: () => setFilter(m),
+      }))
+    }
+    if (distDim === 'account') {
+      const palette = ['#c96442', '#5b8dee', '#2d8a5e', '#9c27b0', '#fb8c00', '#0f9d58']
+      return accountBreakdown.buckets.map((b, i) => ({
+        key: b.accountId ?? 'unspecified',
+        label: b.name,
+        color: palette[i % palette.length],
+        value: b.valueBase,
+        pct: b.pct,
+        testid: `dist-account-${b.accountId ?? 'unspecified'}`,
+        onClick: () => navigate(`/wealth/account/${b.accountId ?? 'unspecified'}`),
+      }))
+    }
+    return (['stock', 'fund', 'gold'] as AssetCategory[])
+      .sort((a, b) => byCat[b] - byCat[a])
+      .map(cat => ({
+        key: cat as string,
+        label: CAT_META[cat].label,
+        color: CAT_META[cat].color,
+        value: byCat[cat],
+        pct: pctOf(byCat[cat]),
+        testid: `dist-${cat}`,
+        onClick: () => setFilter(cat),
+      }))
+  }, [distDim, byMarket, byCat, accountBreakdown, baseMV, navigate])
 
   // 按分类/市场过滤后，按所选排序键排序
   const list = useMemo(() => {
@@ -415,35 +476,64 @@ export function WealthHome() {
           <span className="text-ink-3 text-xs">{showDist ? '收起 ▴' : '展开 ▾'}</span>
         </button>
         {showDist && (
-          <div className="mt-3 space-y-3">
-            {((['stock', 'fund', 'gold'] as AssetCategory[]).sort((a, b) => byCat[b] - byCat[a])).map(cat => {
-              const v = byCat[cat]
-              const pct = baseMV > 0 ? (v / baseMV) * 100 : 0
-              const color = CAT_META[cat].color
-              return (
+          <div className="mt-3">
+            {/* 维度切换：大类 / 市场 / 投资账户 */}
+            <div className="flex gap-1.5 mb-3" data-testid="dist-dims">
+              {([
+                { key: 'cat', label: '大类' },
+                { key: 'market', label: '市场' },
+                { key: 'account', label: '投资账户' },
+              ] as const).map(d => (
                 <button
-                  key={cat}
-                  onClick={() => setFilter(cat)}
-                  data-testid={`dist-${cat}`}
-                  className="w-full text-left block"
+                  key={d.key}
+                  onClick={() => setDistDim(d.key)}
+                  data-testid={`dist-dim-${d.key}`}
+                  className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors ${
+                    distDim === d.key ? 'bg-ink text-bg' : 'bg-black/[0.04] text-ink-2'
+                  }`}
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="flex items-center gap-2 text-sm text-ink">
-                      <span className="w-2.5 h-2.5 rounded-full" style={{ background: color }} />
-                      {CAT_META[cat].label}
-                      <span className="text-sm text-ink-2">{fmtMoneyUtil(v, 0)}</span>
-                    </span>
-                    <span className="text-sm text-ink-2 tabular-nums">{pct.toFixed(0)}%</span>
-                  </div>
-                  <div className="mt-1.5 h-1.5 w-full rounded-full bg-black/[0.06] overflow-hidden">
-                    <div
-                      className="h-full rounded-full"
-                      style={{ width: `${pct}%`, background: color }}
-                    />
-                  </div>
+                  {d.label}
                 </button>
-              )
-            })}
+              ))}
+            </div>
+
+            {distRows.length === 0 ? (
+              <div className="text-xs text-ink-3 py-2">暂无持仓数据</div>
+            ) : (
+              <div className="space-y-3">
+                {distRows.map(row => (
+                  <button
+                    key={row.key}
+                    onClick={row.onClick}
+                    data-testid={row.testid}
+                    className="w-full text-left block"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="flex items-center gap-2 text-sm text-ink min-w-0">
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: row.color }} />
+                        <span className="truncate">{row.label}</span>
+                        <span className="text-sm text-ink-2 whitespace-nowrap">{fmtMoneyUtil(row.value, 0)}</span>
+                      </span>
+                      <span className="text-sm text-ink-2 tabular-nums shrink-0 ml-2">
+                        {row.pct >= 10 ? row.pct.toFixed(0) : row.pct.toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="mt-1.5 h-1.5 w-full rounded-full bg-black/[0.06] overflow-hidden">
+                      <div
+                        className="h-full rounded-full"
+                        style={{ width: `${Math.min(100, row.pct)}%`, background: row.color }}
+                      />
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {distDim === 'account' && (
+              <div className="text-[10px] text-ink-3 mt-2 leading-relaxed">
+                按账户内持仓市值占比；同一标的分散在多个账户时，市值按数量比例分摊。
+              </div>
+            )}
           </div>
         )}
       </div>

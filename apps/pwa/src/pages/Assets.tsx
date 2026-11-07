@@ -10,6 +10,7 @@ import { useWealthValuation } from '../hooks/useWealthValuation'
 import { toBase, fmtWithSymbol, Currency } from '../utils/currency'
 import { getAllTransactions } from '../db/wealthStore'
 import { computeTotalAssetsCNY } from '../utils/assetCalc'
+import { buildAccountBreakdown, bucketValueIn } from '../utils/accountBreakdown'
 
 const accountTypeOptions = [
   { icon: '💵', label: '现金', type: 'cash', color: '#2d8a5e' },
@@ -47,7 +48,7 @@ export default function AssetsPage() {
   const navigate = useNavigate()
   const { accounts, loading, transfers, getTotalLiabilities, addAccount, updateAccount, setDefaultAccount, deleteAccount, getAssetTrend } = useApp()
   // 汇率数据 + 持仓估值（用于投资账户展示持仓市值）
-  const { rates, results } = useWealthValuation()
+  const { rates, results, slices } = useWealthValuation()
   const [showAddAccount, setShowAddAccount] = useState(false)
   const [editingAccount, setEditingAccount] = useState<Account | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -133,18 +134,26 @@ export default function AssetsPage() {
   }
 
   // 按投资账户聚合持仓市值（account_id → 该账户下所有持仓的市值汇总，原始币种）
+  //
+  // 口径与财富页的账户占比一致：按流水逐笔分账（splitHoldingsByAccount），
+  // 不再用 Holding.accountId（那是「第一条买入的账户」，同标的跨账户会算错）。
   const holdingsValueByAccount = useMemo(() => {
     const map: Record<string, { value: number; currency: string }> = {}
-    for (const r of results) {
-      const h = r.holding
-      if (!h?.accountId) continue
-      const accId = h.accountId
-      if (!map[accId]) map[accId] = { value: 0, currency: r.currency || 'CNY' }
-      // 港股通用 Worker 折算后的 CNY 值
-      map[accId].value += r.converted_value ?? r.market_value ?? 0
+    const breakdown = buildAccountBreakdown({
+      valuations: results,
+      slices,
+      accounts,
+      baseCurrency: 'CNY',
+      rates,
+    })
+    for (const b of breakdown.buckets) {
+      if (!b.accountId) continue
+      const acc = accounts.find(a => a.id === b.accountId)
+      const cur = (acc?.currency || b.currency || 'CNY') as Currency
+      map[b.accountId] = { value: bucketValueIn(b, cur, rates), currency: cur }
     }
     return map
-  }, [results])
+  }, [results, slices, accounts, rates])
 
   // 折算后总资产（所有币种折 CNY 汇总）
   // 投资账户必须把「持仓市值」一并算入（与饼图 investTotalCNY 口径一致），

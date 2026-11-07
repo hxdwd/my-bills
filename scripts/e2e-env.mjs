@@ -16,6 +16,7 @@
 // 注意（Windows）：npx/vite/wrangler 都是 .cmd，spawn 必须 shell:true。
 // 注意：wrangler pages dev 需要 apps/pwa/dist，请先 `npm run build`。
 
+import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -38,6 +39,8 @@ const timeoutArg = argv.find((a) => a.startsWith('--timeout='));
 const TOTAL_TIMEOUT_MS = timeoutArg ? Number(timeoutArg.split('=')[1]) : (Number(process.env.E2E_TIMEOUT) || 120000);
 
 const children = [];
+// 是否由本次运行拉起 Worker（复用时不能关别人的进程）
+let spawnedWorker = false;
 function spawnProc(cmd, args, cwd, name) {
   const p = spawn(cmd, args, { cwd, stdio: 'pipe', env: { ...process.env }, shell: true });
   p.stdout.on('data', (d) => process.stdout.write(`[${name}] ${d}`));
@@ -57,7 +60,8 @@ function killPort(port) {
     for (const line of out.split('\n')) {
       const m = line.trim().split(/\s+/);
       const pid = m[m.length - 1];
-      if (pid && /^\d+$/.test(pid)) pids.add(pid);
+      // 跳过 0（netstat 表头/系统空闲）与重复项
+      if (pid && /^\d+$/.test(pid) && Number(pid) > 4) pids.add(pid);
     }
     for (const pid of pids) {
       try { execSync(`taskkill /PID ${pid} /F /T`, { shell: true, stdio: 'ignore' }); } catch { /* ignore */ }
@@ -66,15 +70,26 @@ function killPort(port) {
   } catch { /* netstat 无输出等情况 */ }
 }
 
+// 单次探测：用 http 模块而不是全局 fetch。
+// fetch 在这里会踩两个坑：① 没有超时，端口没响应就一直挂着（实测让整个 e2e
+// 卡到总超时）；② 本机代理环境会让 localhost 解析异常。http.get 带 timeout 更稳。
+function probe(url, timeoutMs = 2000) {
+  return new Promise((resolve) => {
+    const req = http.get(url, { timeout: timeoutMs }, (res) => {
+      res.resume();
+      resolve(res.statusCode || 0);
+    });
+    req.on('timeout', () => { req.destroy(); resolve(0); });
+    req.on('error', () => resolve(0));
+  });
+}
+
 async function waitPort(port, tries = 45, interval = 1000) {
-  // 同时尝试 localhost(可能解析 IPv6 ::1) 与 127.0.0.1(IPv4)，兼容 vite 双栈监听
-  const hosts = [`http://localhost:${port}`, `http://127.0.0.1:${port}`];
+  // 同时尝试 127.0.0.1(IPv4) 与 localhost(可能解析 IPv6 ::1)，兼容 vite 双栈监听
+  const hosts = [`http://127.0.0.1:${port}`, `http://localhost:${port}`];
   for (let i = 0; i < tries; i++) {
     for (const url of hosts) {
-      try {
-        const res = await fetch(url);
-        if (res.ok || res.status === 404) return true;
-      } catch { /* not ready */ }
+      if ((await probe(url)) > 0) return true;
     }
     await new Promise((r) => setTimeout(r, interval));
   }
@@ -113,13 +128,21 @@ async function main() {
       clearTimeout(timer);
       process.exit(1);
     }
-    killPort(WRANGLER_PORT);
-    killPort(VITE_PORT);
-    // 等端口释放
-    await new Promise((r) => setTimeout(r, 1500));
+    // 已有健康的 Worker 就复用它：反复杀/起会留下多个监听同一端口的
+    // workerd 孙子进程（Windows 允许重复 bind），请求随机落到卡死的那个上，
+    // 表现为「端口 LISTENING 但请求一直挂」。
+    if ((await probe(`http://127.0.0.1:${WRANGLER_PORT}/api/health`)) === 200) {
+      console.log(`[env] 复用已在运行的 Worker (${WRANGLER_PORT})`);
+    } else {
+      killPort(WRANGLER_PORT);
+      await new Promise((r) => setTimeout(r, 1500));
+      console.log(`[env] 启动共享 Worker (行情 ${WRANGLER_PORT})，目录 ${WORKER_DIR}...`);
+      spawnProc('npx', ['wrangler', 'dev', '--port', String(WRANGLER_PORT)], WORKER_DIR, 'wrangler');
+      spawnedWorker = true;
+    }
 
-    console.log(`[env] 启动共享 Worker (行情 8799)，目录 ${WORKER_DIR}...`);
-    spawnProc('npx', ['wrangler', 'dev', '--port', String(WRANGLER_PORT)], WORKER_DIR, 'wrangler');
+    killPort(VITE_PORT);
+    await new Promise((r) => setTimeout(r, 1500));
     console.log('[env] 启动 vite (前端 5173)...');
     spawnProc('npx', ['vite', '--port', String(VITE_PORT), '--strictPort'], ROOT, 'vite');
     console.log('[env] 等待端口就绪...');
@@ -149,6 +172,10 @@ async function main() {
     clearTimeout(timer);
     console.log('[env] 关停子进程...');
     cleanupChildren();
+    // 子进程只是 cmd 壳：真正的 node / workerd 是孙子进程，
+    // 不按端口再收一遍会残留监听，下次运行就会出现「端口有人在听但请求不响应」。
+    killPort(VITE_PORT);
+    if (spawnedWorker) killPort(WRANGLER_PORT);
   }
 }
 

@@ -23,6 +23,7 @@ import {
   WealthAdd,
   WealthImport,
   WealthLiquidation,
+  WealthAccount,
   EasterEgg,
   LifeProgress,
   DietControl,
@@ -66,6 +67,8 @@ function ensureSubPageRoutes() {
   subPageRoutes.push({ path: '/wealth/add', element: () => <WealthAdd /> });
   subPageRoutes.push({ path: '/wealth/import', element: () => <WealthImport /> });
   subPageRoutes.push({ path: '/wealth/liquidation', element: () => <WealthLiquidation /> });
+  // 必须在 /wealth/:type 之前，否则会被 :type 抢先匹配
+  subPageRoutes.push({ path: '/wealth/account/:accountId', element: () => <WealthAccount /> });
   subPageRoutes.push({ path: '/wealth/:type', element: () => <WealthCategory /> });
   subPageRoutes.push({ path: '/easterEgg/diet', element: () => <DietControl /> });
   subPageRoutes.push({ path: '/easterEgg/life', element: () => <LifeProgress /> });

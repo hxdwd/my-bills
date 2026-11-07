@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { fetchBatchValuation } from '../utils/quoteApi'
-import { aggregateHoldings, Holding } from '../db/wealthStore'
+import { aggregateHoldings, splitHoldingsByAccount, Holding, AccountSlice } from '../db/wealthStore'
 import type { ValuationResult } from '../utils/quoteApi'
 import { BASE_CURRENCIES, convert, toBase, Currency } from '../utils/currency'
 
@@ -61,6 +61,8 @@ function loadBaseCurrency(): Currency {
 
 interface WealthState {
   holdings: Holding[]
+  /** 按「标的 + 投资账户」拆分的持仓切片（key = `${market}:${symbol}`），账户维度占比用 */
+  slices: Map<string, AccountSlice[]>
   results: ValuationWithHolding[]
   rates: Record<string, number>
   baseCurrency: Currency
@@ -71,6 +73,7 @@ interface WealthState {
 
 let state: WealthState = {
   holdings: [],
+  slices: new Map(),
   // 初始化即用同步缓存恢复，挂载瞬间即有上次真实数据，避免闪 0
   results: loadCache(),
   rates: { CNY: 1, USD: 1, HKD: 1 },
@@ -103,6 +106,8 @@ async function doRefresh(): Promise<void> {
   setState({ loading: true, error: null })
   try {
     const hs = await aggregateHoldings()
+    // 账户维度：同一标的按流水拆到各投资账户（不依赖 Holding.accountId）
+    const slices = await splitHoldingsByAccount()
     if (hs.length === 0) {
       // 无持仓时也尝试拉取汇率（资产页等其他页面依赖汇率做币种换算）
       try {
@@ -110,7 +115,7 @@ async function doRefresh(): Promise<void> {
         if (data?.exchange_rates) setState({ rates: data.exchange_rates })
       } catch { /* 汇率拉取失败不影响页面 */ }
       saveCache([])
-      setState({ holdings: [], results: [], lastUpdated: new Date() })
+      setState({ holdings: [], slices, results: [], lastUpdated: new Date() })
       return
     }
     const items = hs.map(h => ({
@@ -132,7 +137,7 @@ async function doRefresh(): Promise<void> {
       return { ...r, name, holding: h! }
     })
     saveCache(merged)
-    setState({ holdings: hs, results: merged, rates, lastUpdated: new Date() })
+    setState({ holdings: hs, slices, results: merged, rates, lastUpdated: new Date() })
   } catch (e: any) {
     setState({ error: e?.message || '估值刷新失败' })
   } finally {
@@ -238,6 +243,7 @@ export function useWealthValuation(intervalMs = DEFAULT_INTERVAL_MS) {
 
   return {
     holdings: snap.holdings,
+    slices: snap.slices,
     results: snap.results,
     rates: snap.rates,
     baseCurrency: snap.baseCurrency,

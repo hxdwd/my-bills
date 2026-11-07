@@ -263,6 +263,95 @@ export async function aggregateHoldings(): Promise<Holding[]> {
   return result
 }
 
+/** 某个标的在某个投资账户上的持仓切片 */
+export interface AccountSlice {
+  /** null = 流水没有关联账户（历史数据），UI 归入「未指定账户」 */
+  accountId: string | null
+  quantity: number
+  /** 这部分持仓的成本（标的计价币种） */
+  cost: number
+}
+
+const UNSET_ACCOUNT = '__unspecified__'
+
+/**
+ * 按「标的 + 投资账户」拆分当前持仓。
+ *
+ * 为什么不用 Holding.accountId：那个字段只记「第一条买入的账户」，
+ * 同一标的分散在多个账户时会把全部数量和市值都算给第一个账户。
+ * 账户维度的占比必须按流水逐笔分账。
+ *
+ * 口径与 aggregateHoldings 保持一致（按日期顺序、卖出用加权成本冲减）；
+ * 跨账户超卖（A 买、B 卖到负数）时，把超卖量按数量比例从其它账户扣回，
+ * 保证各账户数量之和等于该标的的净持仓。
+ *
+ * 返回 Map，key 为 `${market}:${symbol}`。
+ */
+export async function splitHoldingsByAccount(): Promise<Map<string, AccountSlice[]>> {
+  const txs = await getAllTransactions()
+  const sorted = [...txs].sort((a, b) => a.date.localeCompare(b.date) || a.created_at.localeCompare(b.created_at))
+  const active = sorted.filter(t => t.is_active !== false)
+
+  interface AccState { buyQuantity: number; sellQuantity: number; totalCost: number }
+  const byHolding = new Map<string, Map<string, AccState>>()
+
+  for (const t of active) {
+    const key = `${t.market}:${t.symbol}`
+    const accKey = t.account_id || UNSET_ACCOUNT
+    let accMap = byHolding.get(key)
+    if (!accMap) { accMap = new Map(); byHolding.set(key, accMap) }
+    let s = accMap.get(accKey)
+    if (!s) { s = { buyQuantity: 0, sellQuantity: 0, totalCost: 0 }; accMap.set(accKey, s) }
+
+    if (t.direction === 'buy') {
+      s.buyQuantity += t.quantity
+      s.totalCost += t.quantity * t.price
+    } else {
+      s.sellQuantity += t.quantity
+      const avg = s.buyQuantity > 0 ? s.totalCost / s.buyQuantity : t.price
+      s.totalCost -= t.quantity * avg
+      if (s.totalCost < 0) s.totalCost = 0
+    }
+  }
+
+  const result = new Map<string, AccountSlice[]>()
+  for (const [key, accMap] of byHolding) {
+    const rows = [...accMap.entries()].map(([accKey, s]) => ({
+      accountId: accKey === UNSET_ACCOUNT ? null : accKey,
+      quantity: s.buyQuantity - s.sellQuantity,
+      cost: s.totalCost,
+    }))
+
+    // 跨账户超卖：负数账户先归零，缺口按数量比例从正数账户扣回
+    let deficit = 0
+    for (const r of rows) {
+      if (r.quantity < 0) {
+        deficit += -r.quantity
+        r.quantity = 0
+        r.cost = 0
+      }
+    }
+    if (deficit > 0) {
+      const positives = rows.filter(r => r.quantity > 0)
+      const totalPos = positives.reduce((sum, r) => sum + r.quantity, 0)
+      if (totalPos > 0) {
+        for (const r of positives) {
+          const take = Math.min(r.quantity, deficit * (r.quantity / totalPos))
+          const avg = r.quantity > 0 ? r.cost / r.quantity : 0
+          r.quantity = Math.max(0, r.quantity - take)
+          r.cost = Math.max(0, r.cost - take * avg)
+        }
+      }
+    }
+
+    const slices = rows
+      .filter(r => r.quantity > 1e-6)
+      .map(r => ({ accountId: r.accountId, quantity: r.quantity, cost: r.cost }))
+    if (slices.length > 0) result.set(key, slices)
+  }
+  return result
+}
+
 /** 获取清仓复盘列表：所有彻底清仓（净持仓归零且全体 is_active=false）的标的历史终局统计 */
 export async function getLiquidatedHoldings(): Promise<LiquidatedHolding[]> {
   const txs = await getAllTransactions()
