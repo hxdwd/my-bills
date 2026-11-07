@@ -160,6 +160,15 @@ export async function archiveHolding(symbol: string, market: Market): Promise<vo
   }
 
   // 插入清仓节点记录
+  //
+  // 账户/币种必须一并带上（取该标的最后一笔带账户的流水）：
+  // 早期版本漏了这两个字段，导致每条清仓都会留下一条「无账户」的流水，
+  // 在按投资账户统计时被归到「未指定账户」。现在的消费方（当前持仓、
+  // 清仓收益）都靠 quantity=0 兜着，但账户维度统计会直接吃到脏数据。
+  const donor = [...active]
+    .sort((a, b) => a.date.localeCompare(b.date) || a.created_at.localeCompare(b.created_at))
+    .reverse()
+    .find(r => r.account_id) || active[active.length - 1]
   const node: HoldingTransactionRecord = {
     ...newRecordBase(userId),
     symbol,
@@ -170,6 +179,8 @@ export async function archiveHolding(symbol: string, market: Market): Promise<vo
     price: 0,
     date: new Date().toISOString().slice(0, 10),
     note: '已清仓',
+    account_id: donor?.account_id ?? null,
+    asset_currency: donor?.asset_currency ?? null,
     is_active: false,
   } as HoldingTransactionRecord
   await db.holdings_transactions.put(node)
