@@ -104,7 +104,20 @@ export function WealthHome() {
   const [showSortMenu, setShowSortMenu] = useState(false)
   const [showDist, setShowDist] = useState(true)
   // 资产分布维度：大类 / 市场（A股·港股·美股·基金·黄金） / 投资账户
-  const [distDim, setDistDim] = useState<'cat' | 'market' | 'account'>('cat')
+  //
+  // 维度要跨页面保留：从账户详情返回时组件会重新挂载，若只放 useState，
+  // 用户点开「投资账户」再返回就会跳回「大类」，像被重置了。
+  const [distDim, setDistDimState] = useState<'cat' | 'market' | 'account'>(() => {
+    try {
+      const saved = sessionStorage.getItem('wealth-dist-dim')
+      if (saved === 'cat' || saved === 'market' || saved === 'account') return saved
+    } catch { /* 隐私模式下读不了 sessionStorage */ }
+    return 'cat'
+  })
+  const setDistDim = (dim: 'cat' | 'market' | 'account') => {
+    setDistDimState(dim)
+    try { sessionStorage.setItem('wealth-dist-dim', dim) } catch { /* 忽略写入失败 */ }
+  }
   const [showCurrencyPop, setShowCurrencyPop] = useState(false)
   // 入场动画状态：点击后先挂载再下一帧加 open 类，触发 transition
   const [popOpen, setPopOpen] = useState(false)

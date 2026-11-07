@@ -6,10 +6,11 @@ import { useApp } from '../context/AppContext'
 import { marketToCategory, marketLabel, AssetCategory } from '../db/wealthStore'
 import {
   buildAccountBreakdown,
+  bucketValueIn,
   positionPctInBucket,
   UNSET_ACCOUNT_NAME,
 } from '../utils/accountBreakdown'
-import { fmtMoney, toBase, CURRENCY_SYMBOL, type Currency } from '../utils/currency'
+import { fmtMoney, fmtWithSymbol, toBase, CURRENCY_SYMBOL, type Currency } from '../utils/currency'
 
 const CAT_COLOR: Record<AssetCategory, string> = {
   stock: '#c96442',
@@ -36,7 +37,7 @@ function pctText(pct: number): string {
  *
  * 路由：/wealth/account/:accountId（accountId = 'unspecified' 表示历史流水没有账户）
  * 口径：市值按数量比例从标的市值分摊，成本来自该账户自己的流水；
- *      金额一律折算到当前本位币，与财富首页一致。
+ *      账户总额 = 可用现金（账户余额）+ 持仓市值，与资产页的账户信息保持一致。
  */
 export default function WealthAccount() {
   const { accountId } = useParams<{ accountId: string }>()
@@ -59,8 +60,23 @@ export default function WealthAccount() {
   const account = targetId ? accounts.find(a => a.id === targetId) : null
   const title = bucket?.name ?? account?.name ?? (targetId ? '账户' : UNSET_ACCOUNT_NAME)
   const accountCurrency = (bucket?.currency ?? (account?.currency as Currency) ?? 'CNY') as Currency
+  const isForeign = accountCurrency !== baseCurrency
+  const accSym = CURRENCY_SYMBOL[accountCurrency] || '¥'
+  const baseSym = CURRENCY_SYMBOL[baseCurrency] || '¥'
   const { baseMV } = summary()
   const shareOfTotal = baseMV > 0 && bucket ? (bucket.valueBase / baseMV) * 100 : 0
+
+  // ===== 资金构成（原币口径，境外账户额外给本位币折算）=====
+  const cashAcc = account?.balance ?? 0
+  const holdingsValueAcc = bucket ? bucketValueIn(bucket, accountCurrency, rates) : 0
+  const holdingsCostAcc = bucket
+    ? bucket.positions.reduce((s, p) => s + toBase(p.costNative, p.currency, accountCurrency, rates), 0)
+    : 0
+  const totalAcc = cashAcc + holdingsValueAcc
+  const toBaseFromAcc = (v: number) => toBase(v, accountCurrency, baseCurrency, rates)
+
+  const accMoney = (v: number) => `${accSym}${fmtMoney(v, 2)}`
+  const baseMoney = (v: number) => `${baseSym}${fmtMoney(v, 2)}`
 
   return (
     <div className="min-h-screen bg-bg px-4 pt-6 pb-24">
@@ -71,7 +87,7 @@ export default function WealthAccount() {
         <div className="min-w-0">
           <h1 className="text-xl font-bold text-ink truncate">{title}</h1>
           <div className="text-[11px] text-ink-3">
-            {account ? `投资账户 · ${CURRENCY_SYMBOL[accountCurrency]} ${accountCurrency}` : '未关联账户的历史流水'}
+            {account ? `投资账户 · ${accountCurrency}` : '未关联账户的历史流水'}
             {bucket ? ` · 占全部持仓 ${pctText(shareOfTotal)}` : ''}
           </div>
         </div>
@@ -89,23 +105,60 @@ export default function WealthAccount() {
         </div>
       ) : (
         <>
-          {/* 三卡片：持仓市值 / 今日收益 / 持仓收益（均已折本位币） */}
+          {/* 资金构成：账户总额（可用 + 持仓）+ 拆分 */}
+          <div className="bg-surface rounded-3xl p-4 border border-brand-tint mb-3">
+            <div className="text-xs text-ink-3 mb-1">账户总额</div>
+            <div className="font-bold text-2xl text-ink font-amount amount-fluid">
+              {accMoney(totalAcc)}
+            </div>
+            {isForeign && (
+              <div className="text-[11px] text-ink-3 font-amount mt-0.5">
+                ≈ {baseMoney(toBaseFromAcc(totalAcc))}（按当前汇率）
+              </div>
+            )}
+
+            <div className="grid grid-cols-3 gap-3 mt-3 pt-3 border-t border-brand-tint">
+              <div>
+                <div className="text-[10px] text-ink-3">可用现金</div>
+                <div className="text-sm font-medium text-ink mt-0.5 tabular-nums">{accMoney(cashAcc)}</div>
+                {isForeign && (
+                  <div className="text-[10px] text-ink-3 mt-0.5">≈ {baseMoney(toBaseFromAcc(cashAcc))}</div>
+                )}
+              </div>
+              <div>
+                <div className="text-[10px] text-ink-3">持仓市值</div>
+                <div className="text-sm font-medium text-ink mt-0.5 tabular-nums">{accMoney(holdingsValueAcc)}</div>
+                {isForeign && (
+                  <div className="text-[10px] text-ink-3 mt-0.5">≈ {baseMoney(toBaseFromAcc(holdingsValueAcc))}</div>
+                )}
+              </div>
+              <div>
+                <div className="text-[10px] text-ink-3">持仓本金</div>
+                <div className="text-sm font-medium text-ink mt-0.5 tabular-nums">{accMoney(holdingsCostAcc)}</div>
+                {isForeign && (
+                  <div className="text-[10px] text-ink-3 mt-0.5">≈ {baseMoney(toBaseFromAcc(holdingsCostAcc))}</div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* 收益：统一折本位币 */}
           <div className="flex gap-2 mb-4">
             <div className="flex-1 bg-surface rounded-2xl p-3 border border-brand-tint">
-              <div className="text-[11px] text-ink-2 mb-1">持仓市值</div>
-              <div className="text-base font-bold text-ink amount-fluid-sm">{fmtMoney(bucket.valueBase, 0)}</div>
-            </div>
-            <div className="flex-1 bg-surface rounded-2xl p-3 border border-brand-tint">
-              <div className="text-[11px] text-ink-2 mb-1">今日收益</div>
+              <div className="text-[11px] text-ink-2 mb-1">今日收益{isForeign ? `（折${baseCurrency}）` : ''}</div>
               <div className="text-base font-bold amount-fluid-sm" style={{ color: colorOf(bucket.todayBase) }}>
-                {sign(bucket.todayBase)}{fmtMoney(Math.abs(bucket.todayBase), 0)}
+                {sign(bucket.todayBase)}{baseSym}{fmtMoney(Math.abs(bucket.todayBase), 0)}
               </div>
             </div>
             <div className="flex-1 bg-surface rounded-2xl p-3 border border-brand-tint">
-              <div className="text-[11px] text-ink-2 mb-1">持仓收益</div>
+              <div className="text-[11px] text-ink-2 mb-1">持仓收益{isForeign ? `（折${baseCurrency}）` : ''}</div>
               <div className="text-base font-bold amount-fluid-sm" style={{ color: colorOf(bucket.profitBase) }}>
-                {sign(bucket.profitBase)}{fmtMoney(Math.abs(bucket.profitBase), 0)}
+                {sign(bucket.profitBase)}{baseSym}{fmtMoney(Math.abs(bucket.profitBase), 0)}
               </div>
+            </div>
+            <div className="flex-1 bg-surface rounded-2xl p-3 border border-brand-tint">
+              <div className="text-[11px] text-ink-2 mb-1">持仓占比</div>
+              <div className="text-base font-bold amount-fluid-sm text-ink">{pctText(shareOfTotal)}</div>
             </div>
           </div>
 
@@ -134,15 +187,16 @@ export default function WealthAccount() {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-sm font-medium text-ink truncate">{p.name}</span>
-                          <span className="text-sm text-ink tabular-nums shrink-0">{fmtMoney(valueBase, 0)}</span>
+                          <span className="text-sm text-ink tabular-nums shrink-0">
+                            {fmtWithSymbol(p.valueNative, p.valueCurrency, 0)}
+                          </span>
                         </div>
                         <div className="flex items-center justify-between gap-2 mt-0.5">
                           <span className="text-[10px] text-ink-3 truncate">
                             {p.symbol} · {marketLabel(p.market)}
+                            {p.valueCurrency !== baseCurrency && ` · ≈ ${baseMoney(valueBase)}`}
                           </span>
-                          <span className="text-[11px] text-ink-2 tabular-nums shrink-0">
-                            {pctText(pct)}
-                          </span>
+                          <span className="text-[11px] text-ink-2 tabular-nums shrink-0">{pctText(pct)}</span>
                         </div>
                       </div>
                       <ChevronRight size={16} className="text-ink-3 shrink-0" />
@@ -154,7 +208,7 @@ export default function WealthAccount() {
                       />
                     </div>
                     <div className="mt-1 ml-3.5 text-[10px]" style={{ color: colorOf(profitBase) }}>
-                      {sign(profitBase)}{fmtMoney(Math.abs(profitBase), 0)} 持仓收益
+                      {sign(profitBase)}{fmtMoney(Math.abs(profitBase), 2)} 持仓收益（折{baseCurrency}）
                     </div>
                   </button>
                 )
@@ -163,6 +217,7 @@ export default function WealthAccount() {
 
             <div className="text-[10px] text-ink-3 mt-3 leading-relaxed">
               占比 = 该持仓市值 ÷ 本账户持仓市值；同一标的分散在多个账户时市值按数量比例分摊。
+              {isForeign && ' 金额按账户币种展示，括号内为折算后的本位币。'}
             </div>
           </div>
         </>
